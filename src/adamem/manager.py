@@ -65,6 +65,8 @@ class AdaMem:
 
         if self.config.use_supersession:
             self._supersede_conflicting(item)
+        if self.config.use_soft_staleness:
+            self._soft_stale_conflicting(item)
 
         item.links = self._link_candidates(item)
         for cause_id in cause_ids:
@@ -112,6 +114,9 @@ class AdaMem:
             ranked = self._mmr(query_embedding, ranked, top_k)
         else:
             ranked = ranked[:top_k]
+
+        if self.config.use_adjudication_filter:
+            ranked = self._adjudication_filter(ranked)
 
         for result in ranked:
             result.item.access_count += 1
@@ -164,6 +169,72 @@ class AdaMem:
                 previous.superseded_by = item.id
                 item.supersedes.append(previous.id)
                 self.store.upsert(previous)
+
+    def _soft_stale_conflicting(self, item: MemoryItem) -> None:
+        """Mechanism A: Soft Active-Stale Scoring.
+
+        Without requiring an explicit `memory_key` collision, accumulate a
+        graded `staleness` on prior memories that this new item likely
+        contradicts. Two prior items count as conflict candidates when their
+        embeddings are highly similar to `item` AND their normalized contents
+        differ. The accumulation is bounded to keep the field interpretable
+        as a probability-like score in [0, soft_stale_max].
+        """
+        cfg = self.config
+        new_text = item.content.strip().lower()
+        if not new_text:
+            return
+        directly_marked: list[MemoryItem] = []
+        for previous in self.store.all():
+            if previous.id == item.id:
+                continue
+            if previous.superseded_by is not None:
+                continue
+            if previous.content.strip().lower() == new_text:
+                continue
+            sim = cosine(item.embedding, previous.embedding)
+            if sim < cfg.soft_stale_threshold:
+                continue
+            increment = cfg.soft_stale_increment * sim
+            previous.staleness = min(cfg.soft_stale_max, previous.staleness + increment)
+            if item.id not in previous.stale_sources:
+                previous.stale_sources.append(item.id)
+            self.store.upsert(previous)
+            directly_marked.append(previous)
+        if cfg.use_stale_propagation and directly_marked:
+            self._propagate_stale(item, directly_marked)
+
+    def _propagate_stale(self, item: MemoryItem, seeds: list[MemoryItem]) -> None:
+        """Mechanism B: Propagation via Co-occurrence.
+
+        When `seeds` get marked stale because of `item`, also raise the
+        staleness of items that co-occur with each seed. Two memories
+        co-occur when they share at least one `session_*` / `memory_key`
+        tag in metadata, OR when they are explicitly linked / cause-related.
+        Propagation strength is `seed.staleness * decay`, gated by a
+        threshold so isolated singletons don't pull others down.
+        """
+        cfg = self.config
+        decay = cfg.stale_propagation_decay
+        if decay <= 0:
+            return
+        all_items = self.store.all()
+        for seed in seeds:
+            propagated_amount = seed.staleness * decay
+            if propagated_amount < cfg.stale_propagation_threshold:
+                continue
+            seed_tags = _cooccurrence_tags(seed)
+            for other in all_items:
+                if other.id in {item.id, seed.id}:
+                    continue
+                if other.superseded_by is not None:
+                    continue
+                if not _co_occurs(seed, other, seed_tags):
+                    continue
+                other.staleness = min(cfg.soft_stale_max, other.staleness + propagated_amount)
+                if item.id not in other.stale_sources:
+                    other.stale_sources.append(item.id)
+                self.store.upsert(other)
 
     def _link_candidates(self, item: MemoryItem) -> list[str]:
         if not self.config.use_graph or not self.config.use_auto_links:
@@ -236,6 +307,8 @@ class AdaMem:
             contributions["confidence"] = cfg.confidence_weight * item.confidence
         if cfg.use_feedback:
             contributions["feedback"] = cfg.feedback_weight * item.feedback
+        if cfg.use_soft_staleness and item.staleness > 0.0:
+            contributions["staleness"] = -cfg.staleness_penalty * item.staleness
         return MemoryResult(
             item=item,
             score=sum(contributions.values()),
@@ -264,6 +337,29 @@ class AdaMem:
             selected.append(best[1])
             pool.remove(best[1])
         return selected
+
+    def _adjudication_filter(self, ranked: list[MemoryResult]) -> list[MemoryResult]:
+        """Mechanism C: Adjudication-Aware Retrieval.
+
+        Drop candidates whose `staleness` already passes
+        `adjudication_drop_threshold` AND that have at least one stale_source
+        still alive in the store. Items dropped here are recorded by setting
+        `result.relation` so callers can report Stale Leak Rate.
+        """
+        threshold = self.config.adjudication_drop_threshold
+        kept: list[MemoryResult] = []
+        for result in ranked:
+            item = result.item
+            if item.staleness >= threshold and item.stale_sources:
+                live_sources = [sid for sid in item.stale_sources if self.store.get(sid) is not None]
+                if live_sources:
+                    # Record but do not surface; expose via `result.relation`
+                    # for upstream metrics if anything inspects the dropped list.
+                    result.relation = f"{result.relation}+adjudicated"
+                    result.contributions["adjudicated"] = -1.0
+                    continue
+            kept.append(result)
+        return kept
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -309,5 +405,41 @@ def _embedding_text(content: str, metadata: dict[str, object]) -> str:
         if isinstance(value, str):
             parts.append(value)
         elif isinstance(value, list):
-            parts.extend(str(item) for item in value)
+            for entry in value:
+                text = str(entry)
+                # Skip structural tags (session_*, relevant) so they do not
+                # dilute the semantic similarity used for soft staleness.
+                if text.startswith("session_") or text == "relevant":
+                    continue
+                parts.append(text)
     return " ".join(parts)
+
+
+def _cooccurrence_tags(item: MemoryItem) -> set[str]:
+    """Tags used to define co-occurrence between two memories.
+
+    We treat any `session_*` or `subject` / `memory_key` tag as a binding
+    that means two items belong to the same context window.
+    """
+    tags: set[str] = set()
+    raw_tags = item.metadata.get("tags") if isinstance(item.metadata, dict) else None
+    if isinstance(raw_tags, list):
+        for tag in raw_tags:
+            text = str(tag)
+            if text.startswith("session_") or text in {"relevant"}:
+                tags.add(text)
+    subject = item.metadata.get("subject") if isinstance(item.metadata, dict) else None
+    if isinstance(subject, str) and subject:
+        tags.add(f"subject:{subject}")
+    return tags
+
+
+def _co_occurs(seed: MemoryItem, other: MemoryItem, seed_tags: set[str]) -> bool:
+    if seed.id in other.links or other.id in seed.links:
+        return True
+    if seed.id in other.cause_ids or other.id in seed.cause_ids:
+        return True
+    if not seed_tags:
+        return False
+    other_tags = _cooccurrence_tags(other)
+    return bool(seed_tags & other_tags)

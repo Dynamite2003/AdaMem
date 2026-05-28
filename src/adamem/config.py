@@ -26,6 +26,9 @@ class AdaMemConfig:
     use_feedback: bool = True
     use_mmr: bool = True
     use_supersession: bool = True
+    use_soft_staleness: bool = True
+    use_stale_propagation: bool = True
+    use_adjudication_filter: bool = True
 
     semantic_weight: float = 0.58
     temporal_weight: float = 0.08
@@ -33,3 +36,10 @@ class AdaMemConfig:
     recency_weight: float = 0.08
     confidence_weight: float = 0.06
     feedback_weight: float = 0.08
+    staleness_penalty: float = 0.55
+    soft_stale_threshold: float = 0.65
+    soft_stale_increment: float = 0.5
+    soft_stale_max: float = 1.0
+    stale_propagation_decay: float = 0.5
+    stale_propagation_threshold: float = 0.15
+    adjudication_drop_threshold: float = 0.6

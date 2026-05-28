@@ -31,6 +31,7 @@ class QuerySpec:
     id: str | None = None
     top_k: int = 4
     now: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -71,6 +72,9 @@ def default_ablation_configs() -> dict[str, AdaMemConfig]:
         use_mmr=False,
         use_supersession=False,
         use_auto_links=False,
+        use_soft_staleness=False,
+        use_stale_propagation=False,
+        use_adjudication_filter=False,
     )
     return {
         "semantic_only": AdaMemConfig(**semantic_only),
@@ -78,6 +82,20 @@ def default_ablation_configs() -> dict[str, AdaMemConfig]:
         "semantic_temporal": AdaMemConfig(**{**semantic_only, "use_temporal": True}),
         "semantic_graph": AdaMemConfig(**{**semantic_only, "use_graph": True}),
         "delta_graph": AdaMemConfig(**{**semantic_only, "use_graph": True, "use_supersession": True}),
+        "delta_soft": AdaMemConfig(**{**semantic_only, "use_supersession": True, "use_soft_staleness": True}),
+        "delta_propagation": AdaMemConfig(**{
+            **semantic_only,
+            "use_supersession": True,
+            "use_soft_staleness": True,
+            "use_stale_propagation": True,
+        }),
+        "delta_full": AdaMemConfig(**{
+            **semantic_only,
+            "use_supersession": True,
+            "use_soft_staleness": True,
+            "use_stale_propagation": True,
+            "use_adjudication_filter": True,
+        }),
         "full": AdaMemConfig(),
     }
 
@@ -204,6 +222,7 @@ def _case_from_mapping(raw: dict[str, Any], *, line_number: int) -> MemoryQACase
             forbidden_substrings=list(entry.get("forbidden_substrings", [])),
             top_k=int(entry.get("top_k", 4)),
             now=entry.get("now"),
+            metadata=dict(entry.get("metadata", {})),
         )
         for entry in raw.get("queries", raw.get("qas", []))
     ]
