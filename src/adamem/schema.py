@@ -27,6 +27,8 @@ class MemoryItem:
     cause_ids: list[str] = field(default_factory=list)
     supersedes: list[str] = field(default_factory=list)
     superseded_by: str | None = None
+    staleness: float = 0.0
+    stale_sources: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     embedding: dict[str, float] = field(default_factory=dict)
 

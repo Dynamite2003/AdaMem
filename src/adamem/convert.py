@@ -49,6 +49,112 @@ def convert_locomo_sample(sample: dict[str, Any], *, expected: str = "evidence",
     }
 
 
+def convert_stale_file(
+    input_path: str | Path,
+    output_path: str | Path,
+    *,
+    top_k: int = 8,
+    limit: int | None = None,
+    types: list[str] | None = None,
+) -> int:
+    """Convert STALE T1_T2_400_FULL.json to AdaMem JSONL.
+
+    STALE schema (per instance):
+      uid, M_old, M_new, explanation, type ("T1"|"T2"),
+      probing_queries: {dim1_query, dim2_query, dim3_query},
+      relevant_session_index: [int, int],
+      timestamps: [str x 50],
+      haystack_session: [[ {role, content}, ...] x 50]
+
+    We emit ONE AdaMem case per STALE instance. Each haystack turn becomes
+    an observation with valid_from = session timestamp. Each instance yields
+    THREE probing queries (one per dim), all carrying STALE metadata so an
+    LLM judge can score them later (`expected_substrings` is unused for SR/PR/IPA;
+    we leave it empty and rely on judge-mode eval).
+    """
+    with Path(input_path).open("r", encoding="utf-8") as handle:
+        samples = json.load(handle)
+    if not isinstance(samples, list):
+        raise ValueError("STALE input must be a JSON array")
+    if types:
+        samples = [s for s in samples if s.get("type") in types]
+    if limit is not None:
+        samples = samples[:limit]
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as handle:
+        for sample in samples:
+            row = convert_stale_sample(sample, top_k=top_k)
+            handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+    return len(samples)
+
+
+def convert_stale_sample(sample: dict[str, Any], *, top_k: int = 8) -> dict[str, Any]:
+    uid = str(sample.get("uid") or "stale-sample")
+    sample_type = str(sample.get("type") or "T?")
+    sessions = sample.get("haystack_session") or []
+    timestamps = sample.get("timestamps") or []
+    relevant = set(int(idx) for idx in sample.get("relevant_session_index") or [])
+
+    observations: list[dict[str, Any]] = []
+    for session_index, session in enumerate(sessions):
+        timestamp = timestamps[session_index] if session_index < len(timestamps) else None
+        for turn_index, turn in enumerate(session or []):
+            role = str(turn.get("role") or "user")
+            content = str(turn.get("content") or "").strip()
+            if not content:
+                continue
+            label = f"s{session_index:02d}t{turn_index:02d}"
+            observations.append({
+                "label": label,
+                "content": f"[{timestamp}] {role}: {content}",
+                "kind": "dialogue",
+                "importance": 0.6 if session_index in relevant else 0.4,
+                "valid_from": timestamp,
+                "metadata": {
+                    "memory_key": label,
+                    "subject": role,
+                    "tags": ["stale", sample_type, f"session_{session_index}"]
+                            + (["relevant"] if session_index in relevant else []),
+                },
+            })
+
+    probing = sample.get("probing_queries") or {}
+    queries: list[dict[str, Any]] = []
+    for dim_index, dim_key in enumerate(("dim1_query", "dim2_query", "dim3_query"), start=1):
+        text = str(probing.get(dim_key) or "").strip()
+        if not text:
+            continue
+        queries.append({
+            "id": f"{uid}.dim{dim_index}",
+            "query": text,
+            "expected_substrings": [],
+            "top_k": top_k,
+            "metadata": {
+                "stale_uid": uid,
+                "stale_type": sample_type,
+                "stale_dim": dim_index,
+                "M_old": sample.get("M_old"),
+                "M_new": sample.get("M_new"),
+                "explanation": sample.get("explanation"),
+                "relevant_session_index": list(sample.get("relevant_session_index") or []),
+            },
+        })
+
+    return {
+        "id": uid,
+        "metadata": {
+            "type": sample_type,
+            "M_old": sample.get("M_old"),
+            "M_new": sample.get("M_new"),
+            "explanation": sample.get("explanation"),
+        },
+        "observations": observations,
+        "queries": queries,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert public memory benchmarks to AdaMem JSONL.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -60,6 +166,13 @@ def main() -> None:
     locomo.add_argument("--top-k", type=int, default=8)
     locomo.add_argument("--limit", type=int)
 
+    stale = sub.add_parser("stale", help="Convert STALE T1_T2_400_FULL.json to AdaMem JSONL")
+    stale.add_argument("input", type=Path)
+    stale.add_argument("output", type=Path)
+    stale.add_argument("--top-k", type=int, default=8)
+    stale.add_argument("--limit", type=int)
+    stale.add_argument("--types", nargs="+", choices=["T1", "T2"], help="Filter by conflict type")
+
     args = parser.parse_args()
     if args.command == "locomo":
         count = convert_locomo_file(
@@ -70,6 +183,15 @@ def main() -> None:
             limit=args.limit,
         )
         print(f"wrote {count} cases to {args.output}")
+    elif args.command == "stale":
+        count = convert_stale_file(
+            args.input,
+            args.output,
+            top_k=args.top_k,
+            limit=args.limit,
+            types=args.types,
+        )
+        print(f"wrote {count} STALE cases to {args.output}")
 
 
 def _locomo_observations(conversation: dict[str, Any]) -> Iterable[dict[str, Any]]:
