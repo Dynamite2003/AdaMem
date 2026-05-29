@@ -35,6 +35,45 @@ def test_observe_preserves_distinct_memory_keys_for_repeated_steps() -> None:
     }
 
 
+def test_candidate_pool_limit_bounds_mmr_without_losing_top_result() -> None:
+    mem = AdaMem(config=AdaMemConfig(candidate_pool_limit=3, use_mmr=True))
+    for index in range(12):
+        mem.observe(
+            f"Alpha retrieval candidate {index}.",
+            importance=index / 12,
+            metadata={"memory_key": f"candidate.{index}"},
+        )
+
+    results = mem.retrieve("Alpha retrieval candidate", top_k=5)
+
+    assert len(results) == 5
+    assert any("candidate 11" in result.item.content for result in results)
+
+
+def test_soft_stale_candidate_limit_bounds_conflict_scan() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_soft_staleness=True,
+            use_stale_propagation=False,
+            soft_stale_candidate_limit=2,
+            soft_stale_threshold=0.1,
+        )
+    )
+    old_a = mem.observe("Deployment target is staging.", metadata={"memory_key": "old.a"})
+    old_b = mem.observe("Deployment target is staging again.", metadata={"memory_key": "old.b"})
+    old_c = mem.observe("Deployment target is staging once more.", metadata={"memory_key": "old.c"})
+    for item in mem.store.all():
+        item.staleness = 0.0
+        item.stale_sources = []
+        mem.store.upsert(item)
+
+    mem.observe("Deployment target is production now.", metadata={"memory_key": "new"})
+
+    assert mem.store.get(old_a.id).staleness == 0.0
+    assert mem.store.get(old_b.id).staleness > 0.0
+    assert mem.store.get(old_c.id).staleness > 0.0
+
+
 def test_supersession_hides_stale_fact_by_default() -> None:
     mem = AdaMem()
 

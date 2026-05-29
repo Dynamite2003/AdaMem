@@ -66,6 +66,7 @@ def test_ama_public_pilot_runs_from_local_source(tmp_path: Path) -> None:
     assert summary["source_records"] == 1
     assert summary["answer_cases"] == 1
     assert summary["evidence_cases"] == 1
+    assert summary["timings"]["total_seconds"] >= 0
     assert Path(summary["answer"]["report_path"]).exists()
     assert Path(summary["evidence"]["experiment_path"]).exists()
     answerability = summary["answer"]["summary"]["answerability"]

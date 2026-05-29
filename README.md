@@ -308,3 +308,7 @@ API-backed answer/judge scoring are still required.
 On the first 20 public AMA-Bench episodes, the light pilot gives
 `trajectory_step_readout` `239/239` evidence support versus `34/239` for
 `semantic_only`, and basis keyword recall `24.34%` versus `15.68%`.
+With bounded candidate pools and bounded soft-stale propagation, the same
+20-episode pilot including `full` finishes in about 33 seconds locally:
+`trajectory_step_readout` remains `239/239`, while `full` is `0/239` evidence
+support and `19.07%` answer-keyword recall.

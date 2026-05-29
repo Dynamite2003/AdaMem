@@ -558,9 +558,12 @@ Next API-free work:
    API-free 20-episode light pilot confirms evidence support scales:
    `trajectory_step_readout` reaches `239/239` evidence support versus
    `34/239` for `semantic_only`, and basis keyword recall `24.34%` versus
-   `15.68%`. The next method work should scale this beyond 20 episodes, handle
-   the graph-heavy `full` baseline performance cost separately, and add
-   API-backed judge robustness over correctly recalled trajectory steps.
+   `15.68%`. After bounded candidate pools and bounded soft-stale propagation,
+   the 20-episode pilot including `full` finishes in about 33 seconds locally;
+   `full` remains at `0/239` evidence support, while `trajectory_step_readout`
+   remains at `239/239`. The next method work should scale this beyond 20
+   episodes and add API-backed judge robustness over correctly recalled
+   trajectory steps.
 4. Build a reliable public state-sensitive transfer subset. The first
    LongMemEval-S inferred-state pilot exposed query-router false positives;
    after word-boundary matching and intent gates, the balanced 60-case sample

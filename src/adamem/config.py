@@ -15,6 +15,7 @@ class AdaMemConfig:
     temporal_mismatch_penalty: float = 0.35
     min_direct_relevance: float = 1e-9
     mmr_lambda: float = 0.72
+    candidate_pool_limit: int = 80
 
     use_semantic: bool = True
     use_temporal: bool = True
@@ -59,6 +60,8 @@ class AdaMemConfig:
     temporal_kg_readout_boost: float = 1.6
     salient_memory_readout_boost: float = 1.8
     trajectory_step_readout_boost: float = 2.2
+    soft_stale_candidate_limit: int = 160
+    stale_propagation_seed_limit: int = 24
     memory_evolution_threshold: float = 0.28
     memory_evolution_keyword_limit: int = 8
     memory_evolution_candidate_limit: int = 48

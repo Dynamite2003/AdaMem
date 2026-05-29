@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -46,18 +47,24 @@ def run_ama_public_pilot(
         raise ValueError("limit must be positive")
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
+    timings: dict[str, float] = {}
 
     raw_path = output / f"ama_public_{limit}.raw.jsonl"
     source_label = str(source)
+    started = time.perf_counter()
     if _is_url(source_label):
         source_count = download_jsonl_prefix(source_label, raw_path, limit=limit)
     else:
         source_count = copy_jsonl_prefix(Path(source), raw_path, limit=limit)
+    timings["source_seconds"] = time.perf_counter() - started
 
     answer_path = output / f"ama_public_{limit}.answer.adamem.jsonl"
+    started = time.perf_counter()
     answer_count = convert_ama_file(raw_path, answer_path, expected="answer", top_k=top_k)
+    timings["answer_convert_seconds"] = time.perf_counter() - started
 
     specs = select_baselines(baselines)
+    started = time.perf_counter()
     answer_outputs = _run_jsonl_pilot(
         dataset=answer_path,
         output_prefix=output / f"ama_public_{limit}.answer",
@@ -69,11 +76,15 @@ def run_ama_public_pilot(
         top_k=top_k,
         include_raw_outputs=include_raw_outputs,
     )
+    timings["answer_eval_seconds"] = time.perf_counter() - started
     evidence_path = output / f"ama_public_{limit}.evidence.adamem.jsonl"
     evidence_count = 0
     evidence_outputs: dict[str, Any] | None = None
     if include_evidence_mode:
+        started = time.perf_counter()
         evidence_count = convert_ama_file(raw_path, evidence_path, expected="evidence", top_k=top_k)
+        timings["evidence_convert_seconds"] = time.perf_counter() - started
+        started = time.perf_counter()
         evidence_outputs = _run_jsonl_pilot(
             dataset=evidence_path,
             output_prefix=output / f"ama_public_{limit}.evidence",
@@ -85,6 +96,8 @@ def run_ama_public_pilot(
             top_k=top_k,
             include_raw_outputs=include_raw_outputs,
         )
+        timings["evidence_eval_seconds"] = time.perf_counter() - started
+    timings["total_seconds"] = sum(timings.values())
 
     return {
         "source": source_label,
@@ -97,6 +110,7 @@ def run_ama_public_pilot(
         "raw_path": str(raw_path),
         "answer_dataset": str(answer_path),
         "evidence_dataset": str(evidence_path) if include_evidence_mode else None,
+        "timings": {key: round(value, 4) for key, value in timings.items()},
         "answer": answer_outputs,
         "evidence": evidence_outputs,
     }
@@ -156,7 +170,10 @@ def _run_jsonl_pilot(
     include_raw_outputs: bool,
 ) -> dict[str, Any]:
     cases = load_jsonl_cases(dataset)
-    results = run_benchmark(cases, {name: spec.config for name, spec in specs.items()})
+    configs = {name: spec.config for name, spec in specs.items()}
+    started = time.perf_counter()
+    results = run_benchmark(cases, configs)
+    benchmark_seconds = time.perf_counter() - started
     records = benchmark_case_records(results)
     summary = benchmark_failure_summary(records)
 
@@ -185,6 +202,7 @@ def _run_jsonl_pilot(
             "top_k": top_k,
             "records_path": str(records_path),
             "raw_outputs_embedded": include_raw_outputs,
+            "benchmark_seconds": round(benchmark_seconds, 4),
             "answer_model_required": False,
             "judge_model_required": False,
             "ground_truth_runtime_use": "forbidden",

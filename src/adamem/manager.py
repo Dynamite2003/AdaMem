@@ -150,6 +150,7 @@ class AdaMem:
             candidates = self._filter_state_adjudicated_sources(candidates, query)
 
         ranked = sorted(candidates.values(), key=lambda result: result.score, reverse=True)
+        ranked = self._limit_candidate_pool(ranked, top_k)
         if self.config.use_mmr:
             ranked = self._mmr(query_embedding, ranked, top_k)
         else:
@@ -625,7 +626,9 @@ class AdaMem:
         if not new_text:
             return
         directly_marked: list[MemoryItem] = []
-        for previous in self.store.all():
+        considered = 0
+        candidate_limit = max(0, cfg.soft_stale_candidate_limit)
+        for previous in reversed(self.store.all()):
             if previous.id == item.id:
                 continue
             if previous.kind == "state" or previous.metadata.get("derived") is True:
@@ -634,6 +637,9 @@ class AdaMem:
                 continue
             if previous.content.strip().lower() == new_text:
                 continue
+            if candidate_limit and considered >= candidate_limit:
+                break
+            considered += 1
             sim = cosine(item.embedding, previous.embedding)
             if sim < cfg.soft_stale_threshold:
                 continue
@@ -644,6 +650,13 @@ class AdaMem:
             self.store.upsert(previous)
             directly_marked.append(previous)
         if cfg.use_stale_propagation and directly_marked:
+            seed_limit = max(0, cfg.stale_propagation_seed_limit)
+            if seed_limit:
+                directly_marked = sorted(
+                    directly_marked,
+                    key=lambda candidate: candidate.staleness,
+                    reverse=True,
+                )[:seed_limit]
             self._propagate_stale(item, directly_marked)
 
     def _propagate_stale(self, item: MemoryItem, seeds: list[MemoryItem]) -> None:
@@ -781,6 +794,12 @@ class AdaMem:
             selected.append(best[1])
             pool.remove(best[1])
         return selected
+
+    def _limit_candidate_pool(self, ranked: list[MemoryResult], top_k: int) -> list[MemoryResult]:
+        limit = self.config.candidate_pool_limit
+        if limit <= 0:
+            return ranked
+        return ranked[: max(limit, top_k)]
 
     def _adjudication_filter(self, ranked: list[MemoryResult]) -> list[MemoryResult]:
         """Mechanism C: Adjudication-Aware Retrieval.

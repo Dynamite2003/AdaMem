@@ -242,6 +242,11 @@ Required next evidence:
   `34/239` for `semantic_only`, with basis keyword recall `24.34%` versus
   `15.68%`. The exact-answer string metric remains `0/240`, so this is still a
   retrieval/answerability claim, not an answer-accuracy claim.
+- Adding bounded candidate pools and bounded soft-stale propagation makes the
+  graph-heavy `full` baseline tractable on the same 20 public episodes
+  (`~33s` local wall time) without changing the research conclusion:
+  `full` has `0/239` evidence support, while `trajectory_step_readout` remains
+  at `239/239`.
 
 ## Baseline Requirements
 

@@ -1356,3 +1356,54 @@ to a paper-facing claim and evaluation gate.
   - Result: clean.
   - `PYTHONPATH=src python -m adamem.pilot ama-public --help`
   - Result: CLI help renders successfully.
+
+## 2026-05-30 full baseline scalability
+
+- Investigated the slow public AMA pilot when `full` was included:
+  - `full` on the first two cases took `1.827s`, while `semantic_only` and
+    `trajectory_step_readout` each took `0.017s`.
+  - Per-case profiling showed long trajectory episodes were the bottleneck:
+    350 observations took `5.744s`, and a 756-observation episode took
+    `83.252s` before optimization.
+  - The bottleneck is write-side soft staleness / propagation over long raw
+    trajectories, plus large retrieval candidate pools.
+- Added bounded engineering controls:
+  - `candidate_pool_limit` in `AdaMemConfig`, applied before MMR.
+  - `soft_stale_candidate_limit`, scanning recent prior candidates first.
+  - `stale_propagation_seed_limit`, bounding propagation fanout from directly
+    marked stale items.
+  - Added tests for candidate-pool limiting and soft-stale candidate limiting.
+- Added pilot runtime timing:
+  - `run_ama_public_pilot` now reports source, conversion, eval, and total
+    seconds.
+  - Experiment JSON records `benchmark_seconds` and keeps per-query records in
+    sidecar JSONL.
+- Re-profiled `full` on the first 20 public AMA episodes:
+  - The 756-observation case dropped from `83.252s` to `6.141s`.
+  - The 1050-observation case took `13.163s`.
+  - Full 20-case `full` benchmark time: `30.47s`.
+- Re-ran the 20-episode public AMA pilot with `full` included:
+  - Command:
+    `PYTHONPATH=src python -m adamem.pilot ama-public --limit 20 --output-dir results/ama_public_20_full --baselines semantic_only full trajectory_step_readout --top-k 8 --answer-only --json`
+  - Timings: source `2.3332s`, answer conversion `0.0542s`, answer eval
+    `30.2272s`, total `32.6146s`.
+  - Evidence support:
+    - `semantic_only`: `34/239`.
+    - `full`: `0/239`.
+    - `trajectory_step_readout`: `239/239`.
+  - Answerability diagnostics:
+    - `full`: keyword matched `19/240`, average recall `19.07%`.
+    - `trajectory_step_readout`: keyword matched `20/240`, average recall
+      `20.54%`, basis matched `32/240`, basis average recall `24.34%`.
+  - Interpretation: the scalability fix makes the default full baseline
+    runnable on the 20-episode public AMA pilot, and the result strengthens the
+    method claim that explicit trajectory-step authorization is not recovered
+    by generic full-memory scoring.
+- Re-ran deterministic validation:
+  - `python -m pytest`
+  - Result: `77 passed`.
+  - `git diff --check`
+  - Result: clean.
+  - Pilot smoke:
+    `PYTHONPATH=src python -m adamem.pilot ama-public --limit 1 --source results/ama_public_20_light/ama_public_20.raw.jsonl --output-dir /tmp/adamem_pilot_smoke --baselines semantic_only full trajectory_step_readout --top-k 8 --answer-only --json`
+  - Result: completed locally with `total_seconds=0.3877`.
