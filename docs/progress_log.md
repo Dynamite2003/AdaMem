@@ -2891,6 +2891,8 @@ to a paper-facing claim and evaluation gate.
   - argv and shell form
   - status, return code, elapsed seconds
   - stdout/stderr tails
+  - declared output paths
+  - output existence checks and missing output names
 - Purpose:
   - Make paper and smoke plans executable through the same validated workflow,
     instead of requiring manual shell execution.
@@ -2906,3 +2908,24 @@ to a paper-facing claim and evaluation gate.
     and JSONL command records.
   - Smoke CLI execution over `reporting` stage completed through the runner and
     wrote command records.
+
+### 2026-05-30 study runner output checks
+
+- Extended `paper_study_run.records.jsonl` records with:
+  - `declared_outputs`
+  - `output_checks`
+  - `missing_outputs`
+- Extended run summaries with `missing_output_count`.
+- Purpose:
+  - Catch cases where a command returns success but fails to create its
+    declared experiment, report, records, or output directory artifact.
+  - Make API-backed execution logs useful for reproducibility audits without
+    manually checking every path.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `14 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `42 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `174 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - Smoke runner execution over `reporting` stage completed with
+    `missing_output_count=0` and confirmed the declared `output_dir` exists.

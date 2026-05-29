@@ -744,7 +744,10 @@ Completed API-free foundations:
   spending API budget. Treat all smoke outputs as plumbing evidence only.
 - `adamem.study_plan --run`, a plan runner that validates the generated plan,
   executes selected stages, and writes JSONL command records plus Markdown/JSON
-  run summaries. Use `--dry-run` and `--stage ...` before real API execution.
+  run summaries. Each record checks declared output paths so a command that
+  returns successfully but fails to create its experiment/report artifact can
+  still be caught in the run log. Use `--dry-run` and `--stage ...` before real
+  API execution.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

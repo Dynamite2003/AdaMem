@@ -236,9 +236,11 @@ def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> Non
     assert summary["completed_command_count"] == 0
     assert records[0]["status"] == "dry_run"
     assert records[0]["stage"] == "diagnostic"
+    assert records[0]["missing_outputs"] == ["experiment", "records", "report"]
 
 
 def test_run_study_plan_executes_simple_command(tmp_path: Path) -> None:
+    output_path = tmp_path / "ok.txt"
     plan = {
         "output_dir": str(tmp_path / "study"),
         "datasets": {},
@@ -256,7 +258,8 @@ def test_run_study_plan_executes_simple_command(tmp_path: Path) -> None:
                 "stage": "unit",
                 "purpose": "test command",
                 "claim_boundary": "none",
-                "command": ["python", "-c", "print('ok')"],
+                "command": ["python", "-c", f"from pathlib import Path; Path({str(output_path)!r}).write_text('ok')"],
+                "outputs": {"artifact": str(output_path)},
             }
         ],
     }
@@ -269,7 +272,9 @@ def test_run_study_plan_executes_simple_command(tmp_path: Path) -> None:
 
     assert summary["status"] == "complete"
     assert summary["completed_command_count"] == 1
-    assert summary["records"][0]["stdout_tail"].strip() == "ok"
+    assert summary["missing_output_count"] == 0
+    assert summary["records"][0]["output_checks"]["artifact"]["exists"] is True
+    assert summary["records"][0]["missing_outputs"] == []
 
 
 def test_study_plan_cli_writes_artifacts(tmp_path: Path) -> None:

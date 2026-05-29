@@ -367,6 +367,10 @@ def run_study_plan(
         "selected_command_count": len(selected),
         "completed_command_count": sum(1 for record in records if record["status"] == "completed"),
         "failed_command_count": sum(1 for record in records if record["status"] == "failed"),
+        "missing_output_count": sum(
+            len(record.get("missing_outputs") or [])
+            for record in records
+        ),
         "skipped_by_failure_count": max(0, len(selected) - len(records)),
         "validation": validation,
         "records": records,
@@ -380,17 +384,19 @@ def study_run_summary_markdown(summary: dict[str, Any]) -> str:
     lines.append(f"Selected commands: `{int(summary.get('selected_command_count') or 0)}`")
     lines.append(f"Completed commands: `{int(summary.get('completed_command_count') or 0)}`")
     lines.append(f"Failed commands: `{int(summary.get('failed_command_count') or 0)}`")
+    lines.append(f"Missing outputs: `{int(summary.get('missing_output_count') or 0)}`")
     lines.append(f"Log: `{summary.get('log_path')}`")
     lines.append("")
-    lines.append("| # | status | stage | name | seconds |")
-    lines.append("| ---: | --- | --- | --- | ---: |")
+    lines.append("| # | status | stage | name | seconds | missing outputs |")
+    lines.append("| ---: | --- | --- | --- | ---: | ---: |")
     for record in summary.get("records") or []:
         lines.append(
             f"| {int(record.get('index') or 0)} | "
             f"`{record.get('status')}` | "
             f"`{record.get('stage')}` | "
             f"`{record.get('name')}` | "
-            f"{float(record.get('elapsed_seconds') or 0.0):.3f} |"
+            f"{float(record.get('elapsed_seconds') or 0.0):.3f} | "
+            f"{len(record.get('missing_outputs') or [])} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -1029,15 +1035,19 @@ def _run_command_record(
         "claim_boundary": command.get("claim_boundary"),
         "command": argv,
         "shell": shlex.join(argv),
+        "declared_outputs": dict(command.get("outputs") or {}),
         "started_at": started.isoformat(),
     }
     if dry_run:
         finished = dt.datetime.now(dt.timezone.utc)
+        output_checks = _output_checks(command, root=root)
         record.update({
             "status": "dry_run",
             "returncode": None,
             "elapsed_seconds": (finished - started).total_seconds(),
             "finished_at": finished.isoformat(),
+            "output_checks": output_checks,
+            "missing_outputs": _missing_outputs(output_checks),
         })
         return record
     env = _subprocess_env(root)
@@ -1049,6 +1059,7 @@ def _run_command_record(
         text=True,
     )
     finished = dt.datetime.now(dt.timezone.utc)
+    output_checks = _output_checks(command, root=root)
     record.update({
         "status": "completed" if result.returncode == 0 else "failed",
         "returncode": result.returncode,
@@ -1056,8 +1067,45 @@ def _run_command_record(
         "finished_at": finished.isoformat(),
         "stdout_tail": _tail_text(result.stdout),
         "stderr_tail": _tail_text(result.stderr),
+        "output_checks": output_checks,
+        "missing_outputs": _missing_outputs(output_checks),
     })
     return record
+
+
+def _output_checks(command: dict[str, Any], *, root: Path) -> dict[str, dict[str, Any]]:
+    checks: dict[str, dict[str, Any]] = {}
+    for name, value in (command.get("outputs") or {}).items():
+        if value in {None, ""}:
+            checks[str(name)] = {
+                "path": value,
+                "exists": None,
+                "kind": "none",
+            }
+            continue
+        path = Path(str(value))
+        resolved = path if path.is_absolute() else root / path
+        exists = resolved.exists()
+        if resolved.is_dir():
+            kind = "directory"
+        elif resolved.is_file():
+            kind = "file"
+        else:
+            kind = "missing"
+        checks[str(name)] = {
+            "path": str(value),
+            "exists": exists,
+            "kind": kind,
+        }
+    return checks
+
+
+def _missing_outputs(output_checks: dict[str, dict[str, Any]]) -> list[str]:
+    missing: list[str] = []
+    for name, check in output_checks.items():
+        if check.get("path") and not bool(check.get("exists")):
+            missing.append(name)
+    return missing
 
 
 def _subprocess_env(root: Path) -> dict[str, str]:
