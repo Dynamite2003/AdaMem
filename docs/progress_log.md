@@ -3104,3 +3104,28 @@ to a paper-facing claim and evaluation gate.
   - `git diff --check` -> no issues
   - CLI settings dry-run confirmed provenance appears in validation JSON, run
     summary JSON, and run summary Markdown.
+
+### 2026-05-30 resumable study runs
+
+- Added `--resume-run` for study-plan execution.
+- Resume behavior:
+  - appends to the existing run JSONL log instead of overwriting it
+  - skips only prior commands with matching name, stage, and shell command
+  - only skips records with `status=completed`
+  - does not skip records with missing declared outputs
+  - does not skip dry-run records
+- Run summaries now include:
+  - `resume`
+  - `skipped_completed_count`
+  - `skipped_completed` records when commands are skipped by resume
+- Purpose:
+  - Avoid repeated API spend after a partially completed answer/judge matrix
+    while keeping the skip decision auditable in the run log and summary.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `29 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `57 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `189 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke run executed the `reporting` stage once, then `--resume-run`
+    appended a `skipped_completed` record with `skipped_completed_count=1`.

@@ -553,6 +553,7 @@ def run_study_plan(
     *,
     stages: Iterable[str] | None = None,
     dry_run: bool = False,
+    resume: bool = False,
     require_ready: bool = True,
     check_env: bool = False,
     root: str | Path | None = None,
@@ -571,16 +572,21 @@ def run_study_plan(
     output_dir = Path(str(plan.get("output_dir") or "."))
     log = Path(log_path) if log_path is not None else output_dir / "paper_study_run.records.jsonl"
     log.parent.mkdir(parents=True, exist_ok=True)
+    completed_keys = _completed_resume_keys(log) if resume and log.exists() else set()
     records: list[dict[str, Any]] = []
     status = "dry_run" if dry_run else "complete"
-    with log.open("w", encoding="utf-8") as handle:
+    log_mode = "a" if resume else "w"
+    with log.open(log_mode, encoding="utf-8") as handle:
         for index, command in enumerate(selected, start=1):
-            record = _run_command_record(
-                command,
-                index=index,
-                dry_run=dry_run,
-                root=root_path,
-            )
+            if not dry_run and _command_resume_key(command) in completed_keys:
+                record = _skipped_completed_record(command, index=index)
+            else:
+                record = _run_command_record(
+                    command,
+                    index=index,
+                    dry_run=dry_run,
+                    root=root_path,
+                )
             records.append(record)
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
             handle.flush()
@@ -594,10 +600,12 @@ def run_study_plan(
         "settings_provenance": dict(plan.get("settings_provenance") or {}),
         "status": status,
         "dry_run": dry_run,
+        "resume": resume,
         "log_path": str(log),
         "selected_stage_filter": sorted(allowed_stages),
         "selected_command_count": len(selected),
         "completed_command_count": sum(1 for record in records if record["status"] == "completed"),
+        "skipped_completed_count": sum(1 for record in records if record["status"] == "skipped_completed"),
         "failed_command_count": sum(1 for record in records if record["status"] == "failed"),
         "missing_output_count": sum(
             len(record.get("missing_outputs") or [])
@@ -613,8 +621,10 @@ def study_run_summary_markdown(summary: dict[str, Any]) -> str:
     lines = ["# AdaMem Study Run Summary", ""]
     lines.append(f"Status: `{summary.get('status')}`")
     lines.append(f"Dry run: `{bool(summary.get('dry_run'))}`")
+    lines.append(f"Resume: `{bool(summary.get('resume'))}`")
     lines.append(f"Selected commands: `{int(summary.get('selected_command_count') or 0)}`")
     lines.append(f"Completed commands: `{int(summary.get('completed_command_count') or 0)}`")
+    lines.append(f"Skipped completed commands: `{int(summary.get('skipped_completed_count') or 0)}`")
     lines.append(f"Failed commands: `{int(summary.get('failed_command_count') or 0)}`")
     lines.append(f"Missing outputs: `{int(summary.get('missing_output_count') or 0)}`")
     lines.append(f"Log: `{summary.get('log_path')}`")
@@ -1308,6 +1318,52 @@ def _fingerprint_payload(value: Any) -> Any:
     return value
 
 
+def _completed_resume_keys(log: Path) -> set[tuple[str, str, str]]:
+    keys: set[tuple[str, str, str]] = set()
+    if not log.exists():
+        return keys
+    with log.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("status") != "completed":
+                continue
+            if record.get("missing_outputs"):
+                continue
+            key = _record_resume_key(record)
+            if key is not None:
+                keys.add(key)
+    return keys
+
+
+def _command_resume_key(command: dict[str, Any]) -> tuple[str, str, str]:
+    argv = [str(item) for item in command.get("command") or []]
+    return (
+        str(command.get("name") or ""),
+        str(command.get("stage") or ""),
+        shlex.join(argv),
+    )
+
+
+def _record_resume_key(record: dict[str, Any]) -> tuple[str, str, str] | None:
+    shell = record.get("shell")
+    if not shell:
+        argv = record.get("command")
+        if not isinstance(argv, list):
+            return None
+        shell = shlex.join(str(item) for item in argv)
+    return (
+        str(record.get("name") or ""),
+        str(record.get("stage") or ""),
+        str(shell),
+    )
+
+
 def _credential_like_setting_paths(value: Any, *, prefix: str = "") -> list[str]:
     flagged = {"api_key", "apikey", "token", "secret", "password", "credential", "credentials"}
     paths: list[str] = []
@@ -1324,6 +1380,33 @@ def _credential_like_setting_paths(value: Any, *, prefix: str = "") -> list[str]
             path = f"{prefix}[{index}]" if prefix else f"[{index}]"
             paths.extend(_credential_like_setting_paths(item, prefix=path))
     return paths
+
+
+def _skipped_completed_record(
+    command: dict[str, Any],
+    *,
+    index: int,
+) -> dict[str, Any]:
+    argv = [str(item) for item in command.get("command") or []]
+    now = dt.datetime.now(dt.timezone.utc).isoformat()
+    return {
+        "index": index,
+        "name": command.get("name"),
+        "stage": command.get("stage"),
+        "purpose": command.get("purpose"),
+        "claim_boundary": command.get("claim_boundary"),
+        "command": argv,
+        "shell": shlex.join(argv),
+        "declared_outputs": dict(command.get("outputs") or {}),
+        "started_at": now,
+        "finished_at": now,
+        "status": "skipped_completed",
+        "returncode": None,
+        "elapsed_seconds": 0.0,
+        "output_checks": {},
+        "missing_outputs": [],
+        "resume_reason": "matching_prior_completed_record",
+    }
 
 
 def _run_command_record(
@@ -1516,6 +1599,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--run", action="store_true", help="Execute the generated plan after writing artifacts.")
     parser.add_argument("--dry-run", action="store_true", help="With --run, log commands without executing them.")
+    parser.add_argument(
+        "--resume-run",
+        action="store_true",
+        help="With --run, append to the run log and skip matching prior completed commands with all outputs present.",
+    )
     parser.add_argument("--stage", action="append", dest="run_stages", help="With --run, execute only this stage. Repeatable.")
     parser.add_argument("--allow-not-ready", action="store_true", help="With --run, allow execution even if validation has gaps.")
     parser.add_argument("--run-log", type=Path, help="With --run, write JSONL execution records to this path.")
@@ -1619,6 +1707,7 @@ def main(argv: list[str] | None = None) -> None:
             plan,
             stages=args.run_stages,
             dry_run=args.dry_run,
+            resume=args.resume_run,
             require_ready=not args.allow_not_ready,
             check_env=args.check_env,
             log_path=args.run_log or Path(output_dir) / "paper_study_run.records.jsonl",
