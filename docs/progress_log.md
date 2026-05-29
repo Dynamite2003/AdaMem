@@ -2732,6 +2732,8 @@ to a paper-facing claim and evaluation gate.
   - `paper_study_plan.json`
   - `paper_study_plan.md`
   - `paper_study_commands.sh`
+  - `paper_study_validation.json`
+  - `paper_study_validation.md`
 - The generated plan includes:
   - an API-free STALE diagnostic command over the planned method matrix
   - a full answer/judge Cartesian product for at least two answer models and
@@ -2743,6 +2745,13 @@ to a paper-facing claim and evaluation gate.
 - The plan stores a method-coverage preview using the same audit logic as
   batch reporting, but it explicitly marks itself as planned execution, not
   evidence.
+- The validation report checks:
+  - missing dataset paths
+  - placeholder provider/model names
+  - answer-model and judge-model counts
+  - required provider credential environment-variable names
+  - method coverage completeness
+  - reporting command presence
 - Purpose:
   - Turn the paper-track experiment matrix into a reproducible artifact before
     API keys are available.
@@ -2759,3 +2768,33 @@ to a paper-facing claim and evaluation gate.
     directory.
   - Default CLI smoke wrote a 9-command plan with complete method-coverage
     preview to a temporary output directory.
+
+### 2026-05-30 paper study plan validation
+
+- Extended `adamem-study-plan` output with validation artifacts:
+  - `paper_study_validation.json`
+  - `paper_study_validation.md`
+- Validation makes planned execution readiness explicit:
+  - missing dataset paths are reported by dataset role
+  - placeholder model labels are listed before API commands are run
+  - answer/judge model counts are checked against the two-model robustness
+    requirement
+  - provider credential environment-variable names are listed, and can be
+    checked with `--check-env`
+  - method coverage and reporting-command presence are checked
+- Current default local validation correctly reports that
+  `benchmarks/stale.adamem.jsonl` and `benchmarks/longmemeval_s.adamem.jsonl`
+  are missing in this checkout, while the AMA raw source path exists.
+- Purpose:
+  - Turn the generated runbook into an actionable preflight checklist.
+  - Prevent API runs from failing late due to missing converted datasets or
+    unreplaced provider/model placeholders.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `8 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `36 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `168 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - Default CLI validation smoke wrote validation JSON/Markdown, marked
+    execution-ready `False`, reported missing `primary_stale` and
+    `transfer_long_memory`, and listed `5` placeholder model labels.

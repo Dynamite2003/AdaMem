@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shlex
 import sys
@@ -212,14 +213,177 @@ def write_paper_study_plan(plan: dict[str, Any], output_dir: str | Path) -> dict
     json_path = output / "paper_study_plan.json"
     md_path = output / "paper_study_plan.md"
     sh_path = output / "paper_study_commands.sh"
+    validation_path = output / "paper_study_validation.json"
+    validation_md_path = output / "paper_study_validation.md"
+    validation = validate_paper_study_plan(plan)
     json_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     md_path.write_text(paper_study_plan_markdown(plan), encoding="utf-8")
     sh_path.write_text(paper_study_plan_shell(plan), encoding="utf-8")
+    validation_path.write_text(json.dumps(validation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    validation_md_path.write_text(paper_study_validation_markdown(validation), encoding="utf-8")
     return {
         "json": str(json_path),
         "markdown": str(md_path),
         "shell": str(sh_path),
+        "validation_json": str(validation_path),
+        "validation_markdown": str(validation_md_path),
     }
+
+
+def validate_paper_study_plan(
+    plan: dict[str, Any],
+    *,
+    root: str | Path | None = None,
+    check_env: bool = False,
+) -> dict[str, Any]:
+    root_path = Path(root) if root is not None else Path.cwd()
+    datasets = plan.get("datasets") or {}
+    dataset_checks: dict[str, dict[str, Any]] = {}
+    missing_datasets: list[str] = []
+    for name, value in datasets.items():
+        if value in {None, ""}:
+            dataset_checks[name] = {
+                "path": value,
+                "required": False,
+                "exists": None,
+            }
+            continue
+        path = Path(str(value))
+        resolved = path if path.is_absolute() else root_path / path
+        exists = resolved.exists()
+        dataset_checks[name] = {
+            "path": str(value),
+            "required": True,
+            "exists": exists,
+        }
+        if not exists:
+            missing_datasets.append(name)
+
+    requirements = plan.get("model_requirements") or {}
+    answer_models = list(requirements.get("answer_models") or [])
+    judge_models = list(requirements.get("judge_models") or [])
+    extractor_model = requirements.get("state_extractor_model")
+    minimum_answer_models = int(requirements.get("minimum_answer_models") or 2)
+    minimum_judge_models = int(requirements.get("minimum_judge_models") or 2)
+    model_labels = [*answer_models, *judge_models]
+    if extractor_model:
+        model_labels.append(str(extractor_model))
+    placeholders = [label for label in model_labels if _contains_placeholder(label)]
+
+    providers = sorted({
+        spec.provider
+        for label in model_labels
+        if not _contains_placeholder(label)
+        for spec in [_safe_parse_model_spec(label)]
+        if spec is not None and spec.provider != "mock"
+    })
+    required_env_vars = _required_env_vars(providers)
+    missing_env_vars = [
+        name for name in required_env_vars if not os.environ.get(name)
+    ] if check_env else []
+
+    method_coverage = plan.get("method_coverage_preview") or {}
+    commands = list(plan.get("commands") or [])
+    command_stages = _count_values(command.get("stage") for command in commands)
+    reporting_command_present = any(command.get("stage") == "reporting" for command in commands)
+
+    missing_requirements: list[str] = []
+    if missing_datasets:
+        missing_requirements.append("dataset_paths_exist")
+    if placeholders:
+        missing_requirements.append("replace_model_placeholders")
+    if len(set(answer_models)) < minimum_answer_models:
+        missing_requirements.append("multiple_answer_models")
+    if len(set(judge_models)) < minimum_judge_models:
+        missing_requirements.append("multiple_judge_models")
+    if not bool(method_coverage.get("complete")):
+        missing_requirements.append("method_coverage_complete")
+    if not reporting_command_present:
+        missing_requirements.append("reporting_command_present")
+    if missing_env_vars:
+        missing_requirements.append("provider_credentials_available")
+
+    return {
+        "schema_version": "adamem.paper_study_validation.v1",
+        "execution_ready": not missing_requirements,
+        "missing_requirements": missing_requirements,
+        "dataset_checks": dataset_checks,
+        "missing_datasets": missing_datasets,
+        "placeholder_models": placeholders,
+        "answer_model_count": len(set(answer_models)),
+        "judge_model_count": len(set(judge_models)),
+        "minimum_answer_models": minimum_answer_models,
+        "minimum_judge_models": minimum_judge_models,
+        "provider_names": providers,
+        "required_env_vars": required_env_vars,
+        "env_checked": check_env,
+        "missing_env_vars": missing_env_vars,
+        "method_coverage_complete": bool(method_coverage.get("complete")),
+        "method_missing_requirements": list(method_coverage.get("missing_requirements") or []),
+        "method_missing_named_mechanism_ablations": list(
+            method_coverage.get("missing_named_mechanism_ablations") or []
+        ),
+        "command_count": len(commands),
+        "command_stage_counts": command_stages,
+        "reporting_command_present": reporting_command_present,
+    }
+
+
+def paper_study_validation_markdown(validation: dict[str, Any]) -> str:
+    lines = ["# AdaMem Paper Study Validation", ""]
+    lines.append(f"Execution ready: `{bool(validation.get('execution_ready'))}`")
+    missing = validation.get("missing_requirements") or []
+    lines.append(
+        "Missing requirements: "
+        + (", ".join(f"`{item}`" for item in missing) if missing else "`none`")
+    )
+    lines.append("")
+    lines.append("## Datasets")
+    for name, check in (validation.get("dataset_checks") or {}).items():
+        exists = check.get("exists")
+        state = "optional" if exists is None else str(bool(exists))
+        lines.append(f"- `{name}`: `{check.get('path')}` exists `{state}`")
+    placeholders = validation.get("placeholder_models") or []
+    if placeholders:
+        lines.append("")
+        lines.append("## Placeholder Models")
+        for label in placeholders:
+            lines.append(f"- `{label}`")
+    lines.append("")
+    lines.append("## Models")
+    lines.append(f"- Answer models: `{int(validation.get('answer_model_count') or 0)}`")
+    lines.append(f"- Judge models: `{int(validation.get('judge_model_count') or 0)}`")
+    env_vars = validation.get("required_env_vars") or []
+    lines.append(
+        "- Required env vars: "
+        + (", ".join(f"`{item}`" for item in env_vars) if env_vars else "`none`")
+    )
+    if validation.get("env_checked"):
+        missing_env = validation.get("missing_env_vars") or []
+        lines.append(
+            "- Missing env vars: "
+            + (", ".join(f"`{item}`" for item in missing_env) if missing_env else "`none`")
+        )
+    lines.append("")
+    lines.append("## Method Coverage")
+    lines.append(f"- Complete: `{bool(validation.get('method_coverage_complete'))}`")
+    method_gaps = validation.get("method_missing_requirements") or []
+    lines.append(
+        "- Missing groups: "
+        + (", ".join(f"`{item}`" for item in method_gaps) if method_gaps else "`none`")
+    )
+    mechanism_gaps = validation.get("method_missing_named_mechanism_ablations") or []
+    lines.append(
+        "- Missing named mechanism ablations: "
+        + (", ".join(f"`{item}`" for item in mechanism_gaps) if mechanism_gaps else "`none`")
+    )
+    lines.append("")
+    lines.append("## Commands")
+    lines.append(f"- Total: `{int(validation.get('command_count') or 0)}`")
+    for stage, count in (validation.get("command_stage_counts") or {}).items():
+        lines.append(f"- `{stage}`: `{count}`")
+    lines.append(f"- Reporting command present: `{bool(validation.get('reporting_command_present'))}`")
+    return "\n".join(lines) + "\n"
 
 
 def paper_study_plan_markdown(plan: dict[str, Any]) -> str:
@@ -564,6 +728,38 @@ def _safe_label(value: str) -> str:
     return label or "model"
 
 
+def _contains_placeholder(value: str) -> bool:
+    return "<" in value or ">" in value
+
+
+def _safe_parse_model_spec(value: str) -> ModelSpec | None:
+    try:
+        return parse_model_spec(value)
+    except ValueError:
+        return None
+
+
+def _required_env_vars(providers: Iterable[str]) -> list[str]:
+    mapping = {
+        "openai": "OPENAI_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "modelhub": "MODELHUB_API_KEY",
+    }
+    return sorted({
+        mapping[provider]
+        for provider in providers
+        if provider in mapping
+    })
+
+
+def _count_values(values: Iterable[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "<missing>")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Generate a paper-track AdaMem study plan without running API calls."
@@ -586,6 +782,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--max-context-chars", type=int, default=4000)
+    parser.add_argument(
+        "--check-env",
+        action="store_true",
+        help="Also check whether required provider credential environment variables are set.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -608,7 +809,19 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as exc:
         parser.error(str(exc))
     artifacts = write_paper_study_plan(plan, args.output_dir)
-    result = {"artifacts": artifacts, "plan": plan}
+    if args.check_env:
+        validation = validate_paper_study_plan(plan, check_env=True)
+        Path(artifacts["validation_json"]).write_text(
+            json.dumps(validation, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        Path(artifacts["validation_markdown"]).write_text(
+            paper_study_validation_markdown(validation),
+            encoding="utf-8",
+        )
+    else:
+        validation = json.loads(Path(artifacts["validation_json"]).read_text(encoding="utf-8"))
+    result = {"artifacts": artifacts, "plan": plan, "validation": validation}
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:

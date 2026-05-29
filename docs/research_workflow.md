@@ -101,9 +101,12 @@ Outputs:
   claims.
 - Paper-study plan artifacts generated before API runs:
   `paper_study_plan.json`, `paper_study_plan.md`, and
-  `paper_study_commands.sh`. These fix the intended STALE answer/judge matrix,
-  LLM extractor ablation, transfer diagnostics, and post-run report command
-  without claiming that the planned experiments have already run.
+  `paper_study_commands.sh`, plus `paper_study_validation.json/md`. These fix
+  the intended STALE answer/judge matrix, LLM extractor ablation, transfer
+  diagnostics, and post-run report command without claiming that the planned
+  experiments have already run. The validation artifacts report missing
+  dataset paths, default model placeholders, model-count gaps, method-coverage
+  gaps, and whether the post-run reporting command is present.
 - Notes on any regression before new work begins.
 
 Done when:
@@ -707,12 +710,14 @@ Completed API-free foundations:
   against a reference baseline.
 - `adamem.study_plan`, a pre-run paper-study planner that writes
   `paper_study_plan.json`, `paper_study_plan.md`, and
-  `paper_study_commands.sh`. It expands answer/judge model combinations,
-  adds the API-free STALE diagnostic command, includes an LLM state-extractor
-  ablation, includes LongMemEval and AMA transfer commands, and appends the
-  batch reporting command. Its method-coverage preview is a planning check
-  only; final claims must use the generated experiment records and report
-  bundle audits.
+  `paper_study_commands.sh`, plus `paper_study_validation.json/md`. It expands
+  answer/judge model combinations, adds the API-free STALE diagnostic command,
+  includes an LLM state-extractor ablation, includes LongMemEval and AMA
+  transfer commands, and appends the batch reporting command. Its validation
+  report checks local dataset paths, placeholder models, model robustness
+  counts, method coverage, and reporting command presence. Its method-coverage
+  preview is a planning check only; final claims must use the generated
+  experiment records and report bundle audits.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so
