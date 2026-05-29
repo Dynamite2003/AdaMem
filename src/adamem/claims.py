@@ -157,6 +157,7 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         "split_or_case_limit": experiment.get("split_or_case_limit"),
         "dataset_scope": dataset_scope,
         "baselines": baselines,
+        "baseline_provenance": _baseline_provenance(experiment, baselines),
         "providers": providers,
         "supported_claims": supported,
         "blocked_claims": {key: value for key, value in blocked.items() if value},
@@ -700,17 +701,32 @@ def _has_reproducibility_item(
 
 def _has_baseline_provenance(experiment: dict[str, Any]) -> bool:
     names = [str(name) for name in experiment.get("baseline_names") or []]
+    return bool(_baseline_provenance(experiment, names))
+
+
+def _baseline_provenance(
+    experiment: dict[str, Any],
+    baseline_names: list[str],
+) -> dict[str, dict[str, str]]:
     provenance = experiment.get("baseline_provenance")
-    if not names or not isinstance(provenance, dict):
-        return False
-    required = {"source_name", "implementation_status", "reproduction_note"}
-    for name in names:
+    if not baseline_names or not isinstance(provenance, dict):
+        return {}
+    required = {"category", "source_name", "implementation_status", "reproduction_note"}
+    normalized: dict[str, dict[str, str]] = {}
+    for name in baseline_names:
         item = provenance.get(name)
         if not isinstance(item, dict):
-            return False
+            return {}
         if any(not item.get(field) for field in required):
-            return False
-    return True
+            return {}
+        normalized[name] = {
+            "category": str(item.get("category") or ""),
+            "source_name": str(item.get("source_name") or ""),
+            "source_url": str(item.get("source_url") or ""),
+            "implementation_status": str(item.get("implementation_status") or ""),
+            "reproduction_note": str(item.get("reproduction_note") or ""),
+        }
+    return normalized
 
 
 def _failure_attribution_claim_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:

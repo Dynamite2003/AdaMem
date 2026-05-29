@@ -21,6 +21,7 @@ class BaselineSpec:
 
     def provenance_dict(self) -> dict[str, str]:
         return {
+            "category": self.category,
             "source_name": self.source_name,
             "source_url": self.source_url,
             "implementation_status": self.implementation_status,

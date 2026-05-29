@@ -50,6 +50,7 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
     assert specs["a_mem_evolution"].source_name == "A-MEM"
     assert specs["a_mem_evolution"].implementation_status == "api_free_approximation"
     assert specs["zep_temporal_kg"].source_url == "https://arxiv.org/abs/2501.13956"
+    assert specs["mem0_extraction"].provenance_dict()["category"] == "mainstream_approximation"
     assert specs["mem0_extraction"].provenance_dict()["source_name"] == "Mem0"
     assert configs["trajectory_step_readout"].use_trajectory_step_readout is True
     assert configs["full"].use_graph is True
@@ -109,6 +110,7 @@ def test_experiment_record_writes_reproducible_json(tmp_path) -> None:
     assert data["baseline_configs"]["semantic_only"]["use_graph"] is False
     assert data["baseline_provenance"]["semantic_only"]["source_name"] == "AdaMem"
     assert data["baseline_provenance"]["a_mem_evolution"] == {
+        "category": "mainstream_approximation",
         "source_name": "A-MEM",
         "source_url": "https://arxiv.org/abs/2502.12110",
         "implementation_status": "api_free_approximation",

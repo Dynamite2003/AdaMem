@@ -340,6 +340,9 @@ def test_method_coverage_summary_tracks_paper_method_groups() -> None:
     }
     assert summary["missing_requirements"] == ["known_baseline_names_only"]
     assert summary["baseline_provenance"]["a_mem_evolution"]["source_name"] == "A-MEM"
+    assert summary["baseline_provenance"]["a_mem_evolution"]["category"] == (
+        "mainstream_approximation"
+    )
     assert summary["baseline_provenance"]["a_mem_evolution"]["implementation_status"] == (
         "api_free_approximation"
     )
@@ -358,6 +361,46 @@ def test_method_coverage_summary_tracks_paper_method_groups() -> None:
     assert "SOTA baseline reproduction ready: `False`" in markdown
     assert "`official_or_faithful_mainstream_reproduction`" in markdown
     assert "[A-MEM](https://arxiv.org/abs/2502.12110)" in markdown
+
+
+def test_method_coverage_uses_artifact_baseline_provenance_over_registry() -> None:
+    summary = method_coverage_summary([
+        {
+            "experiment": "official_amem.experiment.json",
+            "baselines": ["semantic_only", "a_mem_evolution", "state_readout"],
+            "baseline_provenance": {
+                "semantic_only": {
+                    "category": "raw_turn_retrieval",
+                    "source_name": "AdaMem",
+                    "source_url": "",
+                    "implementation_status": "adamem_native",
+                    "reproduction_note": "Project-native method or local control.",
+                },
+                "a_mem_evolution": {
+                    "category": "mainstream_approximation",
+                    "source_name": "A-MEM",
+                    "source_url": "https://arxiv.org/abs/2502.12110",
+                    "implementation_status": "official_reproduction",
+                    "reproduction_note": "Official A-MEM code path recorded by this experiment.",
+                },
+                "state_readout": {
+                    "category": "state_aware",
+                    "source_name": "AdaMem",
+                    "source_url": "",
+                    "implementation_status": "adamem_native",
+                    "reproduction_note": "Project-native method or local control.",
+                },
+            },
+        }
+    ])
+
+    assert summary["baseline_provenance"]["a_mem_evolution"]["implementation_status"] == (
+        "official_reproduction"
+    )
+    assert summary["sota_baseline_reproduction_ready"] is True
+    assert summary["official_or_faithful_mainstream_reproductions"] == ["a_mem_evolution"]
+    assert summary["mainstream_api_free_approximations"] == []
+    assert summary["baseline_reproduction_gaps"] == []
 
 
 def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() -> None:

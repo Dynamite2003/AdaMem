@@ -753,7 +753,10 @@ Completed API-free foundations:
   readout. The same method audit records baseline provenance and separates
   API-free mainstream approximations from official or faithful reproductions,
   so SOTA-style claims remain blocked until strong baselines are actually
-  reproduced. `paper_readiness.json` and `paper_readiness.md` summarize
+  reproduced. Report bundles prefer artifact-level `baseline_provenance` over
+  the current registry when computing method coverage, which keeps old runs
+  and future official baseline reproductions auditable after code changes.
+  `paper_readiness.json` and `paper_readiness.md` summarize
   directory-level gate counts, top next actions, complete vs incomplete
   study-level model coverage, benchmark coverage gaps, method coverage gaps,
   and baseline-reproduction gaps.

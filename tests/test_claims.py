@@ -473,18 +473,21 @@ def test_claim_audit_records_reproducibility_coverage(tmp_path: Path) -> None:
             },
             "baseline_provenance": {
                 "semantic_only": {
+                    "category": "raw_turn_retrieval",
                     "source_name": "AdaMem",
                     "source_url": "",
                     "implementation_status": "adamem_native",
                     "reproduction_note": "Project-native method or local control.",
                 },
                 "a_mem_evolution": {
+                    "category": "mainstream_approximation",
                     "source_name": "A-MEM",
                     "source_url": "https://arxiv.org/abs/2502.12110",
                     "implementation_status": "api_free_approximation",
                     "reproduction_note": "API-free approximation; not an official reproduction.",
                 },
                 "state_readout": {
+                    "category": "state_aware",
                     "source_name": "AdaMem",
                     "source_url": "",
                     "implementation_status": "adamem_native",
@@ -526,6 +529,7 @@ def test_claim_audit_records_reproducibility_coverage(tmp_path: Path) -> None:
     reproducibility = audit["claim_evidence"]["reproducibility"]
 
     assert "reproducibility_audit" in audit["supported_claims"]
+    assert audit["baseline_provenance"]["a_mem_evolution"]["category"] == "mainstream_approximation"
     assert reproducibility["complete"] is True
     assert reproducibility["missing"] == []
     assert "baseline_provenance" in reproducibility["present"]

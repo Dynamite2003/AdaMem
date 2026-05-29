@@ -157,6 +157,10 @@ Current implementation:
   `baseline_configs`, so old runs remain auditable even if the baseline
   registry later changes. Missing provenance is treated as a reproducibility
   gap.
+- Claim audits and report bundles propagate artifact-level baseline
+  provenance, and method coverage uses that artifact provenance before falling
+  back to the current registry. This keeps future official/faithful baseline
+  reproductions distinguishable from the current API-free approximations.
 - Answer-generation and STALE judge runs additionally require provider/model
   settings, `top_k`, `max_context_chars`, and answer/judge prompts where
   applicable.

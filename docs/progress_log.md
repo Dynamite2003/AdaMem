@@ -3355,3 +3355,35 @@ to a paper-facing claim and evaluation gate.
     `semantic_only,a_mem_evolution`; claim audit reported
     `baseline_provenance` present and not missing in the reproducibility
     packet.
+
+### 2026-05-30 artifact-level provenance reporting
+
+- Added baseline `category` to provenance records so method coverage can be
+  reconstructed from an experiment artifact, not only from the current
+  registry.
+- Claim audits now expose normalized `baseline_provenance` at top level.
+- Report bundle manifests carry that provenance forward.
+- Batch `method_coverage` now prefers artifact-level provenance over registry
+  fallback when computing:
+  - baseline categories
+  - API-free approximation lists
+  - official/faithful mainstream reproduction readiness
+- Purpose:
+  - Keep old experiment artifacts interpretable after the registry changes.
+  - Allow future official A-MEM, Graphiti/Zep, or Mem0 reproductions to be
+    recorded in the experiment artifact and recognized by reporting without
+    rewriting historical registry defaults.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_experiments.py tests/test_claims.py tests/test_reporting.py -q` -> `34 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `199 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI eval/reporting smoke confirmed generated experiment artifacts include
+    `category=mainstream_approximation` and
+    `implementation_status=api_free_approximation` for `a_mem_evolution`, and
+    reporting preserved the reproduction gap.
+  - CLI reporting smoke with an artifact-marked
+    `implementation_status=official_reproduction` for `a_mem_evolution`
+    reported `sota_baseline_reproduction_ready=True`,
+    `official_or_faithful_mainstream_reproductions=a_mem_evolution`, and no
+    baseline reproduction gap.

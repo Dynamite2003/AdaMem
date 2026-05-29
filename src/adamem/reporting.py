@@ -50,6 +50,7 @@ def write_experiment_bundle(
         "split_or_case_limit": audit.get("split_or_case_limit"),
         "dataset_scope": audit["dataset_scope"],
         "baselines": audit["baselines"],
+        "baseline_provenance": audit.get("baseline_provenance") or {},
         "raw_output_count": audit["raw_output_count"],
         "supported_claims": audit["supported_claims"],
         "blocked_claims": audit["blocked_claims"],
@@ -396,14 +397,33 @@ def method_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, An
     specs = baseline_registry()
     categories: dict[str, set[str]] = {}
     unknown: set[str] = set()
+    baseline_provenance: dict[str, dict[str, str]] = {}
     for manifest in manifest_list:
+        artifact_provenance = _manifest_baseline_provenance(manifest)
         for baseline in manifest.get("baselines") or []:
             name = str(baseline)
+            provenance = artifact_provenance.get(name)
             spec = specs.get(name)
-            if spec is None:
+            if provenance is None and spec is not None:
+                provenance = spec.provenance_dict()
+            category = str((provenance or {}).get("category") or "")
+            if not category and spec is not None:
+                category = spec.category
+            if not category:
                 unknown.add(name)
                 continue
-            categories.setdefault(spec.category, set()).add(name)
+            categories.setdefault(category, set()).add(name)
+            if provenance is None:
+                provenance = {
+                    "category": category,
+                    "source_name": "unknown",
+                    "source_url": "",
+                    "implementation_status": "unknown",
+                    "reproduction_note": "No baseline provenance was available in the experiment artifact.",
+                }
+            else:
+                provenance = {**provenance, "category": category}
+            baseline_provenance[name] = provenance
 
     baseline_names = sorted(
         name
@@ -413,13 +433,6 @@ def method_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, An
     category_lists = {
         category: sorted(names)
         for category, names in sorted(categories.items())
-    }
-    baseline_provenance = {
-        name: {
-            "category": specs[name].category,
-            **specs[name].provenance_dict(),
-        }
-        for name in baseline_names
     }
     reproduction_status_counts = _count_values(
         item["implementation_status"] for item in baseline_provenance.values()
@@ -569,6 +582,24 @@ def method_coverage_markdown(summary: dict[str, Any]) -> str:
                 f"{source} | {info.get('reproduction_note') or ''} |"
             )
     return "\n".join(lines) + "\n"
+
+
+def _manifest_baseline_provenance(manifest: dict[str, Any]) -> dict[str, dict[str, str]]:
+    provenance = manifest.get("baseline_provenance")
+    if not isinstance(provenance, dict):
+        return {}
+    normalized: dict[str, dict[str, str]] = {}
+    for name, item in provenance.items():
+        if not isinstance(item, dict):
+            continue
+        normalized[str(name)] = {
+            "category": str(item.get("category") or ""),
+            "source_name": str(item.get("source_name") or ""),
+            "source_url": str(item.get("source_url") or ""),
+            "implementation_status": str(item.get("implementation_status") or ""),
+            "reproduction_note": str(item.get("reproduction_note") or ""),
+        }
+    return normalized
 
 
 def paper_readiness_summary(
