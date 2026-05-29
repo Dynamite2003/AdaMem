@@ -490,6 +490,7 @@ def _run_case(
 ) -> list[QueryEvalResult]:
     mem = AdaMem(config=config, state_extractor=state_extractor)
     labels: dict[str, MemoryItem] = {}
+    source_labels: dict[str, str] = {}
     for index, observation in enumerate(case.observations):
         cause_ids = [labels[label].id for label in observation.cause_labels]
         item = mem.observe(
@@ -503,12 +504,20 @@ def _run_case(
             metadata=observation.metadata,
         )
         labels[observation.label or str(index)] = item
-    return [_run_query(case.id, mem, query) for query in case.queries]
+        source_labels[item.id] = observation.label or str(index)
+    return [_run_query(case.id, mem, query, source_labels=source_labels) for query in case.queries]
 
 
-def _run_query(case_id: str, mem: AdaMem, query: QuerySpec) -> QueryEvalResult:
+def _run_query(
+    case_id: str,
+    mem: AdaMem,
+    query: QuerySpec,
+    *,
+    source_labels: dict[str, str] | None = None,
+) -> QueryEvalResult:
     results = mem.retrieve(query.query, top_k=query.top_k, now=query.now)
     retrieved = [result.item.content for result in results]
+    state_items_by_id = {item.id: item for item in mem.store.all() if item.kind == "state"}
     trace = [
         {
             "content": result.item.content,
@@ -516,7 +525,11 @@ def _run_query(case_id: str, mem: AdaMem, query: QuerySpec) -> QueryEvalResult:
             "score": round(result.score, 4),
             "relation": result.relation,
             "contributions": {key: round(value, 4) for key, value in result.contributions.items()},
-            "metadata": _trace_metadata(result.item),
+            "metadata": _trace_metadata(
+                result.item,
+                source_labels=source_labels or {},
+                state_items_by_id=state_items_by_id,
+            ),
         }
         for result in results
     ]
@@ -1117,7 +1130,12 @@ def _state_available(metadata: dict[str, Any], *, state_sensitive: bool) -> bool
     return bool(raw)
 
 
-def _trace_metadata(item: MemoryItem) -> dict[str, Any]:
+def _trace_metadata(
+    item: MemoryItem,
+    *,
+    source_labels: dict[str, str] | None = None,
+    state_items_by_id: dict[str, MemoryItem] | None = None,
+) -> dict[str, Any]:
     keys = (
         "memory_key",
         "label",
@@ -1135,9 +1153,32 @@ def _trace_metadata(item: MemoryItem) -> dict[str, Any]:
         "salient_slot",
         "salient_value",
         "source_id",
+        "source_state_id",
+        "stale_state_id",
         "derived",
     )
-    return {key: item.metadata[key] for key in keys if key in item.metadata}
+    metadata = {key: item.metadata[key] for key in keys if key in item.metadata}
+    source_labels = source_labels or {}
+    state_items_by_id = state_items_by_id or {}
+    if source_id := metadata.get("source_id"):
+        if source_label := source_labels.get(str(source_id)):
+            metadata["source_observation_label"] = source_label
+    if source_state_id := metadata.get("source_state_id"):
+        if source_state := state_items_by_id.get(str(source_state_id)):
+            if source_label := _state_source_label(source_state, source_labels):
+                metadata["source_observation_label"] = source_label
+    if stale_state_id := metadata.get("stale_state_id"):
+        if stale_state := state_items_by_id.get(str(stale_state_id)):
+            if stale_label := _state_source_label(stale_state, source_labels):
+                metadata["stale_source_observation_label"] = stale_label
+    return metadata
+
+
+def _state_source_label(state: MemoryItem, source_labels: dict[str, str]) -> str | None:
+    source_id = state.metadata.get("source_id")
+    if source_id is None:
+        return None
+    return source_labels.get(str(source_id))
 
 
 _ANSWER_KEYWORD_MATCH_THRESHOLD = 0.35

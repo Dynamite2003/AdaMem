@@ -223,10 +223,13 @@ Current implementation:
   corrections, resolved invalidated-value mentions, and unresolved invalidated
   values. This avoids counting explicitly invalidated old values as ordinary
   stale evidence.
+- JSONL trace metadata now resolves state `source_id` values back to benchmark
+  observation labels during evaluation, and premise-correction traces expose
+  both active-state and stale-state source labels. This is evaluation-only
+  provenance; labels are not injected into runtime memory metadata.
 
 Required next evidence:
 
-- Trace export showing which observation created the active state.
 - Tests for state replacement under paraphrases and unrelated updates.
 - Error analysis separating extraction failure from adjudication failure.
 - Extend unknown-current extraction beyond beverage to broader preference slots

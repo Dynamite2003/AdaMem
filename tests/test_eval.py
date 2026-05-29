@@ -1179,6 +1179,47 @@ def test_unknown_current_transfer_fixture_favors_state_authority() -> None:
     assert summary["pairwise_vs_first_baseline"]["semantic_state_adjudication"]["gained_passes"] == 8
 
 
+def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata() -> None:
+    case = MemoryQACase(
+        id="state_source_trace",
+        observations=[
+            ObservationSpec(label="old_location", content="I just moved into a place in Seattle."),
+            ObservationSpec(label="new_location", content="I relocated to Boston for a new job."),
+        ],
+        queries=[
+            QuerySpec(
+                id="current_location",
+                query="Since I'm in Seattle, what local resources apply?",
+                expected_substrings=["Boston"],
+                forbidden_substrings=["Seattle"],
+                top_k=1,
+                metadata={"dimension": "premise_resistance", "state_slot": "location"},
+            )
+        ],
+    )
+
+    results = run_benchmark(
+        [case],
+        {
+            "semantic_state_adjudication": baseline_registry()["semantic_state_adjudication"].config,
+            "semantic_state_premise_correction": (
+                baseline_registry()["semantic_state_premise_correction"].config
+            ),
+        },
+    )
+    records = benchmark_case_records(results)
+    by_baseline = {record["baseline"]: record for record in records}
+    adjudication_trace = by_baseline["semantic_state_adjudication"]["trace"][0]
+    correction_trace = by_baseline["semantic_state_premise_correction"]["trace"][0]
+
+    assert adjudication_trace["metadata"]["source_observation_label"] == "new_location"
+    assert "source_observation_label" not in case.observations[1].metadata
+    assert correction_trace["metadata"]["source_observation_label"] == "new_location"
+    assert correction_trace["metadata"]["stale_source_observation_label"] == "old_location"
+    assert correction_trace["metadata"]["source_state_id"]
+    assert correction_trace["metadata"]["stale_state_id"]
+
+
 def test_jsonl_records_expose_state_pollution_metrics() -> None:
     case = MemoryQACase(
         id="state_pollution_boundary",

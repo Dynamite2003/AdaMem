@@ -3517,3 +3517,30 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `204 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 evaluation-only state source trace labels
+
+- Added benchmark trace provenance for state-derived results:
+  - state readout traces now expose `source_observation_label` when the source
+    observation had a JSONL `label`;
+  - state premise-correction traces now expose `source_state_id`,
+    `stale_state_id`, `source_observation_label`, and
+    `stale_source_observation_label`.
+- Kept labels evaluation-only: `_run_case` maintains an id-to-label lookup for
+  trace rendering, but does not inject observation labels into runtime memory
+  metadata or embeddings.
+- Purpose:
+  - Make active-state and stale-state evidence auditable for paper case studies.
+  - Reduce causal-validity risk by showing exactly which observation created a
+    state readout/correction without letting benchmark labels influence runtime
+    retrieval.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata -q`
+    -> `1 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py -q` -> `29 passed`
+  - CLI trace smoke on `benchmarks/unknown_current_state_transfer.jsonl`
+    confirmed `unknown_beverage_premise_resistance` correction metadata includes
+    `source_observation_label=invalidated_beverage` and
+    `stale_source_observation_label=old_beverage`.
+  - `PYTHONPATH=src python -m pytest -q` -> `205 passed`
+  - `python -m compileall -q src` -> no issues
