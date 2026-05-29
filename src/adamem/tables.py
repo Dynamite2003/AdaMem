@@ -11,6 +11,7 @@ from adamem.bench import benchmark_failure_summary
 
 
 DEFAULT_GROUP_FIELDS = ("question_type", "dimension", "state_slot", "abstention")
+DEFAULT_STALE_GROUP_FIELDS = ("dim", "stale_type")
 
 
 def load_benchmark_records(path: str | Path) -> list[dict[str, Any]]:
@@ -56,6 +57,17 @@ def paper_table_summary(
 
     group_fields = tuple(group_fields)
     kind = _record_kind(records)
+    if kind == "stale_judge":
+        fields = tuple(group_fields)
+        if fields == DEFAULT_GROUP_FIELDS:
+            fields = DEFAULT_STALE_GROUP_FIELDS
+        summary = _stale_judge_summary(records, group_fields=fields)
+        return {
+            "kind": kind,
+            "total_records": summary["total_records"],
+            "overall": _stale_overall_rows(summary),
+            "by_group": _stale_group_rows(summary),
+        }
     if kind == "answer_generation":
         summary = answer_failure_summary(records, group_fields=group_fields)
         return {
@@ -86,14 +98,15 @@ def paper_table_markdown(
     lines.append("")
 
     lines.append("## Overall")
-    if tables["kind"] == "answer_generation":
-        lines.append("| baseline | correct | accuracy |")
-        lines.append("| --- | ---: | ---: |")
+    if tables["kind"] in {"answer_generation", "stale_judge"}:
+        extra = " | stale leak |" if tables["kind"] == "stale_judge" else " |"
+        lines.append(f"| baseline | correct | accuracy{extra}")
+        lines.append("| --- | ---: | ---: | ---: |" if tables["kind"] == "stale_judge" else "| --- | ---: | ---: |")
         for row in tables["overall"]:
-            lines.append(
-                f"| {row['baseline']} | {row['correct']} | "
-                f"{_format_rate(row['accuracy'])} |"
-            )
+            line = f"| {row['baseline']} | {row['correct']} | {_format_rate(row['accuracy'])}"
+            if tables["kind"] == "stale_judge":
+                line += f" | {_format_rate(row['stale_leak_rate'])}"
+            lines.append(f"{line} |")
     else:
         lines.append(
             "| baseline | support | support acc | evidence support | answer recall | "
@@ -122,6 +135,15 @@ def paper_table_markdown(
                 lines.append(
                     f"| {row['value']} | {row['baseline']} | {row['correct']} | "
                     f"{_format_rate(row['accuracy'])} |"
+                )
+        elif tables["kind"] == "stale_judge":
+            lines.append("| value | baseline | correct | accuracy | stale leak |")
+            lines.append("| --- | --- | ---: | ---: | ---: |")
+            for row in rows:
+                lines.append(
+                    f"| {row['value']} | {row['baseline']} | {row['correct']} | "
+                    f"{_format_rate(row['accuracy'])} | "
+                    f"{_format_rate(row['stale_leak_rate'])} |"
                 )
         else:
             lines.append(
@@ -189,9 +211,72 @@ def _resolve_records_path(experiment_path: Path, records_path: str) -> Path:
 
 
 def _record_kind(records: list[dict[str, Any]]) -> str:
+    if records and all("judge_correct" in record for record in records):
+        return "stale_judge"
     if records and all("correct" in record for record in records):
         return "answer_generation"
     return "retrieval"
+
+
+def _stale_judge_summary(
+    records: list[dict[str, Any]],
+    *,
+    group_fields: Iterable[str],
+) -> dict[str, Any]:
+    baseline_order = list(dict.fromkeys(str(record["baseline"]) for record in records))
+    summary: dict[str, Any] = {
+        "total_records": len(records),
+        "by_baseline": {},
+        "by_metadata": {},
+    }
+    for baseline in baseline_order:
+        subset = [record for record in records if record["baseline"] == baseline]
+        summary["by_baseline"][baseline] = _aggregate_stale_records(subset)
+    for field_name in group_fields:
+        values = sorted({_stale_group_value(record, field_name) for record in records})
+        if values == ["<missing>"]:
+            continue
+        field_summary: dict[str, Any] = {}
+        for value in values:
+            value_subset = [
+                record
+                for record in records
+                if _stale_group_value(record, field_name) == value
+            ]
+            field_summary[value] = {
+                baseline: _aggregate_stale_records([
+                    record for record in value_subset if record["baseline"] == baseline
+                ])
+                for baseline in baseline_order
+                if any(record["baseline"] == baseline for record in value_subset)
+            }
+        summary["by_metadata"][field_name] = field_summary
+    return summary
+
+
+def _aggregate_stale_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(records)
+    correct = sum(1 for record in records if record["judge_correct"])
+    stale_leaks = sum(1 for record in records if record.get("stale_leak"))
+    return {
+        "correct": correct,
+        "total": total,
+        "accuracy": correct / total if total else 0.0,
+        "stale_leaks": stale_leaks,
+        "stale_leak_rate": stale_leaks / total if total else 0.0,
+    }
+
+
+def _stale_group_value(record: dict[str, Any], field_name: str) -> str:
+    if field_name == "dimension":
+        field_name = "dim"
+    value = record.get(field_name)
+    if value is None or value == "":
+        metadata = record.get("metadata") or {}
+        value = metadata.get(field_name) if isinstance(metadata, dict) else None
+    if value is None or value == "":
+        return "<missing>"
+    return str(value)
 
 
 def _overall_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
@@ -239,6 +324,19 @@ def _answer_overall_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _stale_overall_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for baseline, aggregate in summary["by_baseline"].items():
+        rows.append({
+            "baseline": baseline,
+            "correct": _fraction(aggregate["correct"], aggregate["total"]),
+            "accuracy": aggregate["accuracy"],
+            "stale_leak": _fraction(aggregate["stale_leaks"], aggregate["total"]),
+            "stale_leak_rate": aggregate["stale_leak_rate"],
+        })
+    return rows
+
+
 def _group_rows(summary: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for field_name, by_value in summary["diagnostics_by_metadata"].items():
@@ -279,6 +377,24 @@ def _group_rows(summary: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
                         metrics["basis_answer_keyword_recall_avg"]
                     ),
                     "answer_basis_records": metrics["answer_basis_records"],
+                })
+        grouped[field_name] = rows
+    return grouped
+
+
+def _stale_group_rows(summary: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for field_name, by_value in summary["by_metadata"].items():
+        rows: list[dict[str, Any]] = []
+        for value, by_baseline in by_value.items():
+            for baseline, aggregate in by_baseline.items():
+                rows.append({
+                    "value": value,
+                    "baseline": baseline,
+                    "correct": _fraction(aggregate["correct"], aggregate["total"]),
+                    "accuracy": aggregate["accuracy"],
+                    "stale_leak": _fraction(aggregate["stale_leaks"], aggregate["total"]),
+                    "stale_leak_rate": aggregate["stale_leak_rate"],
                 })
         grouped[field_name] = rows
     return grouped

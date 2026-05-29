@@ -341,6 +341,18 @@ PYTHONPATH=src python -m adamem.tables /tmp/adamem_ama_answer_generation_smoke/a
 For generation records, the table columns switch to `correct` and `accuracy`
 instead of retrieval-support diagnostics.
 
+The table utility also supports STALE LLM-judge experiment JSON with embedded
+`raw_outputs`:
+
+```bash
+PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --baselines semantic_only --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output /tmp/adamem_stale_mock_judge_experiment.json
+PYTHONPATH=src python -m adamem.tables /tmp/adamem_stale_mock_judge_experiment.json --title "STALE Mock Judge Tables" --output /tmp/adamem_stale_mock_judge_tables.md
+```
+
+For STALE judge records, tables report overall accuracy plus `By dim` and
+`By stale_type` breakdowns, with stale-leak rates. Mock providers validate the
+workflow only; real claims require real answer and judge models.
+
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes
 retrieval of the matching trajectory steps by metadata instead of relying only

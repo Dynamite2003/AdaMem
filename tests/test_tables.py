@@ -171,6 +171,69 @@ def test_write_paper_table_json_supports_answer_experiment(tmp_path: Path) -> No
     assert payload["overall"][0]["correct"] == "1/1"
 
 
+def test_paper_table_summary_supports_stale_judge_records() -> None:
+    records = [
+        _stale_record(baseline="semantic_only", dim=1, stale_type="T1", correct=False, stale_leak=True),
+        _stale_record(baseline="semantic_only", dim=2, stale_type="T2", correct=True),
+        _stale_record(baseline="state_readout", dim=1, stale_type="T1", correct=True),
+        _stale_record(baseline="state_readout", dim=2, stale_type="T2", correct=True),
+    ]
+
+    summary = paper_table_summary(records)
+
+    assert summary["kind"] == "stale_judge"
+    by_baseline = {row["baseline"]: row for row in summary["overall"]}
+    assert by_baseline["semantic_only"]["correct"] == "1/2"
+    assert by_baseline["semantic_only"]["stale_leak"] == "1/2"
+    assert by_baseline["state_readout"]["correct"] == "2/2"
+    dim_rows = {
+        (row["value"], row["baseline"]): row
+        for row in summary["by_group"]["dim"]
+    }
+    assert dim_rows[("1", "semantic_only")]["correct"] == "0/1"
+    type_rows = {
+        (row["value"], row["baseline"]): row
+        for row in summary["by_group"]["stale_type"]
+    }
+    assert type_rows[("T2", "state_readout")]["accuracy"] == 1.0
+
+
+def test_paper_table_markdown_supports_stale_judge_records() -> None:
+    markdown = paper_table_markdown(
+        [
+            _stale_record(baseline="state_readout", dim=1, stale_type="T1", correct=True),
+            _stale_record(baseline="state_readout", dim=2, stale_type="T2", correct=False, stale_leak=True),
+        ],
+        title="STALE Judge Tables",
+    )
+
+    assert markdown.startswith("# STALE Judge Tables\n")
+    assert "| state_readout | 1/2 | 50.00% | 50.00% |" in markdown
+    assert "## By dim" in markdown
+    assert "| 1 | state_readout | 1/1 | 100.00% | 0.00% |" in markdown
+    assert "## By stale_type" in markdown
+
+
+def test_write_paper_table_json_supports_stale_experiment_raw_outputs(tmp_path: Path) -> None:
+    output_path = tmp_path / "stale.table.json"
+    experiment_path = tmp_path / "stale.experiment.json"
+    experiment_path.write_text(
+        json.dumps({
+            "run_type": "stale_llm_judge",
+            "raw_outputs": [
+                _stale_record(baseline="state_readout", dim=1, stale_type="T1", correct=True)
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    write_paper_table(experiment_path, output_path, output_format="json")
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert payload["kind"] == "stale_judge"
+    assert payload["overall"][0]["correct"] == "1/1"
+
+
 def _record(
     *,
     baseline: str,
@@ -242,4 +305,27 @@ def _answer_record(
         "expected_substrings": ["left"],
         "forbidden_substrings": [],
         "metadata": {"question_type": question_type, "benchmark": "ama"},
+    }
+
+
+def _stale_record(
+    *,
+    baseline: str,
+    dim: int,
+    stale_type: str,
+    correct: bool,
+    stale_leak: bool = False,
+) -> dict[str, object]:
+    return {
+        "baseline": baseline,
+        "case_id": "stale-case",
+        "query_id": f"dim{dim}",
+        "dim": dim,
+        "stale_type": stale_type,
+        "query": "Do I still live in Seattle?",
+        "answer_raw": "The user lives in Boston.",
+        "judge_raw": "CORRECT" if correct else "INCORRECT",
+        "judge_correct": correct,
+        "stale_leak": stale_leak,
+        "retrieved": [],
     }

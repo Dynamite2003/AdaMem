@@ -170,6 +170,21 @@ extraction on those true state cases.
   - Interpretation: when real answer/judge providers are available, the same
     table command can produce paper-ready end-to-end answer accuracy tables
     from `.generation.records.jsonl` or `.generation.experiment.json`.
+- Extended `adamem.tables` to auto-detect STALE LLM-judge raw outputs:
+  - Records with `judge_correct` now produce overall `correct` / `accuracy`
+    and stale-leak tables.
+  - Default grouped tables for STALE are `By dim` and `By stale_type`.
+  - This makes STALE's primary paper columns reproducible from
+    `--experiment-output` JSON without hand-parsing `stale_report`.
+- Ran a mock STALE judge table smoke:
+  `PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --baselines semantic_only --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output /tmp/adamem_stale_mock_judge_experiment.json`
+  then
+  `PYTHONPATH=src python -m adamem.tables /tmp/adamem_stale_mock_judge_experiment.json --title "STALE Mock Judge Tables" --output /tmp/adamem_stale_mock_judge_tables.md`
+  - Result: table reported overall `3/3`, `By dim` rows for `1`, `2`, `3`,
+    and `By stale_type` row for `T1`.
+  - Interpretation: mock providers validate the STALE table workflow only;
+    real method claims still require real answer/judge models and robustness
+    checks.
 
 ## Completed Work
 
