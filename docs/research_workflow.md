@@ -258,6 +258,8 @@ Current API-free state-aware baselines:
   `unknown_current` slot when new evidence invalidates an old value without
   providing a replacement. This prevents the memory layer from continuing to
   authorize stale values or hallucinating a new current value.
+  Current deterministic coverage includes location, resource status,
+  workflow/runbook rules, and runtime/tool status.
   JSONL diagnostics report unknown-current records, corrections, and resolved
   invalidated values separately from unresolved stale evidence.
 - `semantic_state_propagation_adjudication`: semantic state adjudication plus

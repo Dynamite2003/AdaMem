@@ -527,6 +527,59 @@ def test_state_unknown_current_can_be_disabled_for_ablation() -> None:
     assert all(item.metadata.get("state_status") != "unknown_current" for item in states)
 
 
+def test_state_unknown_current_handles_resource_workflow_and_runtime_slots() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+    mem.observe("My passport is expired.")
+    mem.observe("My passport is no longer expired.")
+    mem.observe("For checkout deploys, the rollback rule is manual approval.")
+    mem.observe("For checkout deploys, the rollback rule is no longer manual approval.")
+    mem.observe("The staging build runner is offline.")
+    mem.observe("The staging build runner is no longer offline.")
+
+    active_unknown = {
+        item.metadata["state_slot"]: item
+        for item in mem.store.all()
+        if item.kind == "state"
+        and item.active
+        and item.metadata.get("state_status") == "unknown_current"
+    }
+
+    assert active_unknown["resource.passport.status"].metadata["invalidated_state_value"] == "expired"
+    assert active_unknown["workflow.checkout_deploys.rollback"].metadata["invalidated_state_value"] == "manual approval"
+    assert active_unknown["runtime.staging_build_runner.status"].metadata["invalidated_state_value"] == "offline"
+
+    passport = mem.retrieve("Is my passport expired?", top_k=1)
+    workflow = mem.retrieve(
+        "Using the old manual approval runbook, what rollback procedure applies to checkout deploys?",
+        top_k=1,
+    )
+    runtime = mem.retrieve("Is the staging build runner offline?", top_k=1)
+
+    assert passport[0].item.kind == "state_correction"
+    assert passport[0].item.metadata["current_value"] == "unknown-current"
+    assert workflow[0].item.kind == "state_correction"
+    assert workflow[0].item.metadata["stale_value"] == "manual approval"
+    assert runtime[0].item.kind == "state_correction"
+    assert runtime[0].item.metadata["stale_value"] == "offline"
+
+
 def test_state_readout_supports_implicit_policy_adaptation_query() -> None:
     without_readout = _state_isolation_memory(use_state_readout=False)
     with_readout = _state_isolation_memory(use_state_readout=True)

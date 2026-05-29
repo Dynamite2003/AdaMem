@@ -281,6 +281,21 @@ RESOURCE_STATUS_PATTERNS = [
     ),
 ]
 
+RESOURCE_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(
+        r"\b(?:my\s+|the\s+)?(?P<resource>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?:is|was)\s+no\s+longer\s+"
+        r"(?P<status>active|available|blocked|disabled|enabled|expired|found|lost|renewed|revoked|rotated|unavailable|valid)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:my\s+|the\s+)?(?P<resource>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?:is|was)\s+not\s+"
+        r"(?P<status>active|available|blocked|disabled|enabled|expired|found|lost|renewed|revoked|rotated|unavailable|valid)\s+anymore\b",
+        re.I,
+    ),
+]
+
 RESOURCE_QUERY_TERMS = {
     "access",
     "account",
@@ -327,6 +342,22 @@ WORKFLOW_RULE_PATTERNS = [
     ),
 ]
 
+WORKFLOW_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(
+        r"\b(?:for|in)\s+(?P<workflow>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?),?\s+"
+        r"(?:the\s+)?(?P<rule>[A-Za-z][A-Za-z0-9 _/'-]{2,40}?)\s+"
+        r"(?:rule|procedure|policy|runbook)\s+is\s+no\s+longer\s+"
+        r"(?P<value>[A-Za-z0-9 _/'-]{2,80})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?P<workflow>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?:workflow|runbook|procedure)\s+(?P<rule>rollback|deploy|release|incident|backup)\s+"
+        r"(?:rule|step|policy)\s+is\s+not\s+(?P<value>[A-Za-z0-9 _/'-]{2,80})\s+anymore",
+        re.I,
+    ),
+]
+
 WORKFLOW_QUERY_TERMS = {
     "backup",
     "deploy",
@@ -350,6 +381,21 @@ RUNTIME_STATUS_PATTERNS = [
     re.compile(
         r"\b(?:the\s+)?(?P<system>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
         r"has\s+been\s+(?P<status>degraded|fixed|restored|unblocked)\b",
+        re.I,
+    ),
+]
+
+RUNTIME_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(
+        r"\b(?:the\s+)?(?P<system>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?:is|was)\s+no\s+longer\s+"
+        r"(?P<status>available|blocked|degraded|down|fixed|healthy|offline|online|unavailable|up)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?P<system>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?:is|was)\s+not\s+"
+        r"(?P<status>available|blocked|degraded|down|fixed|healthy|offline|online|unavailable|up)\s+anymore\b",
         re.I,
     ),
 ]
@@ -439,14 +485,41 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
     if resource_status:
         resource, status = resource_status
         patches.append(StatePatch(slot=f"resource.{resource}.status", value=status, evidence=content))
-    workflow_rule = _extract_workflow_rule(content)
-    if workflow_rule:
+    elif resource_unknown_current := _extract_resource_unknown_current(content):
+        resource, status = resource_unknown_current
+        patches.append(StatePatch(
+            slot=f"resource.{resource}.status",
+            value="unknown-current",
+            evidence=content,
+            status="unknown_current",
+            invalidates_value=status,
+        ))
+    workflow_unknown_current = _extract_workflow_unknown_current(content)
+    if workflow_unknown_current:
+        workflow, rule, value = workflow_unknown_current
+        patches.append(StatePatch(
+            slot=f"workflow.{workflow}.{rule}",
+            value="unknown-current",
+            evidence=content,
+            status="unknown_current",
+            invalidates_value=value,
+        ))
+    elif workflow_rule := _extract_workflow_rule(content):
         workflow, rule, value = workflow_rule
         patches.append(StatePatch(slot=f"workflow.{workflow}.{rule}", value=value, evidence=content))
     runtime_status = _extract_runtime_status(content)
     if runtime_status:
         system, status = runtime_status
         patches.append(StatePatch(slot=f"runtime.{system}.status", value=status, evidence=content))
+    elif runtime_unknown_current := _extract_runtime_unknown_current(content):
+        system, status = runtime_unknown_current
+        patches.append(StatePatch(
+            slot=f"runtime.{system}.status",
+            value="unknown-current",
+            evidence=content,
+            status="unknown_current",
+            invalidates_value=status,
+        ))
     return patches
 
 
@@ -723,6 +796,18 @@ def _extract_resource_status(content: str) -> tuple[str, str] | None:
     return None
 
 
+def _extract_resource_unknown_current(content: str) -> tuple[str, str] | None:
+    for pattern in RESOURCE_UNKNOWN_CURRENT_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        resource = _clean_resource_name(match.group("resource"))
+        status = _normalize_resource_status(match.group("status"))
+        if resource and status and _looks_like_resource(resource):
+            return _slug(resource), status
+    return None
+
+
 def _extract_workflow_rule(content: str) -> tuple[str, str, str] | None:
     for pattern in WORKFLOW_RULE_PATTERNS:
         match = pattern.search(content)
@@ -736,8 +821,33 @@ def _extract_workflow_rule(content: str) -> tuple[str, str, str] | None:
     return None
 
 
+def _extract_workflow_unknown_current(content: str) -> tuple[str, str, str] | None:
+    for pattern in WORKFLOW_UNKNOWN_CURRENT_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        workflow = _slug(_clean_state_phrase(match.group("workflow")))
+        rule = _slug(_clean_state_phrase(match.group("rule")))
+        value = _clean_state_phrase(match.group("value"))
+        if workflow and rule and value:
+            return workflow, rule, value
+    return None
+
+
 def _extract_runtime_status(content: str) -> tuple[str, str] | None:
     for pattern in RUNTIME_STATUS_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        system = _clean_state_phrase(match.group("system"))
+        status = _normalize_runtime_status(match.group("status"))
+        if system and status and _looks_like_runtime(system):
+            return _slug(system), status
+    return None
+
+
+def _extract_runtime_unknown_current(content: str) -> tuple[str, str] | None:
+    for pattern in RUNTIME_UNKNOWN_CURRENT_PATTERNS:
         match = pattern.search(content)
         if not match:
             continue

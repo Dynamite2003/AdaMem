@@ -74,6 +74,8 @@ Current implementation:
 - Unknown-current records keep `invalidated_state_value`, so Premise
   Resistance queries can still be corrected when they presuppose the invalid
   old value.
+- The deterministic extractor covers unknown-current invalidations for
+  location, resource status, workflow/runbook rules, and runtime/tool status.
 - JSONL reports now separate unknown-current records, unknown-current
   corrections, resolved invalidated-value mentions, and unresolved invalidated
   values. This avoids counting explicitly invalidated old values as ordinary
@@ -84,8 +86,8 @@ Required next evidence:
 - Trace export showing which observation created the active state.
 - Tests for state replacement under paraphrases and unrelated updates.
 - Error analysis separating extraction failure from adjudication failure.
-- Extend unknown-current extraction beyond location to resource, workflow,
-  runtime, relationship, and preference slots.
+- Extend unknown-current extraction to relationship, role, and preference
+  slots once a public state-sensitive transfer subset needs them.
 
 ### 3. Slot-Aware Query Routing
 

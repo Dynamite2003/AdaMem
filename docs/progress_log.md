@@ -1880,8 +1880,8 @@ to a paper-facing claim and evaluation gate.
 
 - Added `benchmarks/unknown_current_state_transfer.jsonl` as a deterministic
   local fixture for invalidated-without-replacement state:
-  - Old state: user moved to Seattle.
-  - New evidence: user no longer lives in Seattle.
+  - Old/new states now cover location, resource status, workflow/runbook rules,
+    and runtime/tool status.
   - Queries cover State Resolution and Premise Resistance.
 - Hardened JSONL benchmark accounting:
   - Unknown-current state traces are treated as resolved invalidated-value
@@ -1894,12 +1894,13 @@ to a paper-facing claim and evaluation gate.
     `unknown_current_correction_rate`.
 - Fixture run:
   `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/unknown_current_state_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_premise_correction --benchmark-report-output /tmp/unknown_current_report.md --experiment-output /tmp/unknown_current_experiment.json`
-  - `semantic_only`: `0/2`
-  - `semantic_state_adjudication`: `2/2`
-  - `semantic_state_premise_correction`: `2/2`
-  - Unknown-current section: adjudication exposed `2` unknown-current records;
-    premise-correction exposed `1` unknown-current state record and `1`
-    unknown-current correction; both resolved `2` invalidated-value mentions
+  - `semantic_only`: `0/5`
+  - `semantic_state_adjudication`: `5/5`
+  - `semantic_state_premise_correction`: `5/5`
+  - Unknown-current section: adjudication exposed `5` unknown-current records;
+    premise-correction exposed `1` unknown-current state record and `4`
+    unknown-current corrections; both resolved `5` invalidated-value mentions
     with `0` unresolved invalidated values.
 - Added test coverage:
   - `test_unknown_current_transfer_fixture_favors_state_authority`
+  - `test_state_unknown_current_handles_resource_workflow_and_runtime_slots`
