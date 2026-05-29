@@ -56,6 +56,33 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 final checkpoint
+
+- Today focused on API-free paper-track scaffolding rather than new API-backed
+  benchmark claims.
+- Current committed state includes reporting support for:
+  - claim matrix bundles
+  - paper next-step checklists
+  - study-level model coverage
+  - directory-level paper readiness summaries
+  - benchmark coverage audits for STALE plus transfer benchmarks
+- Latest validation before this checkpoint:
+  - `PYTHONPATH=src python -m pytest -q` -> `159 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+- Current claim boundary:
+  - The project has a stronger reproducibility and reporting workflow.
+  - It still does not have real API-backed STALE answer/judge results.
+  - It still does not support SOTA or answer-accuracy claims.
+- Suggested first task for 2026-05-31:
+  - Add a method/ablation coverage audit to batch reporting so a result
+    directory can show whether it covers raw retrieval baselines, mainstream
+    memory approximations, the proposed state-aware method, and named
+    mechanism ablations.
+- Suggested next evaluation task after API keys are available:
+  - Run STALE answer generation and judging with documented answer/judge
+    models, prompts, top-k, provider settings, and raw-output caching.
+
 ### 2026-05-30 end-of-day
 
 - Current committed code has a reproducible public AMA pilot, bounded full
