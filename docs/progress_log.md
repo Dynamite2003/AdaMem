@@ -3155,3 +3155,24 @@ to a paper-facing claim and evaluation gate.
   - CLI smoke resume confirmed all command records include
     `plan_fingerprint`, share the same fingerprint, and append a
     `skipped_completed` record only for the matching plan.
+
+### 2026-05-30 resume append audit counts
+
+- Added run-summary log accounting:
+  - `prior_log_record_count`
+  - `appended_record_count`
+  - `final_log_record_count`
+- Added the same counts to run-summary Markdown.
+- Purpose:
+  - Make resumable API-backed runs auditable without manually counting JSONL
+    lines.
+  - Separate inherited prior-run records from records produced by the current
+    invocation.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `30 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `58 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `190 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke resume summary reported prior `1`, appended `1`, final `2`,
+    and the Markdown summary included the same count labels.

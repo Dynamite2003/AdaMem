@@ -394,6 +394,9 @@ def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> Non
     assert summary["recorded_plan_fingerprint"] == plan["plan_fingerprint"]
     assert summary["settings_provenance"] == {}
     assert summary["selected_command_count"] == 1
+    assert summary["prior_log_record_count"] == 0
+    assert summary["appended_record_count"] == 1
+    assert summary["final_log_record_count"] == 1
     assert summary["completed_command_count"] == 0
     assert records[0]["status"] == "dry_run"
     assert records[0]["plan_fingerprint"] == plan["plan_fingerprint"]
@@ -482,6 +485,9 @@ def test_run_study_plan_resume_skips_prior_completed_command(tmp_path: Path) -> 
     assert first["completed_command_count"] == 1
     assert second["completed_command_count"] == 0
     assert second["skipped_completed_count"] == 1
+    assert second["prior_log_record_count"] == 1
+    assert second["appended_record_count"] == 1
+    assert second["final_log_record_count"] == 2
     assert second["records"][0]["status"] == "skipped_completed"
     assert second["records"][0]["plan_fingerprint"] == first["plan_fingerprint"]
     assert records[-1]["status"] == "skipped_completed"
@@ -733,7 +739,11 @@ def test_study_plan_cli_can_resume_saved_plan_run(tmp_path: Path) -> None:
     summary_md = (output_dir / "paper_study_run.summary.md").read_text(encoding="utf-8")
     assert summary["resume"] is True
     assert summary["skipped_completed_count"] == 1
+    assert summary["prior_log_record_count"] == 1
+    assert summary["appended_record_count"] == 1
+    assert summary["final_log_record_count"] == 2
     assert "Skipped completed commands" in summary_md
+    assert "Prior log records" in summary_md
     assert output_path.read_text(encoding="utf-8") == "1"
 
 

@@ -138,7 +138,9 @@ Outputs:
   completing expensive API commands, rerun with `--resume-run` to append to the
   same run log and skip only prior commands from the same plan fingerprint
   whose name, stage, shell command, `status=completed`, and declared outputs
-  are all clean.
+  are all clean. Resume summaries report prior, appended, and final log record
+  counts so partial-run audits can distinguish old records from the current
+  invocation.
 - Saved or manually edited plans can be loaded with
   `--plan path/to/paper_study_plan.json`, then validated or run without
   regenerating the command matrix from CLI defaults.

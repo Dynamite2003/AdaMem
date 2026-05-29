@@ -572,6 +572,7 @@ def run_study_plan(
     output_dir = Path(str(plan.get("output_dir") or "."))
     log = Path(log_path) if log_path is not None else output_dir / "paper_study_run.records.jsonl"
     log.parent.mkdir(parents=True, exist_ok=True)
+    prior_log_record_count = _count_jsonl_records(log) if log.exists() else 0
     current_fingerprint = plan_fingerprint(plan)
     run_metadata = {
         "plan_fingerprint": current_fingerprint,
@@ -617,6 +618,13 @@ def run_study_plan(
         "log_path": str(log),
         "selected_stage_filter": sorted(allowed_stages),
         "selected_command_count": len(selected),
+        "prior_log_record_count": prior_log_record_count if resume else 0,
+        "appended_record_count": len(records),
+        "final_log_record_count": (
+            prior_log_record_count + len(records)
+            if resume
+            else len(records)
+        ),
         "completed_command_count": sum(1 for record in records if record["status"] == "completed"),
         "skipped_completed_count": sum(1 for record in records if record["status"] == "skipped_completed"),
         "failed_command_count": sum(1 for record in records if record["status"] == "failed"),
@@ -636,6 +644,9 @@ def study_run_summary_markdown(summary: dict[str, Any]) -> str:
     lines.append(f"Dry run: `{bool(summary.get('dry_run'))}`")
     lines.append(f"Resume: `{bool(summary.get('resume'))}`")
     lines.append(f"Selected commands: `{int(summary.get('selected_command_count') or 0)}`")
+    lines.append(f"Prior log records: `{int(summary.get('prior_log_record_count') or 0)}`")
+    lines.append(f"Appended records: `{int(summary.get('appended_record_count') or 0)}`")
+    lines.append(f"Final log records: `{int(summary.get('final_log_record_count') or 0)}`")
     lines.append(f"Completed commands: `{int(summary.get('completed_command_count') or 0)}`")
     lines.append(f"Skipped completed commands: `{int(summary.get('skipped_completed_count') or 0)}`")
     lines.append(f"Failed commands: `{int(summary.get('failed_command_count') or 0)}`")
@@ -1358,6 +1369,17 @@ def _completed_resume_keys(
             if key is not None:
                 keys.add(key)
     return keys
+
+
+def _count_jsonl_records(path: Path) -> int:
+    if not path.exists():
+        return 0
+    count = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                count += 1
+    return count
 
 
 def _command_resume_key(command: dict[str, Any]) -> tuple[str, str, str]:
