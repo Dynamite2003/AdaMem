@@ -205,6 +205,19 @@ extraction on those true state cases.
   - `PYTHONPATH=src python -m adamem.claims /tmp/adamem_stale_mock_judge_experiment.json`
     reported `stale_judge_plumbing`, blocked `stale_answer_accuracy` because
     providers were mock, and blocked `sota`.
+- Added `src/adamem/reporting.py` and the `adamem-report` console script:
+  - Takes one experiment JSON and writes a report bundle containing paper
+    tables, claim-audit Markdown/JSON, and a manifest.
+  - Uses `adamem.tables` for table generation and `adamem.claims` for claim
+    boundary checks.
+  - Keeps table generation and claim audit in one reproducible post-run step.
+- Ran a report-bundle smoke:
+  `PYTHONPATH=src python -m adamem.reporting results/ama_public_20_full/ama_public_20.experiment.json --output-dir /tmp/adamem_report_bundle_smoke --group-fields question_type --title "AMA Public 20 Bundle" --json`
+  - Result: generated `/tmp/adamem_report_bundle_smoke/ama_public_20.experiment.paper_tables.md`,
+    `/tmp/adamem_report_bundle_smoke/ama_public_20.experiment.claim_audit.md`,
+    JSON counterparts, and a manifest.
+  - The bundle table reproduced the 20-episode AMA retrieval/answerability
+    diagnostics, while the claim audit blocked answer-accuracy and SOTA claims.
 
 ## Completed Work
 

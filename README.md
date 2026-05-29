@@ -363,6 +363,15 @@ PYTHONPATH=src python -m adamem.claims /tmp/adamem_stale_mock_judge_experiment.j
 The audit reports supported claims, blocked claims, warnings, provider settings,
 ground-truth runtime-use notes, and the number of embedded or sidecar records.
 
+To create a full report bundle from one experiment JSON:
+
+```bash
+PYTHONPATH=src python -m adamem.reporting results/ama_public_20_full/ama_public_20.experiment.json --output-dir /tmp/adamem_report_bundle_smoke --group-fields question_type --title "AMA Public 20 Bundle"
+```
+
+The bundle writes paper tables, claim-audit Markdown/JSON, and a manifest that
+links all generated artifacts.
+
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes
 retrieval of the matching trajectory steps by metadata instead of relying only

@@ -528,6 +528,9 @@ Completed API-free foundations:
   It reports which paper claims an artifact can support, which claims are
   blocked, ground-truth runtime-use notes, provider settings, and embedded or
   sidecar record counts.
+- `adamem.reporting`, a report-bundle command that combines `adamem.tables`
+  and `adamem.claims` for one experiment JSON and writes paper tables, claim
+  audit files, and a manifest.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so
