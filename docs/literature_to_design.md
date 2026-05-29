@@ -318,6 +318,8 @@ Paper tables should eventually include at least:
 - Temporal knowledge graph style baseline inspired by Zep.
 - Production extraction/consolidation baseline inspired by Mem0.
 - State-aware AdaMem ablations.
+- LLM state-extractor ablation using the same state-authority/readout layer,
+  so extraction quality can be separated from the memory-management mechanism.
 - Oracle/debug state extractor upper bound, clearly labeled as non-runtime.
 
 Official implementations should be preferred when licensing and runtime cost are

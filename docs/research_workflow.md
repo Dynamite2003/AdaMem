@@ -250,6 +250,9 @@ API-free implementation options:
 - Rule-based extractor for controlled tests and development.
 - Metadata-backed state records for benchmark converters.
 - Pluggable extractor interface with deterministic mock implementation.
+- LLM JSON extractor adapter with injected client. Use mock clients or
+  metadata-backed patch payloads for CI; use real providers only in explicitly
+  named extractor ablations with provider/model/prompt settings recorded.
 - Oracle extractor only for upper-bound/debug experiments, clearly separated
   from the proposed method.
 
@@ -317,7 +320,11 @@ Current deterministic state slots:
 
 The extractor is pluggable through `AdaMem(..., state_extractor=...)`. Use the
 deterministic extractor for API-free mechanism tests, and introduce LLM or
-domain-specific extractors only as separately named baselines.
+domain-specific extractors only as separately named baselines. The default
+`AdaMemConfig.state_extractor_name` is `deterministic`; `metadata_mock_llm`
+exists only for deterministic CI fixtures, while real LLM extraction should
+inject `LLMStateExtractor(client)` so the answer/judge providers remain
+separate from the memory write path.
 
 Derived `state` memories are hidden from ordinary direct retrieval by default
 when `use_state_readout_authorization=True`. They can still enter context
@@ -704,8 +711,9 @@ Next API-free work:
    availability, and task status.
 7. Add faithful local baselines for mainstream memory systems after reviewing
    their code and licenses.
-8. Add a documented LLM extractor baseline using the same `state_extractor`
-   interface, with a deterministic mock path for tests.
+8. Wire the documented LLM extractor adapter into API-enabled pilot commands
+   as a separately named extractor ablation with provider/model/prompt
+   settings recorded in experiment JSON.
 9. Keep `docs/progress_log.md` updated after each meaningful design decision,
    experiment, implementation change, or scope change.
 

@@ -11,7 +11,7 @@ from adamem.config import AdaMemConfig
 from adamem.schema import MemoryItem, MemoryResult, utc_now
 from adamem.state import (
     StateExtractor,
-    extract_state_patches,
+    build_state_extractor,
     query_relevant_state_slots,
     state_slot_depends_on,
     state_slot_matches_query,
@@ -35,7 +35,7 @@ class AdaMem:
         self.store = store or InMemoryStore()
         self.config = config or AdaMemConfig()
         self.embedder = embedder or hashed_bow
-        self.state_extractor = state_extractor or extract_state_patches
+        self.state_extractor = state_extractor or build_state_extractor(self.config.state_extractor_name)
 
     def observe(
         self,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from adamem import AdaMem, AdaMemConfig, StatePatch
+from adamem import AdaMem, AdaMemConfig, LLMStateExtractor, StatePatch
+from adamem.llm import MockLLMClient
 from adamem.bench import default_ablation_configs
 from adamem.state import query_relevant_state_slots
 
@@ -1047,6 +1048,55 @@ def test_custom_state_extractor_can_inject_domain_state() -> None:
     assert len(state_items) == 1
     assert state_items[0].metadata["state_slot"] == "workspace"
     assert state_items[0].metadata["state_value"] == "/tmp/adamem"
+
+
+def test_llm_state_extractor_parses_client_json_without_using_labels() -> None:
+    client = MockLLMClient(
+        """
+        ```json
+        {"patches":[{"slot":"runtime.staging_runner.status","value":"online","status":"active"}]}
+        ```
+        """
+    )
+    extractor = LLMStateExtractor(client)
+
+    patches = extractor("The staging runner came back online.", metadata={})
+
+    assert len(patches) == 1
+    assert patches[0] == StatePatch(
+        slot="runtime.staging_runner.status",
+        value="online",
+        evidence="The staging runner came back online.",
+    )
+    assert "durable current-state updates" in client.calls[0]["system"]
+    assert "The staging runner came back online." in client.calls[0]["prompt"]
+
+
+def test_metadata_mock_llm_state_extractor_is_configurable_for_ci() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_state_memory=True,
+            use_state_readout=True,
+            state_extractor_name="metadata_mock_llm",
+        )
+    )
+
+    mem.observe(
+        "Runtime update recorded in structured telemetry.",
+        metadata={
+            "mock_state_patches": [
+                {"slot": "runtime.staging_runner.status", "value": "online"},
+            ]
+        },
+    )
+
+    state_items = [item for item in mem.store.all() if item.kind == "state"]
+    results = mem.retrieve("Is the staging runner online?", top_k=2)
+
+    assert len(state_items) == 1
+    assert state_items[0].metadata["state_slot"] == "runtime.staging_runner.status"
+    assert state_items[0].metadata["state_value"] == "online"
+    assert any(result.item.kind == "state" and "online" in result.item.content for result in results)
 
 
 def test_state_dependency_propagation_invalidates_local_state_on_location_change() -> None:

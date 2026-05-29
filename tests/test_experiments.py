@@ -49,6 +49,7 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
     assert configs["semantic_state_premise_correction"].use_state_premise_correction is True
     assert configs["state_readout"].use_state_memory is True
     assert configs["state_readout"].use_state_readout is True
+    assert configs["state_readout"].state_extractor_name == "deterministic"
 
     report = baseline_report(specs)
     assert "semantic_only" in report

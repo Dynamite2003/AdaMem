@@ -44,6 +44,7 @@ class AdaMemConfig:
     use_salient_memory_only: bool = False
     use_salient_memory_readout: bool = False
     use_trajectory_step_readout: bool = False
+    state_extractor_name: str = "deterministic"
 
     semantic_weight: float = 0.58
     temporal_weight: float = 0.08

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import re
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping, Protocol
 
 
 @dataclass(slots=True, frozen=True)
@@ -36,6 +37,171 @@ class StatePatch:
 
 
 StateExtractor = Callable[[str, Mapping[str, object] | None], list[StatePatch]]
+
+
+class LLMClientLike(Protocol):
+    def complete(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        max_tokens: int = 256,
+        temperature: float = 0.0,
+    ) -> str:
+        ...
+
+
+STATE_EXTRACTOR_SYSTEM = (
+    "Extract only durable current-state updates from the observation. "
+    "Return strict JSON with a top-level patches array. Each patch must have "
+    "slot, value, and optional status, subject, invalidates_value. Use "
+    "status unknown_current only when the observation invalidates an old value "
+    "without giving a replacement. Do not infer unsupported facts."
+)
+
+STATE_EXTRACTOR_TEMPLATE = """\
+Observation:
+{content}
+
+Return JSON only:
+{{"patches":[{{"slot":"location","value":"Boston","status":"active","subject":"user"}}]}}
+"""
+
+
+class LLMStateExtractor:
+    """LLM-backed state extractor with deterministic parsing.
+
+    The client is injected so tests can use `MockLLMClient` and paper runs can
+    record the provider/model separately from AdaMem's state-management logic.
+    """
+
+    def __init__(
+        self,
+        client: LLMClientLike,
+        *,
+        max_tokens: int = 512,
+        temperature: float = 0.0,
+    ) -> None:
+        self.client = client
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+
+    def __call__(
+        self,
+        content: str,
+        metadata: Mapping[str, object] | None = None,
+    ) -> list[StatePatch]:
+        if metadata and metadata.get("derived"):
+            return []
+        if _speaker(content) == "assistant":
+            return []
+        prompt = STATE_EXTRACTOR_TEMPLATE.format(content=content)
+        raw = self.client.complete(
+            prompt,
+            system=STATE_EXTRACTOR_SYSTEM,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+        )
+        return parse_state_patch_payload(raw, evidence=content)
+
+
+def build_state_extractor(name: str) -> StateExtractor:
+    normalized = name.strip().lower().replace("-", "_")
+    if normalized in {"", "deterministic", "rules"}:
+        return extract_state_patches
+    if normalized in {"metadata_mock_llm", "mock_llm", "mock"}:
+        return metadata_mock_llm_state_extractor
+    if normalized in {"llm_json", "llm"}:
+        raise RuntimeError(
+            "state_extractor_name='llm_json' requires injecting LLMStateExtractor(client) into AdaMem"
+        )
+    raise ValueError(f"unknown state_extractor_name: {name}")
+
+
+def metadata_mock_llm_state_extractor(
+    content: str,
+    metadata: Mapping[str, object] | None = None,
+) -> list[StatePatch]:
+    """Deterministic mock path for LLM extractor experiments.
+
+    Test fixtures can put LLM-shaped JSON under `metadata["mock_state_patches"]`
+    without using benchmark answers or judge labels. Runtime code should use
+    `LLMStateExtractor` with a real client for API-backed extractor ablations.
+    """
+
+    if metadata and metadata.get("derived"):
+        return []
+    if _speaker(content) == "assistant":
+        return []
+    if not metadata:
+        return []
+    payload = metadata.get("mock_state_patches")
+    if payload is None:
+        return []
+    return parse_state_patch_payload({"patches": payload}, evidence=content)
+
+
+def parse_state_patch_payload(raw: str | Mapping[str, Any], *, evidence: str) -> list[StatePatch]:
+    payload = _coerce_json_payload(raw)
+    records = payload.get("patches") if isinstance(payload, dict) else None
+    if not isinstance(records, list):
+        return []
+    patches: list[StatePatch] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        slot = _clean_state_field(record.get("slot"))
+        value = _clean_state_field(record.get("value"))
+        if not slot or not value:
+            continue
+        status = _clean_state_field(record.get("status") or "active") or "active"
+        if status not in {"active", "unknown_current"}:
+            continue
+        subject = _clean_state_field(record.get("subject") or "user") or "user"
+        invalidates = (
+            _clean_state_field(record.get("invalidates_value"))
+            or _clean_state_field(record.get("invalidated_value"))
+            or None
+        )
+        patches.append(
+            StatePatch(
+                slot=slot,
+                value=value,
+                evidence=evidence,
+                subject=subject,
+                status=status,
+                invalidates_value=invalidates,
+            )
+        )
+    return patches
+
+
+def _coerce_json_payload(raw: str | Mapping[str, Any]) -> Mapping[str, Any]:
+    if isinstance(raw, Mapping):
+        return raw
+    text = _strip_json_fences(str(raw).strip())
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, Mapping) else {}
+
+
+def _strip_json_fences(text: str) -> str:
+    if not text.startswith("```"):
+        return text
+    lines = text.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _clean_state_field(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 STATE_DEPENDENCY_PREFIXES = {

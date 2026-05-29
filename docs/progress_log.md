@@ -2239,3 +2239,29 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py -q` -> `18 passed`
   - `PYTHONPATH=src python -m pytest -q` -> `147 passed`
   - `git diff --check` -> no issues
+
+### 2026-05-30 mockable LLM state extractor adapter
+
+- Added `LLMStateExtractor`, a client-injected JSON state extractor:
+  - Uses the existing provider-agnostic `complete()` client shape.
+  - Parses strict JSON or fenced JSON into `StatePatch` objects.
+  - Keeps runtime evidence tied to the original observation text.
+  - Skips derived memories and assistant messages like the deterministic
+    extractor.
+- Added `AdaMemConfig.state_extractor_name` and a small extractor factory:
+  - Default: `deterministic`.
+  - CI/mock option: `metadata_mock_llm`, which reads LLM-shaped patch payloads
+    from observation metadata without using answer labels or judge metadata.
+  - Real API path: inject `LLMStateExtractor(client)` explicitly so provider,
+    model, prompt, and cost settings can be recorded as an extractor ablation.
+- Purpose:
+  - Make future paper experiments separate extraction quality from AdaMem's
+    state-authority, adjudication, readout, and premise-correction mechanisms.
+  - Preserve deterministic local tests while preparing for API-backed LLM
+    extractor baselines.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py::test_llm_state_extractor_parses_client_json_without_using_labels tests/test_adamem.py::test_metadata_mock_llm_state_extractor_is_configurable_for_ci tests/test_experiments.py::test_baseline_registry_matches_default_ablation_configs -q` -> `3 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py tests/test_experiments.py tests/test_eval.py tests/test_pilot.py -q` -> `80 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `149 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
