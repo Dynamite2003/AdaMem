@@ -57,6 +57,8 @@ DEFAULT_JUDGE_MODELS = [
     "<judge_provider_a>:<judge_model_a>",
     "<judge_provider_b>:<judge_model_b>",
 ]
+DEFAULT_STALE_SOURCE = "data/T1_T2_400_FULL.json"
+DEFAULT_TRANSFER_SOURCE = "data/longmemeval_s_cleaned.json"
 
 
 @dataclass(slots=True, frozen=True)
@@ -88,6 +90,8 @@ def build_paper_study_plan(
     output_dir: str | Path,
     stale_dataset: str | Path = "benchmarks/stale.adamem.jsonl",
     transfer_dataset: str | Path = "benchmarks/longmemeval_s.adamem.jsonl",
+    stale_source: str | Path | None = DEFAULT_STALE_SOURCE,
+    transfer_source: str | Path | None = DEFAULT_TRANSFER_SOURCE,
     ama_output_source: str | Path | None = "results/ama_public_20_full/ama_public_20.raw.jsonl",
     stale_types: Iterable[str] = ("T1", "T2"),
     limit_per_stale_type: int = 50,
@@ -110,6 +114,19 @@ def build_paper_study_plan(
         raise ValueError("at least one judge model is required")
 
     commands: list[PlannedCommand] = []
+    if stale_source is not None:
+        commands.append(_stale_conversion_command(
+            stale_source,
+            stale_dataset=stale_dataset,
+            stale_types=stale_types,
+            top_k=top_k,
+        ))
+    if transfer_source is not None:
+        commands.append(_transfer_conversion_command(
+            transfer_source,
+            transfer_dataset=transfer_dataset,
+            top_k=top_k,
+        ))
     commands.append(_stale_diagnostic_command(
         output,
         stale_dataset=stale_dataset,
@@ -177,6 +194,10 @@ def build_paper_study_plan(
             "transfer_long_memory": str(transfer_dataset),
             "transfer_ama_source": str(ama_output_source) if ama_output_source is not None else None,
         },
+        "data_sources": {
+            "primary_stale": str(stale_source) if stale_source is not None else None,
+            "transfer_long_memory": str(transfer_source) if transfer_source is not None else None,
+        },
         "split": {
             "stale_types": list(stale_types),
             "limit_per_stale_type": limit_per_stale_type,
@@ -238,6 +259,8 @@ def validate_paper_study_plan(
 ) -> dict[str, Any]:
     root_path = Path(root) if root is not None else Path.cwd()
     datasets = plan.get("datasets") or {}
+    data_sources = plan.get("data_sources") or {}
+    prep_sources = _prep_sources_by_dataset(plan)
     dataset_checks: dict[str, dict[str, Any]] = {}
     missing_datasets: list[str] = []
     for name, value in datasets.items():
@@ -251,13 +274,43 @@ def validate_paper_study_plan(
         path = Path(str(value))
         resolved = path if path.is_absolute() else root_path / path
         exists = resolved.exists()
+        prep_source = prep_sources.get(str(value))
+        source_exists = None
+        if prep_source:
+            source_path = Path(prep_source)
+            resolved_source = source_path if source_path.is_absolute() else root_path / source_path
+            source_exists = resolved_source.exists()
         dataset_checks[name] = {
             "path": str(value),
             "required": True,
             "exists": exists,
+            "prepared_by_plan": bool(prep_source),
+            "prep_source": prep_source,
+            "prep_source_exists": source_exists,
         }
-        if not exists:
+        if not exists and not (prep_source and source_exists):
             missing_datasets.append(name)
+
+    source_checks: dict[str, dict[str, Any]] = {}
+    missing_sources: list[str] = []
+    for name, value in data_sources.items():
+        if value in {None, ""}:
+            source_checks[name] = {
+                "path": value,
+                "required": False,
+                "exists": None,
+            }
+            continue
+        path = Path(str(value))
+        resolved = path if path.is_absolute() else root_path / path
+        exists = resolved.exists()
+        source_checks[name] = {
+            "path": str(value),
+            "required": True,
+            "exists": exists,
+        }
+        if not exists and name in missing_datasets:
+            missing_sources.append(name)
 
     requirements = plan.get("model_requirements") or {}
     answer_models = list(requirements.get("answer_models") or [])
@@ -309,6 +362,8 @@ def validate_paper_study_plan(
         "missing_requirements": missing_requirements,
         "dataset_checks": dataset_checks,
         "missing_datasets": missing_datasets,
+        "source_checks": source_checks,
+        "missing_sources": missing_sources,
         "placeholder_models": placeholders,
         "answer_model_count": len(set(answer_models)),
         "judge_model_count": len(set(judge_models)),
@@ -342,7 +397,21 @@ def paper_study_validation_markdown(validation: dict[str, Any]) -> str:
     for name, check in (validation.get("dataset_checks") or {}).items():
         exists = check.get("exists")
         state = "optional" if exists is None else str(bool(exists))
-        lines.append(f"- `{name}`: `{check.get('path')}` exists `{state}`")
+        prep = ""
+        if check.get("prepared_by_plan"):
+            prep = (
+                f", prepared by `{check.get('prep_source')}` "
+                f"source exists `{check.get('prep_source_exists')}`"
+            )
+        lines.append(f"- `{name}`: `{check.get('path')}` exists `{state}`{prep}")
+    source_checks = validation.get("source_checks") or {}
+    if source_checks:
+        lines.append("")
+        lines.append("## Data Sources")
+        for name, check in source_checks.items():
+            exists = check.get("exists")
+            state = "optional" if exists is None else str(bool(exists))
+            lines.append(f"- `{name}`: `{check.get('path')}` exists `{state}`")
     placeholders = validation.get("placeholder_models") or []
     if placeholders:
         lines.append("")
@@ -454,6 +523,63 @@ def parse_model_spec(value: str) -> ModelSpec:
     if not provider or not model:
         raise ValueError(f"model spec must be provider:model, got {value!r}")
     return ModelSpec(provider=provider, model=model)
+
+
+def _stale_conversion_command(
+    source: str | Path,
+    *,
+    stale_dataset: str | Path,
+    stale_types: tuple[str, ...],
+    top_k: int,
+) -> PlannedCommand:
+    command = [
+        "python",
+        "-m",
+        "adamem.convert",
+        "stale",
+        str(source),
+        str(stale_dataset),
+        "--top-k",
+        str(top_k),
+        "--types",
+        *stale_types,
+    ]
+    return PlannedCommand(
+        name="prepare_primary_stale_dataset",
+        stage="data_prep",
+        purpose="Convert the raw STALE file into AdaMem JSONL for primary stale-memory experiments.",
+        claim_boundary="data preparation only; no method evidence",
+        command=command,
+        outputs={"source": str(source), "dataset": str(stale_dataset)},
+    )
+
+
+def _transfer_conversion_command(
+    source: str | Path,
+    *,
+    transfer_dataset: str | Path,
+    top_k: int,
+) -> PlannedCommand:
+    command = [
+        "python",
+        "-m",
+        "adamem.convert",
+        "longmemeval",
+        str(source),
+        str(transfer_dataset),
+        "--expected",
+        "evidence",
+        "--top-k",
+        str(top_k),
+    ]
+    return PlannedCommand(
+        name="prepare_longmemeval_transfer_dataset",
+        stage="data_prep",
+        purpose="Convert LongMemEval-S source data into AdaMem JSONL for transfer diagnostics.",
+        claim_boundary="data preparation only; transfer evidence comes from later eval records",
+        command=command,
+        outputs={"source": str(source), "dataset": str(transfer_dataset)},
+    )
 
 
 def _stale_diagnostic_command(
@@ -723,6 +849,19 @@ def _baselines_from_command(command: list[str]) -> list[str]:
     return names
 
 
+def _prep_sources_by_dataset(plan: dict[str, Any]) -> dict[str, str]:
+    sources: dict[str, str] = {}
+    for command in plan.get("commands") or []:
+        if command.get("stage") != "data_prep":
+            continue
+        outputs = command.get("outputs") or {}
+        dataset = outputs.get("dataset")
+        source = outputs.get("source")
+        if dataset and source:
+            sources[str(dataset)] = str(source)
+    return sources
+
+
 def _safe_label(value: str) -> str:
     label = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_").lower()
     return label or "model"
@@ -767,6 +906,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--stale-dataset", default="benchmarks/stale.adamem.jsonl")
     parser.add_argument("--transfer-dataset", default="benchmarks/longmemeval_s.adamem.jsonl")
+    parser.add_argument("--stale-source", default=DEFAULT_STALE_SOURCE)
+    parser.add_argument("--transfer-source", default=DEFAULT_TRANSFER_SOURCE)
+    parser.add_argument("--no-data-prep", action="store_true", help="Omit dataset conversion commands.")
     parser.add_argument("--ama-output-source", default="results/ama_public_20_full/ama_public_20.raw.jsonl")
     parser.add_argument("--no-ama", action="store_true", help="Omit the AMA transfer command.")
     parser.add_argument("--stale-types", nargs="+", default=["T1", "T2"])
@@ -795,6 +937,8 @@ def main(argv: list[str] | None = None) -> None:
             output_dir=args.output_dir,
             stale_dataset=args.stale_dataset,
             transfer_dataset=args.transfer_dataset,
+            stale_source=None if args.no_data_prep else args.stale_source,
+            transfer_source=None if args.no_data_prep else args.transfer_source,
             ama_output_source=None if args.no_ama else args.ama_output_source,
             stale_types=args.stale_types,
             limit_per_stale_type=args.limit_per_stale_type,

@@ -2766,7 +2766,7 @@ to a paper-facing claim and evaluation gate.
   - CLI smoke with two answer models, two judge models, an LLM extractor model,
     and `--no-ama` wrote JSON, Markdown, and shell artifacts to a temporary
     directory.
-  - Default CLI smoke wrote a 9-command plan with complete method-coverage
+  - Default CLI smoke wrote an 11-command plan with complete method-coverage
     preview to a temporary output directory.
 
 ### 2026-05-30 paper study plan validation
@@ -2798,3 +2798,38 @@ to a paper-facing claim and evaluation gate.
   - Default CLI validation smoke wrote validation JSON/Markdown, marked
     execution-ready `False`, reported missing `primary_stale` and
     `transfer_long_memory`, and listed `5` placeholder model labels.
+
+### 2026-05-30 study plan data-prep preflight
+
+- Extended `adamem-study-plan` with planned data-preparation commands:
+  - `prepare_primary_stale_dataset`
+  - `prepare_longmemeval_transfer_dataset`
+- The default plan now prepends:
+  - `python -m adamem.convert stale data/T1_T2_400_FULL.json benchmarks/stale.adamem.jsonl ...`
+  - `python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json benchmarks/longmemeval_s.adamem.jsonl ...`
+- Validation now distinguishes:
+  - target dataset already exists
+  - target dataset is missing but can be prepared from an available source
+  - target dataset and required source are both missing
+- Current local data state:
+  - `data/longmemeval_s_cleaned.json` exists, so the missing
+    `benchmarks/longmemeval_s.adamem.jsonl` target is no longer a hard
+    execution blocker in the plan.
+  - `data/T1_T2_400_FULL.json` is still missing, so the primary STALE dataset
+    remains blocked until the raw full STALE file is added or a different
+    source path is provided.
+  - `results/ama_public_20_full/ama_public_20.raw.jsonl` exists.
+- Purpose:
+  - Make data readiness part of the same paper runbook as model and method
+    readiness.
+  - Avoid treating missing generated JSONL files as blockers when their raw
+    source and conversion command are already available.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `9 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `37 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `169 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - Default CLI validation smoke marked execution-ready `False`, reported only
+    `primary_stale` as a missing dataset, confirmed the LongMemEval source
+    exists, and counted `2` data-prep commands.

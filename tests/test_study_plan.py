@@ -85,8 +85,36 @@ def test_validate_paper_study_plan_reports_placeholders_and_missing_paths(tmp_pa
     assert "replace_model_placeholders" in validation["missing_requirements"]
     assert "<answer_provider_a>:<answer_model_a>" in validation["placeholder_models"]
     assert validation["method_coverage_complete"] is True
-    assert validation["command_count"] == 9
+    assert validation["command_count"] == 11
+    assert validation["command_stage_counts"]["data_prep"] == 2
     assert validation["reporting_command_present"] is True
+
+
+def test_validate_paper_study_plan_accepts_missing_target_when_prep_source_exists(tmp_path: Path) -> None:
+    transfer_source = tmp_path / "longmemeval_s_cleaned.json"
+    stale_source = tmp_path / "T1_T2_400_FULL.json"
+    ama = tmp_path / "ama.raw.jsonl"
+    for path in [transfer_source, stale_source, ama]:
+        path.write_text("[]", encoding="utf-8")
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=tmp_path / "prepared_stale.jsonl",
+        transfer_dataset=tmp_path / "prepared_lme.jsonl",
+        stale_source=stale_source,
+        transfer_source=transfer_source,
+        ama_output_source=ama,
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+    )
+
+    validation = validate_paper_study_plan(plan, root=tmp_path)
+
+    assert validation["execution_ready"] is True
+    assert validation["missing_datasets"] == []
+    assert validation["dataset_checks"]["primary_stale"]["prepared_by_plan"] is True
+    assert validation["dataset_checks"]["primary_stale"]["prep_source_exists"] is True
+    assert validation["source_checks"]["transfer_long_memory"]["exists"] is True
 
 
 def test_validate_paper_study_plan_marks_ready_when_paths_and_models_are_set(tmp_path: Path) -> None:
