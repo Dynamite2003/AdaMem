@@ -1316,6 +1316,49 @@ def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_met
     assert "## State Source Trace" in report
 
 
+def test_jsonl_experiment_record_preserves_traceable_failure_examples(tmp_path: Path) -> None:
+    case = MemoryQACase(
+        id="traceable_failure_example",
+        observations=[
+            ObservationSpec(label="old_location", content="I just moved into a place in Seattle."),
+            ObservationSpec(label="new_location", content="I relocated to Boston for a new job."),
+        ],
+        queries=[
+            QuerySpec(
+                id="wrong_expectation",
+                query="Where do I live now?",
+                expected_substrings=["Portland"],
+                top_k=1,
+                metadata={"dimension": "state_resolution", "state_slot": "location"},
+            )
+        ],
+    )
+    spec = baseline_registry()["semantic_state_adjudication"]
+    results = run_benchmark([case], {"semantic_state_adjudication": spec.config})
+    records = benchmark_case_records(results)
+    summary = benchmark_failure_summary(records)
+    record = experiment_record(
+        run_name="traceable_failure_example",
+        run_type="jsonl_retrieval_benchmark",
+        dataset="inline",
+        baselines={"semantic_state_adjudication": spec},
+        results=[result.name for result in results],
+        diagnostics={"failure_summary": summary},
+        raw_outputs=records,
+    )
+
+    output = write_experiment_record(tmp_path / "traceable_failure_example.json", record)
+    data = json.loads(output.read_text(encoding="utf-8"))
+    example = data["diagnostics"]["failure_summary"]["examples_by_failure_attribution"][
+        "retrieval_failure"
+    ][0]
+
+    assert example["top_trace"]["kind"] == "state"
+    assert example["top_trace"]["metadata"]["state_slot"] == "location"
+    assert example["top_trace"]["metadata"]["source_observation_label"] == "new_location"
+    assert example["trace_source_labels"] == ["new_location"]
+
+
 def test_jsonl_records_expose_state_pollution_metrics() -> None:
     case = MemoryQACase(
         id="state_pollution_boundary",

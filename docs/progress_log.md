@@ -3537,6 +3537,31 @@ to a paper-facing claim and evaluation gate.
 - Validation so far:
   - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata -q`
     -> `1 passed`
+
+### 2026-05-30 traceable representative failure examples
+
+- Extended JSONL `examples_by_failure_attribution` entries with:
+  - compact `top_trace` kind, relation, content, and selected metadata
+  - `trace_source_labels` collected from source and stale-source observation
+    labels in the retrieved trace
+- Because JSONL experiment records already store
+  `diagnostics.failure_summary`, representative failure examples are now
+  machine-readable in experiment artifacts, not only Markdown reports.
+- Purpose:
+  - Make paper case-study selection auditable without scanning full raw traces
+    for every failed query.
+  - Preserve compact artifacts while exposing enough provenance to verify
+    whether a failure attribution is plausible.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_experiment_record_preserves_traceable_failure_examples -q`
+    -> `1 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py tests/test_claims.py tests/test_reporting.py -q`
+    -> `62 passed`
+  - CLI smoke on `benchmarks/dynamic_state_transfer.jsonl` confirmed experiment
+    `diagnostics.failure_summary.examples_by_failure_attribution` entries
+    include `top_trace` and `trace_source_labels`.
+  - `PYTHONPATH=src python -m pytest -q` -> `207 passed`
+  - `python -m compileall -q src` -> no issues
   - `PYTHONPATH=src python -m pytest tests/test_eval.py tests/test_reporting.py tests/test_claims.py -q`
     -> `60 passed`
   - CLI smoke on `benchmarks/unknown_current_state_transfer.jsonl` confirmed

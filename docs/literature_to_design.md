@@ -393,9 +393,10 @@ Current implementation:
   state slot, missing active expected slot, state readout failure, state routing
   failure, stale adjudication failure, and premise-correction failure while
   preserving the older umbrella extraction label for compatibility.
-- Reports include representative examples for each attribution, making it
-  easier to manually verify whether the triage label is a real mechanism
-  failure before using it in a paper table or discussion.
+- Reports and experiment diagnostics include representative examples for each
+  attribution. JSONL examples now include compact top-trace metadata and source
+  labels, making it easier to manually verify whether the triage label is a real
+  mechanism failure before using it in a paper table or discussion.
 - Claim audits surface attribution counts and compact representative examples
   as `failure_attribution_error_analysis`, while still blocking answer
   accuracy and SOTA claims when the run has only retrieval diagnostics.
@@ -407,7 +408,8 @@ Required next evidence:
 - Validate the refined attribution categories on public STALE and transfer runs,
   then manually audit representative cases before using category counts as paper
   evidence.
-- Include representative failures in experiment records.
+- Validate that representative example traces remain compact enough for large
+  public benchmark artifacts.
 
 ### 7. Causal Trajectory Evidence
 

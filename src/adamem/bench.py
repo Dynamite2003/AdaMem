@@ -731,6 +731,7 @@ def _examples_by_failure_attribution(
 def _compact_failure_example(record: dict[str, Any]) -> dict[str, Any]:
     retrieved = record.get("retrieved") or []
     top_retrieved = str(retrieved[0])[:180] if retrieved else None
+    trace = record.get("trace") or []
     return {
         "baseline": record.get("baseline"),
         "case_id": record.get("case_id"),
@@ -738,7 +739,44 @@ def _compact_failure_example(record: dict[str, Any]) -> dict[str, Any]:
         "metadata": dict(record.get("metadata") or {}),
         "failure_modes": list(record.get("failure_modes") or []),
         "top_retrieved": top_retrieved,
+        "top_trace": _compact_trace_item(trace[0]) if trace else None,
+        "trace_source_labels": _trace_source_labels(trace),
     }
+
+
+def _compact_trace_item(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    return {
+        "kind": item.get("kind"),
+        "relation": item.get("relation"),
+        "content": str(item.get("content") or "")[:180],
+        "metadata": {
+            key: metadata[key]
+            for key in (
+                "state_slot",
+                "state_status",
+                "source_observation_label",
+                "stale_source_observation_label",
+                "source_id",
+                "source_state_id",
+                "stale_state_id",
+            )
+            if key in metadata
+        },
+    }
+
+
+def _trace_source_labels(trace: list[dict[str, Any]]) -> list[str]:
+    labels: set[str] = set()
+    for item in trace:
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        for key in ("source_observation_label", "stale_source_observation_label"):
+            label = metadata.get(key)
+            if label:
+                labels.add(str(label))
+    return sorted(labels)
 
 
 def _state_exposure_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
