@@ -3538,6 +3538,29 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata -q`
     -> `1 passed`
 
+### 2026-05-30 report bundle failure case-study artifacts
+
+- Extended `adamem.reporting` report bundles to write dedicated case-study
+  artifacts when diagnostic failure-attribution examples are available:
+  - `<run>.failure_case_studies.json`
+  - `<run>.failure_case_studies.md`
+- Extended reporting-side compact examples with `top_trace` and
+  `trace_source_labels`, matching the JSONL benchmark failure-summary shape.
+- Purpose:
+  - Make representative failures directly usable for paper case-study review.
+  - Keep the report bundle as the main paper-facing artifact surface rather than
+    requiring manual digging through full experiment JSON.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py::test_write_experiment_bundle_writes_traceable_failure_case_studies -q`
+    -> `1 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py tests/test_eval.py tests/test_claims.py -q`
+    -> `63 passed`
+  - CLI smoke over `benchmarks/dynamic_state_transfer.jsonl` confirmed
+    `adamem.reporting` writes both `failure_case_studies_json` and
+    `failure_case_studies_markdown` artifacts into the bundle manifest.
+  - `PYTHONPATH=src python -m pytest -q` -> `208 passed`
+  - `python -m compileall -q src` -> no issues
+
 ### 2026-05-30 traceable representative failure examples
 
 - Extended JSONL `examples_by_failure_attribution` entries with:

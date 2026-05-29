@@ -397,6 +397,9 @@ Current implementation:
   attribution. JSONL examples now include compact top-trace metadata and source
   labels, making it easier to manually verify whether the triage label is a real
   mechanism failure before using it in a paper table or discussion.
+- Report bundles now write dedicated failure case-study Markdown and JSON
+  artifacts when diagnostic examples are available, so paper-writing review does
+  not require searching through full experiment JSON files.
 - Claim audits surface attribution counts and compact representative examples
   as `failure_attribution_error_analysis`, while still blocking answer
   accuracy and SOTA claims when the run has only retrieval diagnostics.

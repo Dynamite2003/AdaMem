@@ -66,6 +66,20 @@ def write_experiment_bundle(
     try:
         records = load_benchmark_records(experiment)
         manifest["diagnostic_evidence"] = _diagnostic_evidence(records)
+        if manifest["diagnostic_evidence"].get("examples_by_failure_attribution"):
+            case_studies_json = output / f"{stem}.failure_case_studies.json"
+            case_studies_md = output / f"{stem}.failure_case_studies.md"
+            case_studies = manifest["diagnostic_evidence"]["examples_by_failure_attribution"]
+            case_studies_json.write_text(
+                json.dumps(case_studies, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            case_studies_md.write_text(
+                failure_case_studies_markdown(case_studies, title=f"{stem} Failure Case Studies"),
+                encoding="utf-8",
+            )
+            manifest["artifacts"]["failure_case_studies_json"] = str(case_studies_json)
+            manifest["artifacts"]["failure_case_studies_markdown"] = str(case_studies_md)
         table_group_fields = group_fields or None
         if table_group_fields:
             table_summary = paper_table_summary(records, group_fields=table_group_fields)
@@ -1017,8 +1031,34 @@ def _examples_by_failure_attribution(
                     "query_id": record.get("query_id"),
                     "failure_modes": list(record.get("failure_modes") or []),
                     "top_retrieved": _top_retrieved(record),
+                    "top_trace": _compact_trace_item(record),
+                    "trace_source_labels": _trace_source_labels(record),
                 })
     return examples
+
+
+def failure_case_studies_markdown(examples: dict[str, list[dict[str, Any]]], *, title: str) -> str:
+    lines = [f"# {title}", ""]
+    if not examples:
+        lines.append("- No failure attribution examples.")
+        return "\n".join(lines).rstrip() + "\n"
+    for attribution, items in examples.items():
+        lines.append(f"## {attribution}")
+        for item in items:
+            labels = item.get("trace_source_labels") or []
+            label_text = ", ".join(str(label) for label in labels) if labels else "-"
+            trace = item.get("top_trace") or {}
+            trace_meta = trace.get("metadata") if isinstance(trace, dict) else {}
+            slot = trace_meta.get("state_slot") if isinstance(trace_meta, dict) else None
+            slot_text = f", state_slot={slot}" if slot else ""
+            lines.append(
+                f"- `{item.get('baseline')}` `{item.get('case_id')}/{item.get('query_id')}` "
+                f"modes={item.get('failure_modes') or []}, sources={label_text}{slot_text}"
+            )
+            if item.get("top_retrieved"):
+                lines.append(f"  top: {item['top_retrieved']}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _top_retrieved(record: dict[str, Any]) -> str | None:
@@ -1032,6 +1072,47 @@ def _top_retrieved(record: dict[str, Any]) -> str | None:
     if trace and isinstance(trace[0], dict):
         return str(trace[0].get("content") or "")[:180]
     return None
+
+
+def _compact_trace_item(record: dict[str, Any]) -> dict[str, Any] | None:
+    trace = record.get("trace") or []
+    if not trace or not isinstance(trace[0], dict):
+        return None
+    item = trace[0]
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    return {
+        "kind": item.get("kind"),
+        "relation": item.get("relation"),
+        "content": str(item.get("content") or "")[:180],
+        "metadata": {
+            key: metadata[key]
+            for key in (
+                "state_slot",
+                "state_status",
+                "source_observation_label",
+                "stale_source_observation_label",
+                "source_id",
+                "source_state_id",
+                "stale_state_id",
+            )
+            if key in metadata
+        },
+    }
+
+
+def _trace_source_labels(record: dict[str, Any]) -> list[str]:
+    labels: set[str] = set()
+    for item in record.get("trace") or []:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        for key in ("source_observation_label", "stale_source_observation_label"):
+            label = metadata.get(key)
+            if label:
+                labels.add(str(label))
+    return sorted(labels)
 
 
 def _top_count(counts: dict[str, Any]) -> tuple[str | None, int]:

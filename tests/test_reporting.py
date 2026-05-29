@@ -70,6 +70,91 @@ def test_reporting_cli_writes_manifest_json(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["paired_comparison_json"]).exists()
 
 
+def test_write_experiment_bundle_writes_traceable_failure_case_studies(tmp_path: Path) -> None:
+    experiment = tmp_path / "failure_examples.experiment.json"
+    experiment.write_text(
+        json.dumps({
+            "run_name": "failure_examples",
+            "run_type": "jsonl_retrieval_benchmark",
+            "dataset": "benchmarks/example.jsonl",
+            "baseline_names": ["semantic_state_adjudication"],
+            "raw_outputs": [
+                {
+                    "baseline": "semantic_state_adjudication",
+                    "case_id": "case-1",
+                    "query_id": "q1",
+                    "query": "Where do I live now?",
+                    "passed": False,
+                    "expected_substrings": ["Portland"],
+                    "missing_expected": ["Portland"],
+                    "expected_evidence": [],
+                    "answer_keywords": [],
+                    "missing_answer_keywords": [],
+                    "answer_keyword_recall": 0.0,
+                    "answer_keyword_support_matched": False,
+                    "answer_basis": "",
+                    "basis_missing_answer_keywords": [],
+                    "basis_answer_keyword_recall": 0.0,
+                    "basis_answer_keyword_support_matched": False,
+                    "missing_evidence": [],
+                    "evidence_support_matched": False,
+                    "graph_retrieval_count": 0,
+                    "graph_evidence_hits": [],
+                    "graph_evidence_hit_count": 0,
+                    "forbidden_substrings": [],
+                    "present_forbidden": [],
+                    "corrected_forbidden": [],
+                    "premise_correction_count": 0,
+                    "failure_modes": ["expected_support_missing"],
+                    "failure_attributions": ["retrieval_failure"],
+                    "metadata": {"dimension": "state_resolution", "state_slot": "location"},
+                    "retrieved": ["Current user location: Boston."],
+                    "trace": [
+                        {
+                            "content": "Current user location: Boston.",
+                            "kind": "state",
+                            "relation": "state",
+                            "metadata": {
+                                "state_slot": "location",
+                                "source_observation_label": "new_location",
+                            },
+                        }
+                    ],
+                    "state_retrieval_count": 1,
+                    "retrieved_state_slots": ["location"],
+                    "expected_state_slots": ["location"],
+                    "unexpected_state_slots": [],
+                    "state_slot_matched": True,
+                    "state_sensitive": True,
+                    "state_available": True,
+                    "state_readout_expected": True,
+                    "state_memory_count": 1,
+                    "active_state_count": 1,
+                    "stale_state_count": 0,
+                    "unknown_current_state_count": 0,
+                    "state_slots": ["location"],
+                    "active_state_slots": ["location"],
+                    "stale_state_slots": [],
+                    "unknown_current_state_slots": [],
+                }
+            ],
+            "notes": {"ground_truth_runtime_use": "forbidden"},
+            "commit": "abc123",
+        }),
+        encoding="utf-8",
+    )
+
+    manifest = write_experiment_bundle(experiment, tmp_path / "bundle")
+
+    artifacts = manifest["artifacts"]
+    case_json = json.loads(Path(artifacts["failure_case_studies_json"]).read_text(encoding="utf-8"))
+    case_md = Path(artifacts["failure_case_studies_markdown"]).read_text(encoding="utf-8")
+    example = case_json["retrieval_failure"][0]
+    assert example["top_trace"]["metadata"]["source_observation_label"] == "new_location"
+    assert example["trace_source_labels"] == ["new_location"]
+    assert "source" in case_md
+
+
 def test_write_experiment_bundle_supports_stale_retrieval_diagnostics(tmp_path: Path) -> None:
     experiment = _write_stale_retrieval_diagnostic_experiment(tmp_path)
     output_dir = tmp_path / "stale-bundle"
