@@ -57,6 +57,44 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 organization employer state slot
+
+- Added deterministic state extraction and query routing for
+  `organization.employer`.
+- Supported active updates include:
+  - `I work at Acme Labs.`
+  - `My employer is Nova Health.`
+  - `I joined Nova Health.`
+- Supported unknown-current invalidations include:
+  - `I no longer work at Acme Labs.`
+  - `My employer is no longer Acme Labs.`
+  - `Acme Labs is no longer my employer.`
+- Query routing covers employer/company/workplace terms and explicit
+  `work at/for` phrasing, while avoiding generic work queries.
+- Added `benchmarks/employer_state_transfer.jsonl` with separate replacement
+  and unknown-current cases for organization state.
+- Added tests covering:
+  - employer premise correction from old to new employer;
+  - unknown-current employer invalidation;
+  - JSONL fixture behavior where `semantic_only` fails and state-aware
+    baselines pass state resolution and premise-resistance queries.
+- Purpose:
+  - Expand the state-aware mechanism beyond location, schedule, preference,
+    health/resource/workflow/runtime/role/manager slots toward another common
+    long-lived personal state in stale-memory benchmarks and real agent memory.
+  - Preserve causal validity by keeping the extractor rule-based and
+    ablatable, without using benchmark labels or answer fields at runtime.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py::test_state_readout_handles_employer_premise_correction tests/test_adamem.py::test_state_unknown_current_handles_employer_slot tests/test_eval.py::test_employer_state_transfer_fixture_favors_state_authority -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/employer_state_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_premise_correction --experiment-output /tmp/adamem_employer_state_experiment.json --benchmark-cases-output /tmp/adamem_employer_state_records.jsonl --benchmark-report-output /tmp/adamem_employer_state_report.md --json`
+    -> `semantic_only` passed `0/3`; both state-aware baselines passed `3/3`.
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py tests/test_eval.py -q`
+    -> `81 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `212 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+
 ### 2026-05-30 baseline reproduction targets
 
 - Extended baseline provenance with explicit reproduction target fields:

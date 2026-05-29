@@ -581,6 +581,82 @@ def test_state_unknown_current_handles_resource_workflow_and_runtime_slots() -> 
     assert runtime[0].item.metadata["stale_value"] == "offline"
 
 
+def test_state_readout_handles_employer_premise_correction() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+    old_source = mem.observe("[2026-01-01] user: I work at Acme Labs.")
+    mem.observe("[2026-03-01] user: My employer is Nova Health.")
+
+    slots = query_relevant_state_slots("Do I still work at Acme Labs?")
+    states = [item for item in mem.store.all() if item.kind == "state"]
+    active_state = next(item for item in states if item.active)
+    old_state = next(item for item in states if not item.active)
+    results = mem.retrieve("Do I still work at Acme Labs for my benefits?", top_k=2)
+
+    assert "organization.employer" in slots
+    assert "organization.employer" not in query_relevant_state_slots("What work should I do next?")
+    assert old_state.metadata["state_slot"] == "organization.employer"
+    assert old_state.metadata["state_value"] == "Acme Labs"
+    assert active_state.metadata["state_value"] == "Nova Health"
+    assert old_source.metadata["stale_state_slots"] == ["organization.employer"]
+    assert results[0].item.kind == "state_correction"
+    assert results[0].item.metadata["state_slot"] == "organization.employer"
+    assert results[0].item.metadata["stale_value"] == "Acme Labs"
+    assert results[0].item.metadata["current_value"] == "Nova Health"
+
+
+def test_state_unknown_current_handles_employer_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+    mem.observe("[2026-01-01] user: I work at Acme Labs.")
+    mem.observe("[2026-03-01] user: I no longer work at Acme Labs.")
+
+    active_unknown = next(
+        item for item in mem.store.all()
+        if item.kind == "state" and item.active
+    )
+    results = mem.retrieve("Should I list Acme Labs as my employer?", top_k=2)
+
+    assert active_unknown.metadata["state_slot"] == "organization.employer"
+    assert active_unknown.metadata["state_status"] == "unknown_current"
+    assert active_unknown.metadata["invalidated_state_value"] == "Acme Labs"
+    assert results[0].item.kind == "state_correction"
+    assert results[0].item.metadata["stale_value"] == "Acme Labs"
+    assert results[0].item.metadata["current_value"] == "unknown-current"
+
+
 def test_state_readout_supports_implicit_policy_adaptation_query() -> None:
     without_readout = _state_isolation_memory(use_state_readout=False)
     with_readout = _state_isolation_memory(use_state_readout=True)

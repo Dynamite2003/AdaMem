@@ -685,6 +685,54 @@ MANAGER_QUERY_TERMS = {
     "supervisor",
 }
 
+EMPLOYER_PATTERNS = [
+    re.compile(
+        r"\b(?:i\s+)?(?:work|worked)\s+(?:at|for)\s+"
+        r"(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:my\s+)?(?:current\s+)?(?:employer|company|workplace|organization)\s+is\s+"
+        r"(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:i\s+)?(?:joined|started\s+(?:at|with))\s+"
+        r"(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})",
+        re.I,
+    ),
+]
+
+EMPLOYER_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(
+        r"\b(?:i\s+)?no\s+longer\s+(?:work|worked)\s+(?:at|for)\s+"
+        r"(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:i[’']?m|i am)\s+not\s+working\s+(?:at|for)\s+"
+        r"(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})\s+anymore\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:my\s+)?(?:employer|company|workplace|organization)\s+is\s+no\s+longer\s+"
+        r"(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})\s+is\s+no\s+longer\s+my\s+"
+        r"(?:employer|company|workplace|organization)\b",
+        re.I,
+    ),
+]
+
+EMPLOYER_QUERY_TERMS = {
+    "company",
+    "employer",
+    "organization",
+    "workplace",
+}
+
 
 def extract_state_patches(content: str, metadata: dict[str, object] | None = None) -> list[StatePatch]:
     """Deterministic state extractor used for API-free development.
@@ -807,6 +855,17 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
         ))
     elif manager := _extract_manager(content):
         patches.append(StatePatch(slot="relationship.manager", value=manager, evidence=content))
+    employer_unknown_current = _extract_employer_unknown_current(content)
+    if employer_unknown_current:
+        patches.append(StatePatch(
+            slot="organization.employer",
+            value="unknown-current",
+            evidence=content,
+            status="unknown_current",
+            invalidates_value=employer_unknown_current,
+        ))
+    elif employer := _extract_employer(content):
+        patches.append(StatePatch(slot="organization.employer", value=employer, evidence=content))
     return patches
 
 
@@ -837,6 +896,8 @@ def query_relevant_state_slots(query: str) -> list[str]:
         slots.append("role.current")
     if _has_manager_intent(text):
         slots.append("relationship.manager")
+    if _has_employer_intent(text):
+        slots.append("organization.employer")
     return slots
 
 
@@ -958,6 +1019,12 @@ def _has_role_intent(text: str) -> bool:
 
 def _has_manager_intent(text: str) -> bool:
     return _has_any_term(text, MANAGER_QUERY_TERMS)
+
+
+def _has_employer_intent(text: str) -> bool:
+    if _has_any_term(text, EMPLOYER_QUERY_TERMS):
+        return True
+    return re.search(r"\b(?:work|working|worked)\s+(?:at|for)\b", text) is not None
 
 
 def _has_any_term(text: str, terms: set[str] | frozenset[str]) -> bool:
@@ -1214,6 +1281,28 @@ def _extract_manager_unknown_current(content: str) -> str | None:
     return None
 
 
+def _extract_employer(content: str) -> str | None:
+    for pattern in EMPLOYER_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        employer = _clean_organization_name(match.group("value"))
+        if employer:
+            return employer
+    return None
+
+
+def _extract_employer_unknown_current(content: str) -> str | None:
+    for pattern in EMPLOYER_UNKNOWN_CURRENT_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        employer = _clean_organization_name(match.group("value"))
+        if employer:
+            return employer
+    return None
+
+
 def _clean_state_value(raw: str) -> str:
     value = raw.strip(" .,!?:;[](){}\"'“”‘’").lower()
     words = value.split()
@@ -1264,6 +1353,29 @@ def _clean_person_name(raw: str) -> str:
     for word in words:
         stripped = word.strip(" .,!?:;[](){}\"'“”‘’")
         if stripped.lower() in {"and", "but", "for", "from", "now", "since", "so", "that", "the", "to", "with"}:
+            break
+        kept.append(stripped)
+    return " ".join(kept).strip()
+
+
+def _clean_organization_name(raw: str) -> str:
+    value = raw.strip(" .,!?:;[](){}\"'“”‘’")
+    words = value.split()
+    kept: list[str] = []
+    for word in words:
+        stripped = word.strip(" .,!?:;[](){}\"'“”‘’")
+        if stripped.lower() in {
+            "and",
+            "anymore",
+            "because",
+            "but",
+            "for",
+            "now",
+            "since",
+            "so",
+            "where",
+            "with",
+        }:
             break
         kept.append(stripped)
     return " ".join(kept).strip()

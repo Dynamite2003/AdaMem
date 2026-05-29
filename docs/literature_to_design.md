@@ -642,6 +642,19 @@ long-memory transfer. AdaMem's current direction is therefore to retain raw
 episodic evidence for generality, but govern stale-sensitive readout with
 state authority and source adjudication.
 
+The deterministic state-aware layer now also covers `organization.employer`.
+This targets a common agent-memory stale-state pattern: a user changes
+employer, company, or workplace, and later queries either ask for the current
+employer or presuppose an old one. The extractor handles explicit replacements
+such as "My employer is Nova Health" and unknown-current invalidations such as
+"I no longer work at Acme Labs." Query routing is deliberately gated to
+employer/company/workplace terms or "work at/for" phrasing, so generic "work"
+queries do not become state-sensitive. A local
+`benchmarks/employer_state_transfer.jsonl` fixture verifies state resolution,
+premise resistance, unknown-current invalidation, source adjudication, and
+premise correction for this slot. This is API-free mechanism evidence, not a
+public benchmark claim.
+
 The first query-annotated LongMemEval-S pilot exposed a measurement problem
 before it exposed a method problem. With the initial `--infer-state-slots`
 router, `18/60` balanced LongMemEval-S questions were marked state-sensitive,

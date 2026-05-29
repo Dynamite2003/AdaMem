@@ -1243,6 +1243,36 @@ def test_unknown_current_transfer_fixture_favors_state_authority() -> None:
     assert summary["pairwise_vs_first_baseline"]["semantic_state_adjudication"]["gained_passes"] == 8
 
 
+def test_employer_state_transfer_fixture_favors_state_authority() -> None:
+    cases = load_jsonl_cases(Path("benchmarks/employer_state_transfer.jsonl"))
+    results = run_benchmark(
+        cases,
+        {
+            name: baseline_registry()[name].config
+            for name in (
+                "semantic_only",
+                "semantic_state_adjudication",
+                "semantic_state_premise_correction",
+            )
+        },
+    )
+    records = benchmark_case_records(results)
+    summary = benchmark_failure_summary(records)
+    by_baseline = {result.name: result for result in results}
+
+    assert by_baseline["semantic_only"].passed == 0
+    assert by_baseline["semantic_state_adjudication"].passed == 3
+    assert by_baseline["semantic_state_premise_correction"].passed == 3
+    assert summary["state_readout_exposure"]["semantic_state_adjudication"]["state_retrieval_records"] == 3
+    assert (
+        summary["premise_correction"]["semantic_state_premise_correction"][
+            "corrected_forbidden_records"
+        ]
+        == 3
+    )
+    assert summary["pairwise_vs_first_baseline"]["semantic_state_adjudication"]["gained_passes"] == 3
+
+
 def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata() -> None:
     case = MemoryQACase(
         id="state_source_trace",
