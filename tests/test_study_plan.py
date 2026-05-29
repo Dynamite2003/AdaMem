@@ -331,6 +331,8 @@ def test_write_paper_study_plan_outputs_json_markdown_and_shell(tmp_path: Path) 
     data = json.loads(Path(artifacts["json"]).read_text(encoding="utf-8"))
     markdown = Path(artifacts["markdown"]).read_text(encoding="utf-8")
     shell = Path(artifacts["shell"]).read_text(encoding="utf-8")
+    command_index = json.loads(Path(artifacts["command_index_json"]).read_text(encoding="utf-8"))
+    command_index_md = Path(artifacts["command_index_markdown"]).read_text(encoding="utf-8")
     validation = json.loads(Path(artifacts["validation_json"]).read_text(encoding="utf-8"))
     validation_md = Path(artifacts["validation_markdown"]).read_text(encoding="utf-8")
     assert data["schema_version"] == "adamem.paper_study_plan.v1"
@@ -338,6 +340,8 @@ def test_write_paper_study_plan_outputs_json_markdown_and_shell(tmp_path: Path) 
     assert "Artifact Policy" in markdown
     assert "method_coverage" not in shell
     assert "python -m adamem.reporting" in shell
+    assert command_index[0]["name"] == plan["commands"][0]["name"]
+    assert "AdaMem Study Plan Commands" in command_index_md
     assert validation["schema_version"] == "adamem.paper_study_validation.v1"
     assert "AdaMem Paper Study Validation" in validation_md
 
@@ -650,6 +654,8 @@ def test_study_plan_cli_writes_artifacts(tmp_path: Path) -> None:
     assert (output_dir / "paper_study_plan.json").exists()
     assert (output_dir / "paper_study_plan.md").exists()
     assert (output_dir / "paper_study_commands.sh").exists()
+    assert (output_dir / "paper_study_command_index.json").exists()
+    assert (output_dir / "paper_study_command_index.md").exists()
     assert (output_dir / "paper_study_validation.json").exists()
     assert (output_dir / "paper_study_validation.md").exists()
 
@@ -898,9 +904,11 @@ def test_study_plan_cli_can_run_saved_plan_without_regenerating(tmp_path: Path) 
 
     summary = json.loads((output_dir / "paper_study_run.summary.json").read_text(encoding="utf-8"))
     validation = json.loads((output_dir / "paper_study_validation.json").read_text(encoding="utf-8"))
+    command_index = json.loads((output_dir / "paper_study_command_index.json").read_text(encoding="utf-8"))
     assert summary["status"] == "dry_run"
     assert summary["selected_command_count"] == 1
     assert validation["execution_ready"] is True
+    assert command_index[0]["name"] == "stale_retrieval_diagnostics"
 
 
 def test_study_plan_cli_can_refresh_saved_plan_fingerprint(tmp_path: Path) -> None:

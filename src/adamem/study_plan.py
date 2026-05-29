@@ -470,19 +470,26 @@ def write_paper_study_plan(plan: dict[str, Any], output_dir: str | Path) -> dict
     json_path = output / "paper_study_plan.json"
     md_path = output / "paper_study_plan.md"
     sh_path = output / "paper_study_commands.sh"
+    command_index_path = output / "paper_study_command_index.json"
+    command_index_md_path = output / "paper_study_command_index.md"
     validation_path = output / "paper_study_validation.json"
     validation_md_path = output / "paper_study_validation.md"
     plan["plan_fingerprint"] = plan_fingerprint(plan)
     validation = validate_paper_study_plan(plan)
+    command_listing = study_plan_command_listing(plan)
     json_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     md_path.write_text(paper_study_plan_markdown(plan), encoding="utf-8")
     sh_path.write_text(paper_study_plan_shell(plan), encoding="utf-8")
+    command_index_path.write_text(json.dumps(command_listing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    command_index_md_path.write_text(study_plan_command_listing_markdown(plan), encoding="utf-8")
     validation_path.write_text(json.dumps(validation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     validation_md_path.write_text(paper_study_validation_markdown(validation), encoding="utf-8")
     return {
         "json": str(json_path),
         "markdown": str(md_path),
         "shell": str(sh_path),
+        "command_index_json": str(command_index_path),
+        "command_index_markdown": str(command_index_md_path),
         "validation_json": str(validation_path),
         "validation_markdown": str(validation_md_path),
     }
@@ -521,17 +528,24 @@ def write_loaded_plan_artifacts(
     output.mkdir(parents=True, exist_ok=True)
     md_path = output / "paper_study_plan.md"
     sh_path = output / "paper_study_commands.sh"
+    command_index_path = output / "paper_study_command_index.json"
+    command_index_md_path = output / "paper_study_command_index.md"
     validation_path = output / "paper_study_validation.json"
     validation_md_path = output / "paper_study_validation.md"
     validation = validate_paper_study_plan(plan, check_env=check_env)
+    command_listing = study_plan_command_listing(plan)
     md_path.write_text(paper_study_plan_markdown(plan), encoding="utf-8")
     sh_path.write_text(paper_study_plan_shell(plan), encoding="utf-8")
+    command_index_path.write_text(json.dumps(command_listing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    command_index_md_path.write_text(study_plan_command_listing_markdown(plan), encoding="utf-8")
     validation_path.write_text(json.dumps(validation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     validation_md_path.write_text(paper_study_validation_markdown(validation), encoding="utf-8")
     return {
         "json": str(plan_path),
         "markdown": str(md_path),
         "shell": str(sh_path),
+        "command_index_json": str(command_index_path),
+        "command_index_markdown": str(command_index_md_path),
         "validation_json": str(validation_path),
         "validation_markdown": str(validation_md_path),
     }

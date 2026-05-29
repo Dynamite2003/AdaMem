@@ -3227,3 +3227,24 @@ to a paper-facing claim and evaluation gate.
   - CLI smoke `--list-commands --json` returned 8 commands including
     `longmemeval_transfer_retrieval` and exposed name, stage, purpose,
     claim boundary, and shell fields.
+
+### 2026-05-30 command index artifacts
+
+- Added stable command index artifacts to generated and loaded study plans:
+  - `paper_study_command_index.json`
+  - `paper_study_command_index.md`
+- Both artifacts are regenerated from the exact saved/generated plan content.
+- Purpose:
+  - Provide a durable, citable source of `--command NAME` values for small
+    API pilots and run notes.
+  - Avoid relying on transient CLI output or manual plan JSON inspection when
+    documenting which command was executed.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `35 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `63 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `195 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke generation wrote both command index artifacts; the JSON index
+    contained 8 commands including `longmemeval_transfer_retrieval`, and the
+    Markdown index rendered the command table title.

@@ -104,10 +104,12 @@ Outputs:
   claims.
 - Paper-study plan artifacts generated before API runs:
   `paper_study_plan.json`, `paper_study_plan.md`, and
-  `paper_study_commands.sh`, plus `paper_study_validation.json/md`. These fix
-  the intended data-preparation commands, STALE answer/judge matrix, LLM
-  extractor ablation, transfer diagnostics, and post-run report command
-  without claiming that the planned experiments have already run. The
+  `paper_study_commands.sh`, plus `paper_study_command_index.json/md` and
+  `paper_study_validation.json/md`. These fix the intended data-preparation
+  commands, STALE answer/judge matrix, LLM extractor ablation, transfer
+  diagnostics, and post-run report command without claiming that the planned
+  experiments have already run. The command index is the stable source for
+  exact `--command NAME` values used in small API pilots. The
   validation artifacts report missing dataset paths, whether a missing target
   can be prepared from an available source, default model placeholders,
   model-count gaps, method-coverage gaps, and whether the post-run reporting
