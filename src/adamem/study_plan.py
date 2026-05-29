@@ -356,6 +356,13 @@ def load_study_settings(path: str | Path) -> dict[str, Any]:
         raise ValueError(
             f"unsupported study settings schema {schema!r}; expected {STUDY_SETTINGS_SCHEMA_VERSION}"
         )
+    credential_paths = _credential_like_setting_paths(settings)
+    if credential_paths:
+        joined = ", ".join(credential_paths)
+        raise ValueError(
+            "study settings must not contain credential-like fields; "
+            f"use environment variables instead: {joined}"
+        )
     return settings
 
 
@@ -375,14 +382,16 @@ def build_study_plan_from_settings(
     settings: dict[str, Any],
     *,
     output_dir: str | Path | None = None,
+    settings_path: str | Path | None = None,
 ) -> dict[str, Any]:
+    output_overridden = output_dir is not None
     output = output_dir or settings.get("output_dir")
     if output in {None, ""}:
         raise ValueError("study settings must include output_dir, or pass --output-dir")
     profile = str(settings.get("profile") or "paper")
     stale_types = list(settings.get("stale_types") or ["T1", "T2"])
     if profile == "smoke":
-        return build_smoke_study_plan(
+        plan = build_smoke_study_plan(
             output_dir=output,
             stale_dataset=settings.get("stale_dataset") or "benchmarks/stale_mini.jsonl",
             transfer_dataset=settings.get("transfer_dataset") or "benchmarks/dynamic_state_transfer.jsonl",
@@ -395,27 +404,64 @@ def build_study_plan_from_settings(
             top_k=int(settings.get("top_k") or 4),
             max_context_chars=int(settings.get("max_context_chars") or 2000),
         )
-    if profile != "paper":
-        raise ValueError(f"unsupported study settings profile: {profile}")
-    include_data_prep = bool(settings.get("include_data_prep", True))
-    include_ama = bool(settings.get("include_ama", False))
-    return build_paper_study_plan(
-        output_dir=output,
-        stale_dataset=settings.get("stale_dataset"),
-        transfer_dataset=settings.get("transfer_dataset"),
-        stale_source=settings.get("stale_source", DEFAULT_STALE_SOURCE) if include_data_prep else None,
-        transfer_source=settings.get("transfer_source", DEFAULT_TRANSFER_SOURCE) if include_data_prep else None,
-        ama_output_source=settings.get("ama_output_source") if include_ama else None,
-        stale_types=stale_types,
-        limit_per_stale_type=int(settings.get("limit_per_stale_type") or 50),
-        transfer_max_cases=int(settings.get("transfer_max_cases") or 60),
-        ama_limit=int(settings.get("ama_limit") or 0),
-        answer_models=settings.get("answer_models") or DEFAULT_ANSWER_MODELS,
-        judge_models=settings.get("judge_models") or DEFAULT_JUDGE_MODELS,
-        state_extractor_model=settings.get("state_extractor_model") or "<state_extractor_provider>:<state_extractor_model>",
-        top_k=int(settings.get("top_k") or 8),
-        max_context_chars=int(settings.get("max_context_chars") or 4000),
+    else:
+        if profile != "paper":
+            raise ValueError(f"unsupported study settings profile: {profile}")
+        include_data_prep = bool(settings.get("include_data_prep", True))
+        include_ama = bool(settings.get("include_ama", False))
+        plan = build_paper_study_plan(
+            output_dir=output,
+            stale_dataset=settings.get("stale_dataset"),
+            transfer_dataset=settings.get("transfer_dataset"),
+            stale_source=settings.get("stale_source", DEFAULT_STALE_SOURCE) if include_data_prep else None,
+            transfer_source=settings.get("transfer_source", DEFAULT_TRANSFER_SOURCE) if include_data_prep else None,
+            ama_output_source=settings.get("ama_output_source") if include_ama else None,
+            stale_types=stale_types,
+            limit_per_stale_type=int(settings.get("limit_per_stale_type") or 50),
+            transfer_max_cases=int(settings.get("transfer_max_cases") or 60),
+            ama_limit=int(settings.get("ama_limit") or 0),
+            answer_models=settings.get("answer_models") or DEFAULT_ANSWER_MODELS,
+            judge_models=settings.get("judge_models") or DEFAULT_JUDGE_MODELS,
+            state_extractor_model=settings.get("state_extractor_model") or "<state_extractor_provider>:<state_extractor_model>",
+            top_k=int(settings.get("top_k") or 8),
+            max_context_chars=int(settings.get("max_context_chars") or 4000),
+        )
+    attach_settings_provenance(
+        plan,
+        settings,
+        settings_path=settings_path,
+        output_dir_overridden=output_overridden,
     )
+    plan["plan_fingerprint"] = plan_fingerprint(plan)
+    return plan
+
+
+def settings_fingerprint(settings: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        settings,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def attach_settings_provenance(
+    plan: dict[str, Any],
+    settings: dict[str, Any],
+    *,
+    settings_path: str | Path | None = None,
+    output_dir_overridden: bool = False,
+) -> dict[str, Any]:
+    provenance: dict[str, Any] = {
+        "schema_version": settings.get("schema_version") or STUDY_SETTINGS_SCHEMA_VERSION,
+        "settings_fingerprint": settings_fingerprint(settings),
+        "output_dir_overridden": bool(output_dir_overridden),
+    }
+    if settings_path is not None:
+        provenance["settings_path"] = str(settings_path)
+    plan["settings_provenance"] = provenance
+    return plan
 
 
 def write_paper_study_plan(plan: dict[str, Any], output_dir: str | Path) -> dict[str, str]:
@@ -821,6 +867,14 @@ def paper_study_plan_markdown(plan: dict[str, Any]) -> str:
         lines.append("## Artifact Policy")
         lines.append(f"- Generated datasets default: `{artifact_policy.get('generated_datasets_default')}`")
         lines.append(f"- Reason: {artifact_policy.get('reason')}")
+    provenance = plan.get("settings_provenance") or {}
+    if provenance:
+        lines.append("")
+        lines.append("## Settings Provenance")
+        lines.append(f"- Settings fingerprint: `{provenance.get('settings_fingerprint')}`")
+        if provenance.get("settings_path"):
+            lines.append(f"- Settings path: `{provenance.get('settings_path')}`")
+        lines.append(f"- Output dir overridden: `{bool(provenance.get('output_dir_overridden'))}`")
     lines.append("")
     lines.append("## Datasets")
     for name, path in (plan.get("datasets") or {}).items():
@@ -1236,6 +1290,24 @@ def _fingerprint_payload(value: Any) -> Any:
     return value
 
 
+def _credential_like_setting_paths(value: Any, *, prefix: str = "") -> list[str]:
+    flagged = {"api_key", "apikey", "token", "secret", "password", "credential", "credentials"}
+    paths: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = str(key)
+            path = f"{prefix}.{key_text}" if prefix else key_text
+            normalized = key_text.lower().replace("-", "_")
+            if normalized in flagged or normalized.endswith("_api_key"):
+                paths.append(path)
+            paths.extend(_credential_like_setting_paths(item, prefix=path))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            path = f"{prefix}[{index}]" if prefix else f"[{index}]"
+            paths.extend(_credential_like_setting_paths(item, prefix=path))
+    return paths
+
+
 def _run_command_record(
     command: dict[str, Any],
     *,
@@ -1464,7 +1536,11 @@ def main(argv: list[str] | None = None) -> None:
                 parser.error("--refresh-fingerprint requires --plan")
             settings = load_study_settings(args.settings)
             output_dir = args.output_dir or settings.get("output_dir")
-            plan = build_study_plan_from_settings(settings, output_dir=output_dir)
+            plan = build_study_plan_from_settings(
+                settings,
+                output_dir=args.output_dir,
+                settings_path=args.settings,
+            )
             artifacts = write_paper_study_plan(plan, output_dir)
         else:
             if args.refresh_fingerprint:

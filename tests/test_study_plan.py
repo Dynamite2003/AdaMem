@@ -14,6 +14,7 @@ from adamem.study_plan import (
     parse_model_spec,
     plan_fingerprint,
     run_study_plan,
+    settings_fingerprint,
     validate_paper_study_plan,
     write_paper_study_plan,
     write_study_settings_template,
@@ -122,6 +123,26 @@ def test_write_study_settings_template_is_key_free(tmp_path: Path) -> None:
     assert "OPENAI_API_KEY" in raw
 
 
+def test_load_study_settings_rejects_credential_fields(tmp_path: Path) -> None:
+    settings_path = tmp_path / "settings_with_key.json"
+    settings_path.write_text(
+        json.dumps({
+            "schema_version": STUDY_SETTINGS_SCHEMA_VERSION,
+            "output_dir": "results/api-study",
+            "openai_api_key": "do-not-store",
+        }),
+        encoding="utf-8",
+    )
+
+    try:
+        load_study_settings(settings_path)
+    except ValueError as exc:
+        assert "credential-like fields" in str(exc)
+        assert "openai_api_key" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected credential-like settings key to fail")
+
+
 def test_build_study_plan_from_settings_uses_api_pilot_models(tmp_path: Path) -> None:
     settings = {
         "schema_version": STUDY_SETTINGS_SCHEMA_VERSION,
@@ -159,8 +180,30 @@ def test_build_study_plan_from_settings_uses_api_pilot_models(tmp_path: Path) ->
         "gemini:gemini-a",
     ]
     assert len(answer_commands) == 4
+    assert plan["settings_provenance"]["schema_version"] == STUDY_SETTINGS_SCHEMA_VERSION
+    assert plan["settings_provenance"]["settings_fingerprint"] == settings_fingerprint(settings)
+    assert plan["settings_provenance"]["output_dir_overridden"] is False
     assert validation["execution_ready"] is True
     assert validation["required_env_vars"] == ["GEMINI_API_KEY", "OPENAI_API_KEY"]
+
+
+def test_build_study_plan_from_settings_records_output_override(tmp_path: Path) -> None:
+    settings = {
+        "schema_version": STUDY_SETTINGS_SCHEMA_VERSION,
+        "profile": "smoke",
+        "output_dir": str(tmp_path / "original"),
+    }
+
+    plan = build_study_plan_from_settings(
+        settings,
+        output_dir=tmp_path / "override",
+        settings_path=tmp_path / "settings.json",
+    )
+
+    assert plan["output_dir"] == str(tmp_path / "override")
+    assert plan["settings_provenance"]["settings_path"] == str(tmp_path / "settings.json")
+    assert plan["settings_provenance"]["output_dir_overridden"] is True
+    assert plan["plan_fingerprint"] == plan_fingerprint(plan)
 
 
 def test_validate_paper_study_plan_reports_placeholders_and_missing_paths(tmp_path: Path) -> None:
@@ -483,6 +526,8 @@ def test_study_plan_cli_generates_from_settings(tmp_path: Path) -> None:
     validation = json.loads((tmp_path / "settings-study" / "paper_study_validation.json").read_text(encoding="utf-8"))
     assert plan["model_requirements"]["answer_models"] == ["openai:gpt-a", "gemini:gemini-a"]
     assert plan["split"]["limit_per_stale_type"] == 1
+    assert plan["settings_provenance"]["settings_path"] == str(settings_path)
+    assert plan["settings_provenance"]["settings_fingerprint"] == settings_fingerprint(settings)
     assert validation["execution_ready"] is True
 
 

@@ -126,6 +126,10 @@ Outputs:
   `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `MODELHUB_API_KEY`, never inside the
   settings JSON. Then generate the concrete plan with
   `PYTHONPATH=src python -m adamem.study_plan --settings results/api_pilot_settings.json --check-env --json`.
+  The generated `paper_study_plan.json` records the settings fingerprint and,
+  for CLI-generated plans, the settings path. Settings files that contain
+  credential-like keys such as `api_key`, `token`, `secret`, or `password` are
+  rejected at load time.
 - Study plans can also be executed through the same CLI with `--run`.
   `--dry-run` writes command records without executing them, and repeatable
   `--stage` filters the run to stages such as `diagnostic`, `answer_judge`,

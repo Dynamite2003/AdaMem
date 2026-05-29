@@ -3056,3 +3056,30 @@ to a paper-facing claim and evaluation gate.
   - CLI generated an API-pilot settings template, edited it to a mock
     conversion-free pilot, regenerated a paper study plan from `--settings`,
     and validation reported `execution_ready=True`.
+
+### 2026-05-30 study settings provenance
+
+- Added settings provenance to plans generated with `--settings`.
+- Provenance fields:
+  - `settings_fingerprint`: stable SHA-256 over the settings JSON content
+  - `settings_path`: recorded for CLI-generated settings plans
+  - `output_dir_overridden`: records whether `--output-dir` overrode the
+    settings JSON output directory
+- Added a settings credential guard:
+  - loading settings now rejects credential-like field names such as `api_key`,
+    `token`, `secret`, `password`, or `credential`
+  - environment variable names remain allowed through `required_env_vars`
+- Purpose:
+  - Make future API-backed experiment plans traceable to the exact editable
+    settings content used to generate them.
+  - Reduce the risk that private keys end up in study settings artifacts.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `25 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `53 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `185 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI settings smoke generated a plan with populated
+    `settings_provenance`.
+  - CLI rejected a settings JSON containing an `api_key` field with
+    `credential-like fields`.
