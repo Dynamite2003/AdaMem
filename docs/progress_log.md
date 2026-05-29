@@ -1928,3 +1928,28 @@ to a paper-facing claim and evaluation gate.
     and `0` unresolved values.
 - Added unit coverage:
   - `test_claim_audit_supports_unknown_current_trace_resolution`
+
+### 2026-05-30 LongMemEval-V2 offline converter
+
+- Added API-free LongMemEval-V2 conversion plumbing for public transfer work:
+  - Inputs match the public schema split into `questions.jsonl`,
+    `trajectories.jsonl`, and a haystack JSON mapping.
+  - The converter streams/selects only haystack trajectory ids needed by the
+    selected questions, so small pilots do not require loading every trajectory
+    into benchmark cases.
+  - Trajectory state/action/accessibility-tree fields become runtime
+    observations with `benchmark=longmemeval_v2` metadata.
+  - Reference answers and evaluator strings remain query-only metadata and are
+    not written into observation metadata.
+  - Query text can be annotated with deterministic state-slot diagnostics for
+    dynamic-environment, procedure, workflow, and runtime-style transfer
+    questions.
+- Added CLI:
+  `PYTHONPATH=src python -m adamem.convert longmemeval-v2 QUESTIONS TRAJECTORIES HAYSTACK OUTPUT`.
+- Added tests:
+  - `test_longmemeval_v2_converter_emits_haystack_trajectory_records`
+  - `test_longmemeval_v2_converter_limits_haystack_and_marks_missing_trajectories`
+- Updated `docs/benchmark_data_status.md` and `docs/research_workflow.md` with
+  the local data boundary and first reproducible conversion command.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py -q` -> `27 passed`

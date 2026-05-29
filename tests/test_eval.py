@@ -19,6 +19,7 @@ from adamem.convert import (
     convert_ama_file,
     convert_locomo_file,
     convert_longmemeval_file,
+    convert_longmemeval_v2_file,
     load_state_audit_labels,
     summarize_longmemeval_state_audit_records,
 )
@@ -336,6 +337,168 @@ def test_longmemeval_converter_can_sample_by_question_type(tmp_path: Path) -> No
         "knowledge-update",
         "multi-session",
     ]
+
+
+def test_longmemeval_v2_converter_emits_haystack_trajectory_records(tmp_path: Path) -> None:
+    questions = tmp_path / "questions.jsonl"
+    questions.write_text(
+        "\n".join([
+            json.dumps({
+                "id": "q_dynamic",
+                "domain": "enterprise",
+                "environment": "workarena",
+                "question_type": "dynamic-environment",
+                "question": "Is the staging build runner offline?",
+                "image": None,
+                "answer": "No, the staging build runner is online.",
+                "eval_function": "norm_phrase_set_match",
+            }),
+            json.dumps({
+                "id": "q_static",
+                "domain": "web",
+                "environment": "shopping",
+                "question_type": "static-environment",
+                "question": "Which button is visible?",
+                "answer": "Checkout",
+                "eval_function": "norm_phrase_set_match",
+            }),
+        ]),
+        encoding="utf-8",
+    )
+    trajectories = tmp_path / "trajectories.jsonl"
+    trajectories.write_text(
+        "\n".join([
+            json.dumps({
+                "id": "traj_current",
+                "domain": "enterprise",
+                "environment": "workarena",
+                "goal": "Inspect the CI runner status.",
+                "outcome": "success",
+                "states": [
+                    {
+                        "state_index": 0,
+                        "step": 3,
+                        "url": "https://service.local/runners",
+                        "action": "open runner status panel",
+                        "thought": "Check the latest environment state.",
+                        "accessibility_tree": "Runner staging-build status: online",
+                        "screenshot": "screenshots/traj_current/3.png",
+                    }
+                ],
+            }),
+            json.dumps({
+                "id": "traj_old",
+                "domain": "enterprise",
+                "environment": "workarena",
+                "goal": "Open stale incident page.",
+                "outcome": "failure",
+                "states": [
+                    {
+                        "state_index": 1,
+                        "step": 8,
+                        "url": "https://service.local/incidents",
+                        "action": "open old incident",
+                        "accessibility_tree": "Old incident says staging runner offline",
+                    }
+                ],
+            }),
+            json.dumps({
+                "id": "traj_unused",
+                "domain": "web",
+                "environment": "shopping",
+                "goal": "Distractor.",
+                "states": [{"state_index": 0, "accessibility_tree": "Checkout"}],
+            }),
+        ]),
+        encoding="utf-8",
+    )
+    haystack = tmp_path / "lme_v2_small.json"
+    haystack.write_text(
+        json.dumps({
+            "q_dynamic": ["traj_current", "traj_old"],
+            "q_static": ["traj_unused"],
+        }),
+        encoding="utf-8",
+    )
+    output = tmp_path / "longmemeval_v2.adamem.jsonl"
+
+    count = convert_longmemeval_v2_file(
+        questions,
+        trajectories,
+        haystack,
+        output,
+        expected="answer",
+        top_k=4,
+        question_types=["dynamic-environment"],
+    )
+    cases = load_jsonl_cases(output)
+    case = cases[0]
+
+    assert count == 1
+    assert case.id == "q_dynamic"
+    assert [observation.label for observation in case.observations] == [
+        "traj_current.s0000",
+        "traj_old.s0001",
+    ]
+    assert "Runner staging-build status: online" in case.observations[0].content
+    assert case.observations[0].metadata["benchmark"] == "longmemeval_v2"
+    assert case.observations[0].metadata["trajectory_id"] == "traj_current"
+    assert "answer" not in case.observations[0].metadata
+    assert "eval_function" not in case.observations[0].metadata
+    assert case.queries[0].expected_substrings == ["No, the staging build runner is online."]
+    assert case.queries[0].metadata["benchmark"] == "longmemeval_v2"
+    assert case.queries[0].metadata["haystack_trajectory_ids"] == ["traj_current", "traj_old"]
+    assert case.queries[0].metadata["state_slot"] == "runtime.*.status"
+    assert case.queries[0].metadata["state_slot_source"] == "query_text_router"
+
+
+def test_longmemeval_v2_converter_limits_haystack_and_marks_missing_trajectories(tmp_path: Path) -> None:
+    questions = tmp_path / "questions.jsonl"
+    questions.write_text(
+        json.dumps({
+            "id": "q_proc_abs",
+            "domain": "enterprise",
+            "environment": "workarena",
+            "question_type": "procedure-abs",
+            "question": "In our company workflow, what module should I use?",
+            "answer": "The workflow does not use a module for that task.",
+            "eval_function": "llm_abstention_checker",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    trajectories = tmp_path / "trajectories.jsonl"
+    trajectories.write_text(
+        json.dumps({
+            "id": "traj_present",
+            "domain": "enterprise",
+            "environment": "workarena",
+            "goal": "Review workflow.",
+            "states": [{"state_index": 0, "accessibility_tree": "Workflow uses reports."}],
+        }) + "\n",
+        encoding="utf-8",
+    )
+    haystack = tmp_path / "lme_v2_small.json"
+    haystack.write_text(json.dumps({"q_proc_abs": ["traj_present", "traj_missing"]}), encoding="utf-8")
+    output = tmp_path / "limited.adamem.jsonl"
+
+    count = convert_longmemeval_v2_file(
+        questions,
+        trajectories,
+        haystack,
+        output,
+        expected="evidence",
+        max_trajectories_per_question=2,
+        infer_state_slots=False,
+    )
+    cases = load_jsonl_cases(output)
+    case = cases[0]
+
+    assert count == 1
+    assert len(case.observations) == 1
+    assert case.queries[0].expected_substrings == ["traj_present", "traj_missing"]
+    assert case.queries[0].metadata["missing_trajectory_ids"] == ["traj_missing"]
+    assert case.queries[0].metadata["abstention"] is True
+    assert "state_slot" not in case.queries[0].metadata
 
 
 def test_ama_converter_preserves_action_observation_causality(tmp_path: Path) -> None:

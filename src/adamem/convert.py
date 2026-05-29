@@ -180,6 +180,68 @@ def convert_ama_file(
     return len(rows)
 
 
+def convert_longmemeval_v2_file(
+    questions_path: str | Path,
+    trajectories_path: str | Path,
+    haystack_path: str | Path,
+    output_path: str | Path,
+    *,
+    expected: str = "answer",
+    top_k: int = 8,
+    limit: int | None = None,
+    question_types: list[str] | None = None,
+    limit_per_type: int | None = None,
+    max_trajectories_per_question: int | None = None,
+    infer_state_slots: bool = True,
+) -> int:
+    """Convert LongMemEval-V2 text trajectories to AdaMem JSONL.
+
+    The public schema stores questions, trajectories, and haystack mappings in
+    separate files. Reference answers and evaluator strings remain query-only;
+    runtime observations are built only from trajectory fields.
+    """
+
+    questions = _load_json_records(questions_path)
+    selected = _select_longmemeval_v2_questions(
+        questions,
+        limit=limit,
+        question_types=question_types,
+        limit_per_type=limit_per_type,
+    )
+    haystacks = _load_longmemeval_v2_haystacks(haystack_path)
+    selected_haystacks = {
+        _longmemeval_v2_question_id(question): _limit_list(
+            haystacks.get(_longmemeval_v2_question_id(question), []),
+            max_trajectories_per_question,
+        )
+        for question in selected
+    }
+    needed_trajectory_ids = {
+        trajectory_id
+        for trajectory_ids in selected_haystacks.values()
+        for trajectory_id in trajectory_ids
+    }
+    trajectories = _load_selected_records_by_id(trajectories_path, needed_trajectory_ids)
+
+    rows = [
+        convert_longmemeval_v2_sample(
+            question,
+            trajectories=trajectories,
+            haystack_trajectory_ids=selected_haystacks.get(_longmemeval_v2_question_id(question), []),
+            expected=expected,
+            top_k=top_k,
+            infer_state_slots=infer_state_slots,
+        )
+        for question in selected
+    ]
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+    return len(rows)
+
+
 def convert_ama_sample(sample: Mapping[str, Any], *, expected: str = "answer", top_k: int = 8) -> dict[str, Any]:
     sample_id = str(_first_present(sample, "episode_id", "task_id", "id", default="ama-sample"))
     observations = list(_ama_observations(sample))
@@ -221,6 +283,65 @@ def _load_json_records(input_path: str | Path) -> list[dict[str, Any]]:
             raise ValueError(f"JSONL record {line_number} must be an object")
         records.append(record)
     return records
+
+
+def _load_selected_records_by_id(input_path: str | Path, ids: set[str]) -> dict[str, dict[str, Any]]:
+    if not ids:
+        return {}
+    path = Path(input_path)
+    selected: dict[str, dict[str, Any]] = {}
+    with path.open("r", encoding="utf-8") as handle:
+        first_char = ""
+        while True:
+            char = handle.read(1)
+            if not char:
+                break
+            if char.strip():
+                first_char = char
+                break
+        handle.seek(0)
+        if not first_char:
+            return {}
+        if first_char == "[":
+            records = json.load(handle)
+            if not isinstance(records, list):
+                raise ValueError("Expected a JSON array")
+            for record in records:
+                if not isinstance(record, Mapping):
+                    continue
+                record_id = str(record.get("id") or record.get("trajectory_id") or "")
+                if record_id in ids:
+                    selected[record_id] = dict(record)
+            return selected
+
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if not isinstance(record, Mapping):
+                raise ValueError(f"JSONL record {line_number} must be an object")
+            record_id = str(record.get("id") or record.get("trajectory_id") or "")
+            if record_id in ids:
+                selected[record_id] = dict(record)
+            if len(selected) == len(ids):
+                break
+    return selected
+
+
+def _load_longmemeval_v2_haystacks(input_path: str | Path) -> dict[str, list[str]]:
+    raw = json.loads(Path(input_path).read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping):
+        raise ValueError("LongMemEval-V2 haystack input must be a JSON object")
+    haystacks: dict[str, list[str]] = {}
+    for question_id, trajectory_ids in raw.items():
+        haystacks[str(question_id)] = [str(item) for item in _as_list(trajectory_ids) if str(item)]
+    return haystacks
+
+
+def _limit_list(items: list[str], limit: int | None) -> list[str]:
+    if limit is None:
+        return list(items)
+    return list(items[:limit])
 
 
 def _ama_observations(sample: Mapping[str, Any]) -> Iterable[dict[str, Any]]:
@@ -483,6 +604,31 @@ def _select_longmemeval_samples(
     return selected
 
 
+def _select_longmemeval_v2_questions(
+    questions: list[dict[str, Any]],
+    *,
+    limit: int | None = None,
+    question_types: list[str] | None = None,
+    limit_per_type: int | None = None,
+) -> list[dict[str, Any]]:
+    allowed = set(question_types or [])
+    selected: list[dict[str, Any]] = []
+    type_counts: dict[str, int] = {}
+    for question in questions:
+        question_type = str(question.get("question_type") or "")
+        if allowed and question_type not in allowed:
+            continue
+        if limit_per_type is not None:
+            count = type_counts.get(question_type, 0)
+            if count >= limit_per_type:
+                continue
+            type_counts[question_type] = count + 1
+        selected.append(question)
+        if limit is not None and len(selected) >= limit:
+            break
+    return selected
+
+
 def convert_longmemeval_sample(
     sample: dict[str, Any],
     *,
@@ -555,6 +701,155 @@ def convert_longmemeval_sample(
         "observations": observations,
         "queries": queries,
     }
+
+
+def convert_longmemeval_v2_sample(
+    question: Mapping[str, Any],
+    *,
+    trajectories: Mapping[str, Mapping[str, Any]],
+    haystack_trajectory_ids: list[str],
+    expected: str = "answer",
+    top_k: int = 8,
+    infer_state_slots: bool = True,
+) -> dict[str, Any]:
+    question_id = _longmemeval_v2_question_id(question)
+    observations: list[dict[str, Any]] = []
+    missing_trajectory_ids: list[str] = []
+    for trajectory_id in haystack_trajectory_ids:
+        trajectory = trajectories.get(trajectory_id)
+        if trajectory is None:
+            missing_trajectory_ids.append(trajectory_id)
+            continue
+        observations.extend(_longmemeval_v2_observations(trajectory))
+
+    answer = question.get("answer", "")
+    answers = answer if isinstance(answer, list) else [answer]
+    answer_strings = [str(item) for item in answers if str(item)]
+    if expected == "evidence":
+        expected_substrings = list(haystack_trajectory_ids)
+    elif expected == "both":
+        expected_substrings = list(haystack_trajectory_ids) + answer_strings
+    else:
+        expected_substrings = answer_strings
+
+    query_text = str(question.get("question") or "")
+    query_metadata = {
+        "benchmark": "longmemeval_v2",
+        "domain": question.get("domain"),
+        "environment": question.get("environment"),
+        "question_type": question.get("question_type"),
+        "question_type_name": question.get("question_type"),
+        "answer": answer,
+        "eval_function": question.get("eval_function"),
+        "image": question.get("image"),
+        "haystack_trajectory_ids": list(haystack_trajectory_ids),
+        "missing_trajectory_ids": missing_trajectory_ids,
+        "abstention": str(question.get("question_type") or "").endswith("-abs"),
+    }
+    if infer_state_slots:
+        inferred_slots = query_relevant_state_slots(query_text)
+        if inferred_slots:
+            query_metadata["state_slot"] = inferred_slots if len(inferred_slots) > 1 else inferred_slots[0]
+            query_metadata["state_slot_source"] = "query_text_router"
+
+    return {
+        "id": question_id,
+        "metadata": {
+            "benchmark": "longmemeval_v2",
+            "domain": question.get("domain"),
+            "environment": question.get("environment"),
+            "question_type": question.get("question_type"),
+            "haystack_size": len(haystack_trajectory_ids),
+            "missing_trajectory_count": len(missing_trajectory_ids),
+        },
+        "observations": observations,
+        "queries": [{
+            "id": question_id,
+            "query": query_text,
+            "expected_substrings": expected_substrings,
+            "top_k": top_k,
+            "metadata": query_metadata,
+        }],
+    }
+
+
+def _longmemeval_v2_question_id(question: Mapping[str, Any]) -> str:
+    return str(question.get("id") or question.get("question_id") or "longmemeval-v2-question")
+
+
+def _longmemeval_v2_observations(trajectory: Mapping[str, Any]) -> list[dict[str, Any]]:
+    trajectory_id = str(trajectory.get("id") or trajectory.get("trajectory_id") or "trajectory")
+    states = trajectory.get("states") or []
+    if isinstance(states, Mapping):
+        states = states.get("states") or []
+    observations: list[dict[str, Any]] = []
+    for fallback_index, state in enumerate(states):
+        if not isinstance(state, Mapping):
+            continue
+        state_index = _longmemeval_v2_state_index(state, fallback=fallback_index)
+        step = state.get("step", state_index)
+        label = f"{trajectory_id}.s{state_index:04d}"
+        content = _longmemeval_v2_state_content(trajectory, state, label=label)
+        if not content:
+            continue
+        observations.append({
+            "label": label,
+            "content": content,
+            "kind": "trajectory_state",
+            "importance": 0.55 if trajectory.get("outcome") == "success" else 0.5,
+            "metadata": {
+                "memory_key": label,
+                "subject": "trajectory_state",
+                "tags": [
+                    "longmemeval_v2",
+                    str(trajectory.get("domain") or "unknown_domain"),
+                    str(trajectory.get("environment") or "unknown_environment"),
+                    f"trajectory_{trajectory_id}",
+                ],
+                "benchmark": "longmemeval_v2",
+                "trajectory_id": trajectory_id,
+                "trajectory_step": step,
+                "state_index": state_index,
+                "domain": trajectory.get("domain"),
+                "environment": trajectory.get("environment"),
+                "outcome": trajectory.get("outcome"),
+                "url": state.get("url"),
+            },
+        })
+    return observations
+
+
+def _longmemeval_v2_state_index(state: Mapping[str, Any], *, fallback: int) -> int:
+    raw = state.get("state_index", fallback)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _longmemeval_v2_state_content(
+    trajectory: Mapping[str, Any],
+    state: Mapping[str, Any],
+    *,
+    label: str,
+) -> str:
+    parts = [f"[{label}]"]
+    goal = _stringify(trajectory.get("goal"))
+    if goal:
+        parts.append(f"goal: {goal}")
+    url = _stringify(state.get("url"))
+    if url:
+        parts.append(f"url: {url}")
+    thought = _stringify(state.get("thought"))
+    if thought:
+        parts.append(f"thought: {thought}")
+    action = _stringify(state.get("action"))
+    if action:
+        parts.append(f"action: {action}")
+    accessibility_tree = _stringify(state.get("accessibility_tree"))
+    if accessibility_tree:
+        parts.append(f"observation: {accessibility_tree}")
+    return " | ".join(parts).strip()
 
 
 def write_longmemeval_state_audit_file(samples: Iterable[dict[str, Any]], output_path: str | Path) -> int:
@@ -840,6 +1135,34 @@ def main() -> None:
         help="Apply manually reviewed query-state JSONL labels to query metadata",
     )
 
+    longmemeval_v2 = sub.add_parser(
+        "longmemeval-v2",
+        help="Convert LongMemEval-V2 questions, trajectories, and haystacks to AdaMem JSONL",
+    )
+    longmemeval_v2.add_argument("questions", type=Path)
+    longmemeval_v2.add_argument("trajectories", type=Path)
+    longmemeval_v2.add_argument("haystack", type=Path)
+    longmemeval_v2.add_argument("output", type=Path)
+    longmemeval_v2.add_argument("--expected", choices=["answer", "evidence", "both"], default="answer")
+    longmemeval_v2.add_argument("--top-k", type=int, default=8)
+    longmemeval_v2.add_argument("--limit", type=int)
+    longmemeval_v2.add_argument("--question-types", nargs="+", help="Filter LongMemEval-V2 question_type values")
+    longmemeval_v2.add_argument(
+        "--limit-per-type",
+        type=int,
+        help="Keep at most this many LongMemEval-V2 items per question_type",
+    )
+    longmemeval_v2.add_argument(
+        "--max-trajectories-per-question",
+        type=int,
+        help="Cap haystack trajectories per question for local smoke conversion",
+    )
+    longmemeval_v2.add_argument(
+        "--no-infer-state-slots",
+        action="store_true",
+        help="Disable query-text state-slot annotations used for diagnostics",
+    )
+
     stale = sub.add_parser("stale", help="Convert STALE T1_T2_400_FULL.json to AdaMem JSONL")
     stale.add_argument("input", type=Path)
     stale.add_argument("output", type=Path)
@@ -879,6 +1202,21 @@ def main() -> None:
             state_audit_summary_output=args.state_audit_summary_output,
         )
         print(f"wrote {count} LongMemEval cases to {args.output}")
+    elif args.command == "longmemeval-v2":
+        count = convert_longmemeval_v2_file(
+            args.questions,
+            args.trajectories,
+            args.haystack,
+            args.output,
+            expected=args.expected,
+            top_k=args.top_k,
+            limit=args.limit,
+            question_types=args.question_types,
+            limit_per_type=args.limit_per_type,
+            max_trajectories_per_question=args.max_trajectories_per_question,
+            infer_state_slots=not args.no_infer_state_slots,
+        )
+        print(f"wrote {count} LongMemEval-V2 cases to {args.output}")
     elif args.command == "stale":
         count = convert_stale_file(
             args.input,

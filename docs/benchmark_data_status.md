@@ -94,6 +94,44 @@ Claim boundary:
 - It does not show that premise correction improves LongMemEval-S, because the
   subset provides no correction opportunities.
 
+## LongMemEval-V2
+
+Paper/source status:
+
+- Hugging Face dataset: https://huggingface.co/datasets/xiaowu0162/longmemeval-v2
+- Public schema files include `questions.jsonl`, `trajectories.jsonl`, and
+  haystack mappings under `haystacks/`.
+- Question types include state-sensitive transfer targets such as
+  `dynamic-environment`, `procedure`, `procedure-abs`, and related web or
+  enterprise task categories.
+
+Local status:
+
+- Full trajectory data is not checked into this workspace. The public
+  `trajectories.jsonl` file is large, so keep it under `data/` only when
+  intentionally running public-transfer pilots.
+- Converter support is available through:
+
+```bash
+PYTHONPATH=src python -m adamem.convert longmemeval-v2 \
+  data/longmemeval-v2/questions.jsonl \
+  data/longmemeval-v2/trajectories.jsonl \
+  data/longmemeval-v2/haystacks/lme_v2_small.json \
+  /tmp/longmemeval_v2_small.adamem.jsonl \
+  --expected answer \
+  --top-k 8 \
+  --limit-per-type 5 \
+  --max-trajectories-per-question 20
+```
+
+Claim boundary:
+
+- Current LongMemEval-V2 support is conversion and diagnostic plumbing only.
+- It can support public transfer pilots once the raw dataset is downloaded, but
+  it does not yet support accuracy, generalization, or SOTA claims.
+- Answers and evaluator strings are query-only metadata; trajectory
+  observations must remain free of answer labels.
+
 ## AMA-Bench Public Pilot
 
 Local status:
