@@ -117,8 +117,40 @@ def test_study_plan_command_listing_exposes_command_names() -> None:
     assert len(listing) == 8
     assert listing[0]["name"] == plan["commands"][0]["name"]
     assert listing[0]["shell"] == plan["commands"][0]["shell"]
+    assert listing[0]["provider_names"] == []
+    assert listing[0]["required_env_vars"] == []
     assert "AdaMem Study Plan Commands" in markdown
+    assert "env vars" in markdown
     assert "--command NAME" in markdown
+
+
+def test_study_plan_command_listing_reports_provider_env_requirements(tmp_path: Path) -> None:
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=tmp_path / "stale.jsonl",
+        transfer_dataset=tmp_path / "transfer.jsonl",
+        stale_source=None,
+        transfer_source=None,
+        ama_output_source=None,
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+    )
+
+    listing = study_plan_command_listing(plan)
+    target = next(
+        command for command in listing
+        if command["name"] == "stale_answer_openai_gpt_a_gemini_gemini_j"
+    )
+    extractor = next(
+        command for command in listing
+        if command["stage"] == "mechanism_ablation"
+    )
+
+    assert target["provider_names"] == ["gemini", "openai"]
+    assert target["required_env_vars"] == ["GEMINI_API_KEY", "OPENAI_API_KEY"]
+    assert extractor["provider_names"] == ["openai"]
+    assert extractor["required_env_vars"] == ["OPENAI_API_KEY"]
 
 
 def test_write_study_settings_template_is_key_free(tmp_path: Path) -> None:

@@ -3274,3 +3274,24 @@ to a paper-facing claim and evaluation gate.
     `OPENAI_API_KEY` set and no `GEMINI_API_KEY`; run-summary validation
     reported `env_provider_scope=selected_commands`, provider `openai`, and
     no missing env vars.
+
+### 2026-05-30 command index provider requirements
+
+- Extended command index entries with:
+  - `provider_names`
+  - `required_env_vars`
+- Updated command index Markdown to show providers and required env vars.
+- Purpose:
+  - Let API pilots choose a command and immediately see which provider keys
+    must be available for that command.
+  - Keep command-level key requirements aligned with selected-command env
+    preflight.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `37 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `65 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `197 passed`
+  - `python -m compileall -q src` -> no issues
+  - CLI smoke generated a command index where
+    `stale_answer_openai_gpt_a_gemini_gemini_j` reported providers
+    `gemini,openai`, env vars `GEMINI_API_KEY,OPENAI_API_KEY`, and both new
+    fields were present.

@@ -109,7 +109,8 @@ Outputs:
   commands, STALE answer/judge matrix, LLM extractor ablation, transfer
   diagnostics, and post-run report command without claiming that the planned
   experiments have already run. The command index is the stable source for
-  exact `--command NAME` values used in small API pilots. The
+  exact `--command NAME` values used in small API pilots; it also lists the
+  providers and environment variables required by each command. The
   validation artifacts report missing dataset paths, whether a missing target
   can be prepared from an available source, default model placeholders,
   model-count gaps, method-coverage gaps, and whether the post-run reporting

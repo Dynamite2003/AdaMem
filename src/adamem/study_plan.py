@@ -1030,11 +1030,14 @@ def study_plan_command_listing(plan: dict[str, Any]) -> list[dict[str, Any]]:
     listing: list[dict[str, Any]] = []
     for command in plan.get("commands") or []:
         outputs = command.get("outputs") or {}
+        providers = _providers_from_commands([command])
         listing.append({
             "name": command.get("name"),
             "stage": command.get("stage"),
             "purpose": command.get("purpose"),
             "claim_boundary": command.get("claim_boundary"),
+            "provider_names": providers,
+            "required_env_vars": _required_env_vars(providers),
             "outputs": dict(outputs),
             "output_keys": sorted(str(key) for key in outputs.keys()),
             "shell": command.get("shell") or shlex.join(str(item) for item in command.get("command") or []),
@@ -1044,13 +1047,15 @@ def study_plan_command_listing(plan: dict[str, Any]) -> list[dict[str, Any]]:
 
 def study_plan_command_listing_markdown(plan: dict[str, Any]) -> str:
     lines = ["# AdaMem Study Plan Commands", ""]
-    lines.append("| name | stage | purpose | outputs |")
-    lines.append("| --- | --- | --- | --- |")
+    lines.append("| name | stage | providers | env vars | outputs | purpose |")
+    lines.append("| --- | --- | --- | --- | --- | --- |")
     for command in study_plan_command_listing(plan):
         outputs = ", ".join(f"`{key}`" for key in command["output_keys"]) or "-"
+        providers = ", ".join(f"`{item}`" for item in command["provider_names"]) or "-"
+        env_vars = ", ".join(f"`{item}`" for item in command["required_env_vars"]) or "-"
         lines.append(
             f"| `{command['name']}` | `{command['stage']}` | "
-            f"{command.get('purpose') or ''} | {outputs} |"
+            f"{providers} | {env_vars} | {outputs} | {command.get('purpose') or ''} |"
         )
     lines.append("")
     lines.append("Use `--command NAME` with one of the names above to run a single planned command.")
