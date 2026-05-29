@@ -76,6 +76,8 @@ state/staleness mechanisms.
   reproducible runs.
 - `src/adamem/convert.py`: LoCoMo and STALE converters.
 - `src/adamem/llm.py`: provider-agnostic HTTP clients for answer/judge calls.
+- `src/adamem/study_plan.py`: pre-run paper-study planner for STALE,
+  transfer, method-ablation, model-robustness, and reporting commands.
 - `benchmarks/`: small fixtures and local smoke data.
 - `tests/`: deterministic unit and adapter tests.
 
@@ -229,6 +231,7 @@ PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.j
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl --diagnostic-report-output results/stale_failure_report.md
 PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output results/stale_pilot_mock.json
+PYTHONPATH=src python -m adamem.study_plan --output-dir results/paper_study_plan --json
 PYTHONPATH=src python -m adamem.convert locomo data/locomo10.json benchmarks/locomo10.adamem.jsonl
 PYTHONPATH=src python -m adamem.convert stale data/T1_T2_400_FULL.json benchmarks/stale.adamem.jsonl
 ```

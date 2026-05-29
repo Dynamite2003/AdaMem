@@ -2724,3 +2724,38 @@ to a paper-facing claim and evaluation gate.
   - Batch reporting smoke on `results/ama_public_20_full` wrote
     `method_coverage.json`, `method_coverage.md`, and `paper_readiness.json`
     into a temporary output directory.
+
+### 2026-05-30 paper study plan generator
+
+- Added `src/adamem/study_plan.py` and the `adamem-study-plan` console script.
+- The planner writes:
+  - `paper_study_plan.json`
+  - `paper_study_plan.md`
+  - `paper_study_commands.sh`
+- The generated plan includes:
+  - an API-free STALE diagnostic command over the planned method matrix
+  - a full answer/judge Cartesian product for at least two answer models and
+    two judge models
+  - an LLM state-extractor ablation command
+  - LongMemEval transfer retrieval diagnostics
+  - optional AMA transfer diagnostics
+  - a final batch `adamem.reporting` command
+- The plan stores a method-coverage preview using the same audit logic as
+  batch reporting, but it explicitly marks itself as planned execution, not
+  evidence.
+- Purpose:
+  - Turn the paper-track experiment matrix into a reproducible artifact before
+    API keys are available.
+  - Make later API execution mostly a matter of replacing provider/model
+    placeholders and running commands, while keeping claim boundaries explicit.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `4 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `33 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `165 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke with two answer models, two judge models, an LLM extractor model,
+    and `--no-ama` wrote JSON, Markdown, and shell artifacts to a temporary
+    directory.
+  - Default CLI smoke wrote a 9-command plan with complete method-coverage
+    preview to a temporary output directory.

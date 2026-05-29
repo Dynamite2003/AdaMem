@@ -64,6 +64,7 @@ PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.j
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl --diagnostic-report-output results/stale_failure_report.md
 PYTHONPATH=src python -m adamem.stale_pipeline benchmarks/stale_mini.jsonl --input-format adamem-jsonl --output-dir /tmp/adamem_stale_pipeline_smoke --run-name stale_mini_pipeline --baselines semantic_state_adjudication semantic_state_premise_correction --max-cases 1 --json
 PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output results/stale_pilot_mock.json
+PYTHONPATH=src python -m adamem.study_plan --output-dir results/paper_study_plan --json
 ```
 
 Outputs:
@@ -98,6 +99,11 @@ Outputs:
 - LongMemEval-V2 prepared-pilot report bundle with claim audit, grouped paper
   tables, paired comparison, and an explicit block on answer-accuracy/SOTA
   claims.
+- Paper-study plan artifacts generated before API runs:
+  `paper_study_plan.json`, `paper_study_plan.md`, and
+  `paper_study_commands.sh`. These fix the intended STALE answer/judge matrix,
+  LLM extractor ablation, transfer diagnostics, and post-run report command
+  without claiming that the planned experiments have already run.
 - Notes on any regression before new work begins.
 
 Done when:
@@ -699,6 +705,14 @@ Completed API-free foundations:
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records
   against a reference baseline.
+- `adamem.study_plan`, a pre-run paper-study planner that writes
+  `paper_study_plan.json`, `paper_study_plan.md`, and
+  `paper_study_commands.sh`. It expands answer/judge model combinations,
+  adds the API-free STALE diagnostic command, includes an LLM state-extractor
+  ablation, includes LongMemEval and AMA transfer commands, and appends the
+  batch reporting command. Its method-coverage preview is a planning check
+  only; final claims must use the generated experiment records and report
+  bundle audits.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so
