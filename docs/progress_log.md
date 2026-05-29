@@ -1953,3 +1953,30 @@ to a paper-facing claim and evaluation gate.
   the local data boundary and first reproducible conversion command.
 - Validation:
   - `PYTHONPATH=src python -m pytest tests/test_eval.py -q` -> `27 passed`
+
+### 2026-05-30 LongMemEval-V2 question audit
+
+- Added `adamem.lme_v2` for API-free LongMemEval-V2 question-side auditing:
+  - Reads public `questions.jsonl` and optional haystack JSON from local paths
+    or URLs.
+  - Writes JSONL records, JSON summary, and Markdown report.
+  - Excludes reference answers from audit records so the artifact can guide
+    split selection without leaking labels into runtime memory experiments.
+  - Separates type-level state-transfer candidates from query-text state-slot
+    signals, because the deterministic query router can over-trigger on static
+    environment questions.
+- Ran the audit on public LongMemEval-V2 questions plus `lme_v2_small`:
+  - Total questions: `451`.
+  - Small-haystack coverage: `451/451`, each with `100` trajectory ids.
+  - Type-level transfer candidates: `262/451` covering
+    `dynamic-environment`, `dynamic-environment-abs`, `procedure`,
+    `procedure-abs`, and `errors-gotchas`.
+  - Query-state-slot signals: `341/451`, including `152` static-environment
+    signals that should be treated as router-audit warnings rather than
+    automatic transfer candidates.
+  - Dominant inferred slots: `location`, `workflow.*`, `resource.*.status`,
+    `task.*.status`, `runtime.*.status`.
+- Generated ignored local artifacts under
+  `results/longmemeval_v2_question_audit/`.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `2 passed`

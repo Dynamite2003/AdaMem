@@ -124,6 +124,28 @@ PYTHONPATH=src python -m adamem.convert longmemeval-v2 \
   --max-trajectories-per-question 20
 ```
 
+- Question-side audit support is available without downloading the large
+  trajectory file:
+
+```bash
+PYTHONPATH=src python -m adamem.lme_v2 question-audit \
+  --output-dir results/longmemeval_v2_question_audit \
+  --json
+```
+
+Latest question-side audit:
+
+- Public questions: `451`.
+- Small-haystack coverage: `451/451`, with `100` trajectory ids per question.
+- Type-level state-transfer candidates: `262/451`:
+  `dynamic-environment`, `dynamic-environment-abs`, `procedure`,
+  `procedure-abs`, and `errors-gotchas`.
+- Query text produced state-slot signals for `341/451` questions, but `152`
+  of these signals came from `static-environment*` questions. Treat those as
+  router-audit warnings, not automatic state-transfer candidates.
+- Dominant inferred slots were `location`, `workflow.*`, `resource.*.status`,
+  `task.*.status`, and `runtime.*.status`.
+
 Claim boundary:
 
 - Current LongMemEval-V2 support is conversion and diagnostic plumbing only.
