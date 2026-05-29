@@ -84,6 +84,16 @@ extraction on those true state cases.
   - Keep current API-free approximations useful for design iteration while
     making it explicit that official/faithful reproduction remains required
     before SOTA-style claims.
+- Follow-up readiness change:
+  - `paper_readiness_summary` now merges coverage-level gaps into
+    `action_counts` and `top_next_actions`.
+  - Method coverage gaps add `add_missing_method_coverage`.
+  - Missing named mechanism ablations add `add_named_mechanism_ablations`.
+  - Baseline reproduction gaps add
+    `add_official_or_faithful_baseline_reproduction`.
+  - Benchmark coverage gaps add `add_missing_benchmark_coverage`.
+  This prevents batch readiness from hiding official-baseline work when
+  individual claim rows are otherwise answer-candidate shaped.
 - Validation:
   - `PYTHONPATH=src python -m pytest tests/test_experiments.py tests/test_reporting.py tests/test_claims.py tests/test_study_plan.py -q`
     -> `73 passed`

@@ -624,10 +624,13 @@ def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() ->
         "state_aware": 1,
         "state_aware_ablation": 1,
     }
-    assert summary["top_next_actions"][0] == {
-        "action": "add_strong_baselines_and_judge_robustness",
+    assert summary["action_counts"]["add_official_or_faithful_baseline_reproduction"] == 1
+    assert summary["action_counts"]["add_named_mechanism_ablations"] == 1
+    assert summary["action_counts"]["add_strong_baselines_and_judge_robustness"] == 1
+    assert {
+        "action": "add_official_or_faithful_baseline_reproduction",
         "count": 1,
-    }
+    } in summary["top_next_actions"]
     assert "answer_candidate_with_model_coverage" in markdown
     assert "Method coverage complete: `True`" in markdown
     assert "SOTA baseline reproduction ready: `False`" in markdown

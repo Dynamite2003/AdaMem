@@ -720,6 +720,15 @@ def paper_readiness_summary(
     method_coverage = method_coverage or {}
     gate_counts = _count_values(row.get("readiness_gate") for row in claim_rows)
     action_counts = _next_action_counts(claim_rows)
+    if benchmark_coverage.get("missing_requirements"):
+        _increment_action(action_counts, "add_missing_benchmark_coverage")
+    if method_coverage.get("missing_requirements"):
+        _increment_action(action_counts, "add_missing_method_coverage")
+    if method_coverage.get("missing_named_mechanism_ablations"):
+        _increment_action(action_counts, "add_named_mechanism_ablations")
+    if method_coverage.get("baseline_reproduction_gaps"):
+        _increment_action(action_counts, "add_official_or_faithful_baseline_reproduction")
+    action_counts = _sorted_action_counts(action_counts)
     complete_studies = [row for row in study_model_rows if row.get("complete")]
     incomplete_studies = [row for row in study_model_rows if not row.get("complete")]
     status = _paper_readiness_status(claim_rows, complete_studies)
@@ -1035,6 +1044,14 @@ def _top_actions(counts: dict[str, int], *, limit: int = 5) -> list[dict[str, An
         {"action": action, "count": count}
         for action, count in list(counts.items())[:limit]
     ]
+
+
+def _increment_action(counts: dict[str, int], action: str) -> None:
+    counts[action] = counts.get(action, 0) + 1
+
+
+def _sorted_action_counts(counts: dict[str, int]) -> dict[str, int]:
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 def _count_values(values: Iterable[Any]) -> dict[str, int]:
