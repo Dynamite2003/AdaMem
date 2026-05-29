@@ -108,7 +108,9 @@ Outputs:
   validation artifacts report missing dataset paths, whether a missing target
   can be prepared from an available source, default model placeholders,
   model-count gaps, method-coverage gaps, and whether the post-run reporting
-  command is present.
+  command is present. By default, generated full benchmark JSONL files are
+  written under `OUTPUT_DIR/data/` instead of `benchmarks/`, because full
+  conversions can be large and should not become tracked fixtures by accident.
 - Notes on any regression before new work begins.
 
 Done when:
@@ -720,8 +722,10 @@ Completed API-free foundations:
   validation report checks local dataset paths, whether missing targets can be
   prepared by included conversion commands, placeholder models, model
   robustness counts, method coverage, and reporting command presence. Its
-  method-coverage preview is a planning check only; final claims must use the
-  generated experiment records and report bundle audits.
+  default artifact policy keeps generated full benchmark datasets under
+  `OUTPUT_DIR/data/` rather than tracked fixtures. Its method-coverage preview
+  is a planning check only; final claims must use the generated experiment
+  records and report bundle audits.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

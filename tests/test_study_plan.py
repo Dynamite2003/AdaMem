@@ -50,6 +50,9 @@ def test_build_paper_study_plan_covers_method_and_model_matrix(tmp_path: Path) -
     ]
     coverage = plan["method_coverage_preview"]
 
+    assert plan["datasets"]["primary_stale"].endswith("study/data/stale.adamem.jsonl")
+    assert plan["datasets"]["transfer_long_memory"].endswith("study/data/longmemeval_s.adamem.jsonl")
+    assert plan["artifact_policy"]["generated_datasets_default"] == "OUTPUT_DIR/data"
     assert plan["model_requirements"]["answer_models"] == [
         "openai:gpt-a",
         "gemini:gemini-a",
@@ -184,6 +187,7 @@ def test_write_paper_study_plan_outputs_json_markdown_and_shell(tmp_path: Path) 
     validation_md = Path(artifacts["validation_markdown"]).read_text(encoding="utf-8")
     assert data["schema_version"] == "adamem.paper_study_plan.v1"
     assert "AdaMem Paper Study Plan" in markdown
+    assert "Artifact Policy" in markdown
     assert "method_coverage" not in shell
     assert "python -m adamem.reporting" in shell
     assert validation["schema_version"] == "adamem.paper_study_validation.v1"

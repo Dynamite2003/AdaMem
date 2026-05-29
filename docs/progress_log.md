@@ -2805,15 +2805,18 @@ to a paper-facing claim and evaluation gate.
   - `prepare_primary_stale_dataset`
   - `prepare_longmemeval_transfer_dataset`
 - The default plan now prepends:
-  - `python -m adamem.convert stale data/T1_T2_400_FULL.json benchmarks/stale.adamem.jsonl ...`
-  - `python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json benchmarks/longmemeval_s.adamem.jsonl ...`
+  - `python -m adamem.convert stale data/T1_T2_400_FULL.json OUTPUT_DIR/data/stale.adamem.jsonl ...`
+  - `python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json OUTPUT_DIR/data/longmemeval_s.adamem.jsonl ...`
+- The plan now records an artifact policy: generated full benchmark JSONL
+  files default to `OUTPUT_DIR/data/` instead of tracked `benchmarks/`,
+  because large conversions should not become fixture commits by accident.
 - Validation now distinguishes:
   - target dataset already exists
   - target dataset is missing but can be prepared from an available source
   - target dataset and required source are both missing
 - Current local data state:
   - `data/longmemeval_s_cleaned.json` exists, so the missing
-    `benchmarks/longmemeval_s.adamem.jsonl` target is no longer a hard
+    `OUTPUT_DIR/data/longmemeval_s.adamem.jsonl` target is no longer a hard
     execution blocker in the plan.
   - `data/T1_T2_400_FULL.json` is still missing, so the primary STALE dataset
     remains blocked until the raw full STALE file is added or a different
@@ -2833,3 +2836,7 @@ to a paper-facing claim and evaluation gate.
   - Default CLI validation smoke marked execution-ready `False`, reported only
     `primary_stale` as a missing dataset, confirmed the LongMemEval source
     exists, and counted `2` data-prep commands.
+  - Default CLI smoke confirmed generated dataset targets resolve under
+    `OUTPUT_DIR/data/`, not `benchmarks/`.
+  - LongMemEval conversion smoke wrote `3` cases from
+    `data/longmemeval_s_cleaned.json` to a temporary `OUTPUT_DIR/data` path.

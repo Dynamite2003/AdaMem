@@ -88,8 +88,8 @@ class PlannedCommand:
 def build_paper_study_plan(
     *,
     output_dir: str | Path,
-    stale_dataset: str | Path = "benchmarks/stale.adamem.jsonl",
-    transfer_dataset: str | Path = "benchmarks/longmemeval_s.adamem.jsonl",
+    stale_dataset: str | Path | None = None,
+    transfer_dataset: str | Path | None = None,
     stale_source: str | Path | None = DEFAULT_STALE_SOURCE,
     transfer_source: str | Path | None = DEFAULT_TRANSFER_SOURCE,
     ama_output_source: str | Path | None = "results/ama_public_20_full/ama_public_20.raw.jsonl",
@@ -104,6 +104,10 @@ def build_paper_study_plan(
     max_context_chars: int = 4000,
 ) -> dict[str, Any]:
     output = Path(output_dir)
+    if stale_dataset is None:
+        stale_dataset = output / "data" / "stale.adamem.jsonl"
+    if transfer_dataset is None:
+        transfer_dataset = output / "data" / "longmemeval_s.adamem.jsonl"
     stale_types = tuple(str(item) for item in stale_types)
     answers = [parse_model_spec(item) for item in answer_models]
     judges = [parse_model_spec(item) for item in judge_models]
@@ -189,6 +193,13 @@ def build_paper_study_plan(
             "This is an execution plan, not evidence. Claims become available only after "
             "the listed commands produce experiment records and adamem.reporting audits them."
         ),
+        "artifact_policy": {
+            "generated_datasets_default": "OUTPUT_DIR/data",
+            "reason": (
+                "Full benchmark conversions can be large. Default generated datasets stay "
+                "inside the study output directory instead of tracked benchmark fixtures."
+            ),
+        },
         "datasets": {
             "primary_stale": str(stale_dataset),
             "transfer_long_memory": str(transfer_dataset),
@@ -461,6 +472,12 @@ def paper_study_plan_markdown(plan: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Claim Boundary")
     lines.append(str(plan.get("claim_boundary") or ""))
+    artifact_policy = plan.get("artifact_policy") or {}
+    if artifact_policy:
+        lines.append("")
+        lines.append("## Artifact Policy")
+        lines.append(f"- Generated datasets default: `{artifact_policy.get('generated_datasets_default')}`")
+        lines.append(f"- Reason: {artifact_policy.get('reason')}")
     lines.append("")
     lines.append("## Datasets")
     for name, path in (plan.get("datasets") or {}).items():
@@ -904,8 +921,8 @@ def main(argv: list[str] | None = None) -> None:
         description="Generate a paper-track AdaMem study plan without running API calls."
     )
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--stale-dataset", default="benchmarks/stale.adamem.jsonl")
-    parser.add_argument("--transfer-dataset", default="benchmarks/longmemeval_s.adamem.jsonl")
+    parser.add_argument("--stale-dataset", help="Defaults to OUTPUT_DIR/data/stale.adamem.jsonl")
+    parser.add_argument("--transfer-dataset", help="Defaults to OUTPUT_DIR/data/longmemeval_s.adamem.jsonl")
     parser.add_argument("--stale-source", default=DEFAULT_STALE_SOURCE)
     parser.add_argument("--transfer-source", default=DEFAULT_TRANSFER_SOURCE)
     parser.add_argument("--no-data-prep", action="store_true", help="Omit dataset conversion commands.")
