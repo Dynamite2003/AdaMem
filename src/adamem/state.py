@@ -761,10 +761,8 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
             status="unknown_current",
             invalidates_value=status,
         ))
-    role = _extract_role(content)
-    if role:
-        patches.append(StatePatch(slot="role.current", value=role, evidence=content))
-    elif role_unknown_current := _extract_role_unknown_current(content):
+    role_unknown_current = _extract_role_unknown_current(content)
+    if role_unknown_current:
         patches.append(StatePatch(
             slot="role.current",
             value="unknown-current",
@@ -772,10 +770,10 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
             status="unknown_current",
             invalidates_value=role_unknown_current,
         ))
-    manager = _extract_manager(content)
-    if manager:
-        patches.append(StatePatch(slot="relationship.manager", value=manager, evidence=content))
-    elif manager_unknown_current := _extract_manager_unknown_current(content):
+    elif role := _extract_role(content):
+        patches.append(StatePatch(slot="role.current", value=role, evidence=content))
+    manager_unknown_current = _extract_manager_unknown_current(content)
+    if manager_unknown_current:
         patches.append(StatePatch(
             slot="relationship.manager",
             value="unknown-current",
@@ -783,6 +781,8 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
             status="unknown_current",
             invalidates_value=manager_unknown_current,
         ))
+    elif manager := _extract_manager(content):
+        patches.append(StatePatch(slot="relationship.manager", value=manager, evidence=content))
     return patches
 
 

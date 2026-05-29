@@ -3448,3 +3448,37 @@ to a paper-facing claim and evaluation gate.
     - `semantic_state_adjudication` -> `9/9`
     - `semantic_state_premise_correction` -> `9/9`
     - `state_readout` -> `9/9`
+
+### 2026-05-30 unknown-current role and manager invalidation
+
+- Fixed extraction precedence for role and manager invalidations without known
+  replacements.
+  - `My role is no longer frontend lead.` now writes
+    `role.current=unknown-current` with `invalidated_state_value=frontend lead`.
+  - `My manager is no longer Sam.` now writes
+    `relationship.manager=unknown-current` with `invalidated_state_value=Sam`.
+- Added a regression test covering role/manager unknown-current readout and
+  stale-premise correction.
+- Extended `benchmarks/unknown_current_state_transfer.jsonl` from 5 to 7
+  queries with role and manager Premise Resistance cases.
+- Updated research notes to mark role/manager unknown-current handling as local
+  mechanism coverage, while preserving the need for public benchmark validation.
+- Purpose:
+  - Close a boundary case where broad active-value patterns could turn
+    invalidation text into active values such as `no longer frontend lead`.
+  - Improve causal validity for invalidated-without-replacement state: the
+    system should represent uncertainty rather than inventing a new current
+    value.
+- Validation so far:
+  - Focused extraction check confirmed role and manager invalidation text emits
+    `unknown_current` patches.
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py::test_state_unknown_current_handles_role_and_manager_slots tests/test_eval.py::test_unknown_current_transfer_fixture_favors_state_authority -q`
+    -> `2 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py tests/test_eval.py -q`
+    -> `74 passed`
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/unknown_current_state_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_premise_correction --json`
+    -> `semantic_only` `0/7`, `semantic_state_adjudication` `7/7`,
+    `semantic_state_premise_correction` `7/7`
+  - `PYTHONPATH=src python -m pytest -q` -> `203 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

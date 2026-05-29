@@ -899,6 +899,60 @@ def test_state_premise_correction_handles_stale_role_and_manager() -> None:
     assert manager_results[0].item.metadata["current_value"] == "Priya"
 
 
+def test_state_unknown_current_handles_role_and_manager_slots() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: My role is frontend lead.")
+    mem.observe("[2026-02-01] user: My role is no longer frontend lead.")
+    mem.observe("[2026-01-01] user: My manager is Sam.")
+    mem.observe("[2026-02-01] user: My manager is no longer Sam.")
+
+    active_unknown = {
+        item.metadata["state_slot"]: item
+        for item in mem.store.all()
+        if item.kind == "state"
+        and item.active
+        and item.metadata.get("state_status") == "unknown_current"
+    }
+
+    assert active_unknown["role.current"].metadata["state_value"] == "unknown-current"
+    assert active_unknown["role.current"].metadata["invalidated_state_value"] == "frontend lead"
+    assert active_unknown["relationship.manager"].metadata["state_value"] == "unknown-current"
+    assert active_unknown["relationship.manager"].metadata["invalidated_state_value"] == "Sam"
+
+    role_results = mem.retrieve(
+        "As the frontend lead, which planning responsibilities apply?",
+        top_k=1,
+    )
+    manager_results = mem.retrieve("Should I send approval to my manager Sam?", top_k=1)
+
+    assert role_results[0].item.kind == "state_correction"
+    assert role_results[0].item.metadata["state_slot"] == "role.current"
+    assert role_results[0].item.metadata["stale_value"] == "frontend lead"
+    assert role_results[0].item.metadata["current_value"] == "unknown-current"
+    assert manager_results[0].item.kind == "state_correction"
+    assert manager_results[0].item.metadata["state_slot"] == "relationship.manager"
+    assert manager_results[0].item.metadata["stale_value"] == "Sam"
+    assert manager_results[0].item.metadata["current_value"] == "unknown-current"
+
+
 def test_state_records_do_not_pollute_generic_retrieval_without_authorization() -> None:
     mem = AdaMem(
         config=AdaMemConfig(
