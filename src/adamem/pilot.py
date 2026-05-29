@@ -24,8 +24,13 @@ from adamem.bench import (
     load_jsonl_cases,
     run_benchmark,
 )
-from adamem.convert import convert_ama_file
+from adamem.convert import (
+    convert_ama_file,
+    convert_longmemeval_v2_file,
+    load_question_ids,
+)
 from adamem.experiments import experiment_record, write_experiment_record
+from adamem.lme_v2 import write_longmemeval_v2_prepared_split_validation
 from adamem.llm import LLMClient, build_client
 
 
@@ -152,6 +157,96 @@ def run_ama_public_pilot(
     }
 
 
+def run_longmemeval_v2_prepared_pilot(
+    *,
+    output_dir: str | Path,
+    questions: str | Path,
+    trajectories: str | Path,
+    haystack: str | Path,
+    split_records: str | Path,
+    baselines: list[str] | None = None,
+    top_k: int = 8,
+    include_raw_outputs: bool = False,
+) -> dict[str, Any]:
+    """Run an API-free retrieval pilot on a prepared LongMemEval-V2 split."""
+
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    timings: dict[str, float] = {}
+
+    started = time.perf_counter()
+    validation = write_longmemeval_v2_prepared_split_validation(
+        split_records,
+        questions,
+        haystack,
+        trajectories,
+        output / "validation",
+    )
+    timings["validation_seconds"] = time.perf_counter() - started
+    if not validation["summary"].get("valid"):
+        raise ValueError(f"LongMemEval-V2 prepared split validation failed: {validation['summary_path']}")
+
+    dataset = output / "longmemeval_v2_prepared.answer.adamem.jsonl"
+    started = time.perf_counter()
+    case_count = convert_longmemeval_v2_file(
+        questions,
+        trajectories,
+        haystack,
+        dataset,
+        expected="answer",
+        top_k=top_k,
+        question_ids=load_question_ids(split_records),
+    )
+    timings["convert_seconds"] = time.perf_counter() - started
+
+    specs = select_baselines(
+        baselines or [
+            "semantic_only",
+            "semantic_state_readout",
+            "semantic_state_premise_correction",
+        ]
+    )
+    started = time.perf_counter()
+    answer_outputs = _run_jsonl_pilot(
+        dataset=dataset,
+        output_prefix=output / "longmemeval_v2_prepared.answer",
+        run_name="longmemeval_v2_prepared_answer",
+        run_type="longmemeval_v2_prepared_answer_support_pilot",
+        specs=specs,
+        source=str(split_records),
+        limit=case_count,
+        top_k=top_k,
+        include_raw_outputs=include_raw_outputs,
+        extra_notes={
+            "questions": str(questions),
+            "trajectories": str(trajectories),
+            "haystack": str(haystack),
+            "split_records": str(split_records),
+            "validation_summary_path": validation["summary_path"],
+            "validation_report_path": validation["report_path"],
+            "answer_model_required": False,
+            "judge_model_required": False,
+            "metric_boundary": "retrieval answer-string support, not final generated answer accuracy",
+        },
+    )
+    timings["answer_support_seconds"] = time.perf_counter() - started
+    timings["total_seconds"] = sum(timings.values())
+
+    return {
+        "questions": str(questions),
+        "trajectories": str(trajectories),
+        "haystack": str(haystack),
+        "split_records": str(split_records),
+        "top_k": top_k,
+        "baselines": list(specs),
+        "cases": case_count,
+        "dataset": str(dataset),
+        "validation": validation,
+        "answer": answer_outputs,
+        "timings": {key: round(value, 4) for key, value in timings.items()},
+    }
+
+
 def download_jsonl_prefix(url: str, output_path: str | Path, *, limit: int) -> int:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -204,6 +299,7 @@ def _run_jsonl_pilot(
     limit: int,
     top_k: int,
     include_raw_outputs: bool,
+    extra_notes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cases = load_jsonl_cases(dataset)
     configs = {name: spec.config for name, spec in specs.items()}
@@ -219,6 +315,18 @@ def _run_jsonl_pilot(
     _write_jsonl(records_path, records)
     _write_text(report_path, benchmark_failure_report(records))
 
+    notes = {
+        "source": source,
+        "top_k": top_k,
+        "records_path": str(records_path),
+        "raw_outputs_embedded": include_raw_outputs,
+        "benchmark_seconds": round(benchmark_seconds, 4),
+        "answer_model_required": False,
+        "judge_model_required": False,
+        "ground_truth_runtime_use": "forbidden",
+        "ground_truth_evaluation_use": "query_metadata_only",
+    }
+    notes.update(extra_notes or {})
     record = experiment_record(
         run_name=run_name,
         run_type=run_type,
@@ -233,17 +341,7 @@ def _run_jsonl_pilot(
         },
         diagnostics={"failure_summary": summary},
         raw_outputs=records if include_raw_outputs else [],
-        notes={
-            "source": source,
-            "top_k": top_k,
-            "records_path": str(records_path),
-            "raw_outputs_embedded": include_raw_outputs,
-            "benchmark_seconds": round(benchmark_seconds, 4),
-            "answer_model_required": False,
-            "judge_model_required": False,
-            "ground_truth_runtime_use": "forbidden",
-            "ground_truth_evaluation_use": "query_metadata_only",
-        },
+        notes=notes,
     )
     write_experiment_record(experiment_path, record)
     return {
@@ -388,6 +486,28 @@ def main(argv: list[str] | None = None) -> None:
     ama.add_argument("--max-context-chars", type=int, default=4000)
     ama.add_argument("--json", action="store_true", help="Emit JSON summary instead of text")
 
+    lme_v2 = subparsers.add_parser(
+        "lme-v2-prepared",
+        help="Run an API-free LongMemEval-V2 prepared split pilot",
+    )
+    lme_v2.add_argument("--output-dir", type=Path, required=True)
+    lme_v2.add_argument("--questions", type=Path, required=True)
+    lme_v2.add_argument("--trajectories", type=Path, required=True)
+    lme_v2.add_argument("--haystack", type=Path, required=True)
+    lme_v2.add_argument("--split-records", type=Path, required=True)
+    lme_v2.add_argument(
+        "--baselines",
+        nargs="+",
+        default=[
+            "semantic_only",
+            "semantic_state_readout",
+            "semantic_state_premise_correction",
+        ],
+    )
+    lme_v2.add_argument("--top-k", type=int, default=8)
+    lme_v2.add_argument("--include-raw-outputs", action="store_true", help="Embed records in experiment JSON")
+    lme_v2.add_argument("--json", action="store_true", help="Emit JSON summary instead of text")
+
     args = parser.parse_args(argv)
     if args.command == "ama-public":
         answer_client = None
@@ -438,6 +558,23 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"answer generation report: {summary['answer_generation']['report_path']}")
             if summary["evidence"]:
                 print(f"evidence report: {summary['evidence']['report_path']}")
+    elif args.command == "lme-v2-prepared":
+        summary = run_longmemeval_v2_prepared_pilot(
+            output_dir=args.output_dir,
+            questions=args.questions,
+            trajectories=args.trajectories,
+            haystack=args.haystack,
+            split_records=args.split_records,
+            baselines=args.baselines,
+            top_k=args.top_k,
+            include_raw_outputs=args.include_raw_outputs,
+        )
+        if args.json:
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            print(f"wrote LongMemEval-V2 prepared pilot outputs to {args.output_dir}")
+            print(f"validation report: {summary['validation']['report_path']}")
+            print(f"answer-support report: {summary['answer']['report_path']}")
 
 
 if __name__ == "__main__":

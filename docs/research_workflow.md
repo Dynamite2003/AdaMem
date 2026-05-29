@@ -49,6 +49,7 @@ PYTHONPATH=src python -m adamem.lme_v2 transfer-split --audit-records results/lo
 PYTHONPATH=src python -m adamem.lme_v2 trajectory-manifest --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --output-dir results/longmemeval_v2_trajectory_manifest --json
 PYTHONPATH=src python -m adamem.lme_v2 extract-trajectories --trajectory-ids results/longmemeval_v2_trajectory_manifest/longmemeval_v2_split_trajectory_ids.jsonl --trajectories data/longmemeval-v2/trajectories.jsonl --output-dir data/longmemeval-v2/text_transfer_60 --json
 PYTHONPATH=src python -m adamem.lme_v2 validate-prep --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --questions data/longmemeval-v2/questions.jsonl --haystack data/longmemeval-v2/haystacks/lme_v2_small.json --trajectories data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl --output-dir results/longmemeval_v2_text_transfer_60_validation --json
+PYTHONPATH=src python -m adamem.pilot lme-v2-prepared --questions data/longmemeval-v2/questions.jsonl --trajectories data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl --haystack data/longmemeval-v2/haystacks/lme_v2_small.json --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --output-dir results/longmemeval_v2_text_transfer_60_pilot --baselines semantic_only semantic_state_readout semantic_state_premise_correction --top-k 8 --json
 PYTHONPATH=src python -m adamem.convert longmemeval-v2 data/longmemeval-v2/questions.jsonl data/longmemeval-v2/trajectories.jsonl data/longmemeval-v2/haystacks/lme_v2_small.json /tmp/longmemeval_v2_small.adamem.jsonl --expected answer --top-k 8 --limit-per-type 5 --max-trajectories-per-question 20
 PYTHONPATH=src python -m adamem.convert longmemeval-v2 data/longmemeval-v2/questions.jsonl data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl data/longmemeval-v2/haystacks/lme_v2_small.json /tmp/longmemeval_v2_text_transfer_60.adamem.jsonl --question-ids-file results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --expected answer --top-k 8
 PYTHONPATH=src python -m adamem.convert ama data/ama_bench.jsonl benchmarks/ama_bench.adamem.jsonl --expected answer --top-k 8
@@ -85,6 +86,10 @@ Outputs:
   converter.
 - Prepared-split validation artifact proving question, haystack, trajectory,
   duplicate-id, and label-leak checks passed before conversion or API runs.
+- API-free LongMemEval-V2 prepared-split pilot outputs, including validation,
+  exact-split conversion, retrieval answer-string support records, Markdown
+  report, and experiment JSON. This is a retrieval support diagnostic, not
+  generated answer accuracy.
 - Notes on any regression before new work begins.
 
 Done when:

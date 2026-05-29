@@ -2079,3 +2079,21 @@ to a paper-facing claim and evaluation gate.
   - `valid=true`, `blocking_issue_count=0`, `warning_count=0`.
 - Validation:
   - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `12 passed`
+
+### 2026-05-30 LongMemEval-V2 prepared pilot
+
+- Added `adamem.pilot lme-v2-prepared`:
+  - Runs prepared-split validation before conversion.
+  - Converts the exact selected split from `split.records.jsonl`.
+  - Runs API-free retrieval answer-string support with selected baselines.
+  - Writes JSONL records, Markdown report, experiment JSON, and timing summary.
+  - Records the metric boundary explicitly: retrieval answer-string support,
+    not final generated answer accuracy.
+- Added tests for the happy path and for blocking validation failures caused by
+  label leakage in selected trajectories.
+- Updated the research workflow and benchmark data status docs with the
+  prepared-pilot command and claim boundary.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_pilot.py -q` -> `6 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `138 passed`
+  - `git diff --check` -> no issues

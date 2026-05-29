@@ -3,9 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from adamem.answer_eval import SubstringAnswerScorer
 from adamem.llm import MockLLMClient
-from adamem.pilot import copy_jsonl_prefix, run_ama_public_pilot
+from adamem.pilot import (
+    copy_jsonl_prefix,
+    run_ama_public_pilot,
+    run_longmemeval_v2_prepared_pilot,
+)
 
 
 def test_copy_jsonl_prefix_validates_and_limits_records(tmp_path: Path) -> None:
@@ -151,3 +157,149 @@ def test_ama_public_pilot_can_run_answer_generation_stage(tmp_path: Path) -> Non
     assert experiment["run_type"] == "ama_public_answer_generation_pilot"
     assert experiment["notes"]["answer_provider"] == "mock"
     assert experiment["notes"]["ground_truth_runtime_use"] == "forbidden"
+
+
+def test_longmemeval_v2_prepared_pilot_runs_validation_conversion_and_retrieval(tmp_path: Path) -> None:
+    questions = tmp_path / "questions.jsonl"
+    questions.write_text(
+        "\n".join([
+            json.dumps({
+                "id": "q_dynamic",
+                "domain": "enterprise",
+                "environment": "workarena",
+                "question_type": "dynamic-environment",
+                "question": "Is the staging build runner online?",
+                "answer": "online",
+                "eval_function": "norm_phrase_set_match",
+            }),
+            json.dumps({
+                "id": "q_static",
+                "domain": "web",
+                "environment": "webarena-cms",
+                "question_type": "static-environment",
+                "question": "What is the button label?",
+                "answer": "Publish",
+                "eval_function": "norm_phrase_set_match",
+            }),
+        ]),
+        encoding="utf-8",
+    )
+    haystack = tmp_path / "haystack.json"
+    haystack.write_text(
+        json.dumps({
+            "q_dynamic": ["traj_dynamic"],
+            "q_static": ["traj_static"],
+        }),
+        encoding="utf-8",
+    )
+    trajectories = tmp_path / "selected_trajectories.jsonl"
+    trajectories.write_text(
+        "\n".join([
+            json.dumps({
+                "id": "traj_dynamic",
+                "domain": "enterprise",
+                "environment": "workarena",
+                "goal": "Inspect runner state.",
+                "states": [
+                    {
+                        "state_index": 0,
+                        "accessibility_tree": "The staging build runner status is online.",
+                    }
+                ],
+            }),
+            json.dumps({
+                "id": "traj_static",
+                "domain": "web",
+                "environment": "webarena-cms",
+                "goal": "Inspect CMS.",
+                "states": [{"state_index": 0, "accessibility_tree": "The button label is Publish."}],
+            }),
+        ]),
+        encoding="utf-8",
+    )
+    split_records = tmp_path / "split.records.jsonl"
+    split_records.write_text(
+        "\n".join([
+            json.dumps({
+                "id": "q_dynamic",
+                "split": "transfer",
+                "selection_group": "dynamic-environment",
+                "question_type": "dynamic-environment",
+            }),
+            json.dumps({
+                "id": "q_static",
+                "split": "static_clean_control",
+                "selection_group": "static_no_state_slot_signal",
+                "question_type": "static-environment",
+            }),
+        ]),
+        encoding="utf-8",
+    )
+
+    summary = run_longmemeval_v2_prepared_pilot(
+        output_dir=tmp_path / "pilot",
+        questions=questions,
+        trajectories=trajectories,
+        haystack=haystack,
+        split_records=split_records,
+        baselines=["semantic_only", "semantic_state_readout"],
+        top_k=2,
+    )
+    experiment = json.loads(Path(summary["answer"]["experiment_path"]).read_text(encoding="utf-8"))
+
+    assert summary["cases"] == 2
+    assert summary["validation"]["summary"]["valid"] is True
+    assert Path(summary["dataset"]).exists()
+    assert Path(summary["answer"]["records_path"]).name == "longmemeval_v2_prepared.answer.records.jsonl"
+    assert experiment["run_type"] == "longmemeval_v2_prepared_answer_support_pilot"
+    assert experiment["notes"]["metric_boundary"] == "retrieval answer-string support, not final generated answer accuracy"
+    assert experiment["notes"]["validation_summary_path"] == summary["validation"]["summary_path"]
+    assert summary["answer"]["summary"]["by_baseline"]["semantic_only"]["total"] == 2
+
+
+def test_longmemeval_v2_prepared_pilot_stops_on_validation_failure(tmp_path: Path) -> None:
+    questions = tmp_path / "questions.jsonl"
+    questions.write_text(
+        json.dumps({
+            "id": "q_leaky",
+            "domain": "enterprise",
+            "environment": "workarena",
+            "question_type": "dynamic-environment",
+            "question": "What is the staging build runner status?",
+            "answer": "online",
+        }),
+        encoding="utf-8",
+    )
+    haystack = tmp_path / "haystack.json"
+    haystack.write_text(json.dumps({"q_leaky": ["traj_leaky"]}), encoding="utf-8")
+    trajectories = tmp_path / "selected_trajectories.jsonl"
+    trajectories.write_text(
+        json.dumps({
+            "id": "traj_leaky",
+            "domain": "enterprise",
+            "environment": "workarena",
+            "answer": "online",
+            "states": [{"state_index": 0, "accessibility_tree": "Runner status is online."}],
+        }),
+        encoding="utf-8",
+    )
+    split_records = tmp_path / "split.records.jsonl"
+    split_records.write_text(
+        json.dumps({
+            "id": "q_leaky",
+            "split": "transfer",
+            "selection_group": "dynamic-environment",
+            "question_type": "dynamic-environment",
+        }),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="prepared split validation failed"):
+        run_longmemeval_v2_prepared_pilot(
+            output_dir=tmp_path / "pilot",
+            questions=questions,
+            trajectories=trajectories,
+            haystack=haystack,
+            split_records=split_records,
+            baselines=["semantic_only"],
+        )

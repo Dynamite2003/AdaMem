@@ -157,6 +157,16 @@ PYTHONPATH=src python -m adamem.lme_v2 validate-prep \
   --trajectories data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl \
   --output-dir results/longmemeval_v2_text_transfer_60_validation \
   --json
+
+PYTHONPATH=src python -m adamem.pilot lme-v2-prepared \
+  --questions data/longmemeval-v2/questions.jsonl \
+  --trajectories data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl \
+  --haystack data/longmemeval-v2/haystacks/lme_v2_small.json \
+  --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl \
+  --output-dir results/longmemeval_v2_text_transfer_60_pilot \
+  --baselines semantic_only semantic_state_readout semantic_state_premise_correction \
+  --top-k 8 \
+  --json
 ```
 
 Latest question-side audit:
@@ -196,6 +206,10 @@ Latest text-only transfer split:
   present, required trajectories are covered, trajectory ids are unique, and no
   selected trajectory record contains `answer`, `eval_function`, or `question`
   label fields.
+- API-free prepared-split pilot support runs validation, exact split
+  conversion, and retrieval answer-string support in one command. Its output is
+  a debugging and transfer-readiness artifact, not an end-to-end answer model
+  result.
 - The split records can drive exact conversion after the trajectory file is
   available:
 
@@ -215,6 +229,9 @@ Claim boundary:
 - Current LongMemEval-V2 support is conversion and diagnostic plumbing only.
 - It can support public transfer pilots once the raw dataset is downloaded, but
   it does not yet support accuracy, generalization, or SOTA claims.
+- The prepared pilot's answer-string support metric only asks whether retrieved
+  memory contains the reference answer string. It must not be reported as final
+  answer accuracy or SOTA evidence.
 - Answers and evaluator strings are query-only metadata; trajectory
   observations must remain free of answer labels.
 
