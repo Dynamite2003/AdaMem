@@ -1743,3 +1743,34 @@ to a paper-facing claim and evaluation gate.
   - This is still mini-fixture evidence only. Full STALE data is not currently
     present in the workspace, so this should be treated as workflow validation
     and mechanism debugging, not as a paper result.
+
+### 2026-05-30 benchmark data status and LongMemEval transfer check
+
+- Checked current STALE availability:
+  - arXiv/Hugging Face describe STALE as 400 expert-validated conflict
+    scenarios and 1,200 queries across State Resolution, Premise Resistance,
+    and Implicit Policy Adaptation.
+  - The Hugging Face paper page currently lists no linked dataset.
+  - Local workspace has only `benchmarks/stale_mini.jsonl` with 2 smoke cases;
+    `benchmarks/stale.adamem.jsonl` is not present.
+- Added `docs/benchmark_data_status.md` to track benchmark availability,
+  claim boundaries, and reproduction commands for STALE, LongMemEval-S, and
+  AMA public pilots.
+- Ran a LongMemEval-S balanced 60 no-regression transfer check for the new
+  premise-correction baseline:
+  - Conversion command:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_premise_correction.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10`
+  - Evaluation command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60_premise_correction.adamem.jsonl --baselines semantic_state_adjudication semantic_state_premise_correction --max-cases 60 --benchmark-cases-output results/longmemeval_s_balanced_60_premise_correction_records.jsonl --benchmark-report-output results/longmemeval_s_balanced_60_premise_correction_report.md --experiment-output results/longmemeval_s_balanced_60_premise_correction.json`
+  - Result: both baselines scored `39/60` evidence support.
+  - Paired comparison versus `semantic_state_adjudication`: gained `0`, lost
+    `0`, net `0` across all six question types.
+  - Premise-correction readouts triggered `0` times, which is expected for this
+    broad LongMemEval-S retrieval subset and supports a no-pollution /
+    no-regression interpretation only.
+- Generated local ignored artifacts:
+  - `results/longmemeval_s_balanced_60_premise_correction_records.jsonl`
+  - `results/longmemeval_s_balanced_60_premise_correction_report.md`
+  - `results/longmemeval_s_balanced_60_premise_correction.json`
+  - `results/longmemeval_s_balanced_60_premise_correction_tables.md`
+  - `results/longmemeval_s_balanced_60_premise_correction_compare.md`
