@@ -83,6 +83,8 @@ def test_write_experiment_bundle_supports_longmemeval_v2_prepared_pilot(tmp_path
     assert manifest["record_kind"] == "retrieval"
     assert "longmemeval_v2_prepared_split_readiness" in manifest["supported_claims"]
     assert "answer_accuracy" in manifest["blocked_claims"]
+    assert manifest["claim_evidence"]["prepared_state_evidence"]["with_matching_state_evidence"] == 1
+    assert manifest["warnings"] == []
     assert "table_error" not in manifest
     artifacts = manifest["artifacts"]
     assert Path(artifacts["claim_audit_markdown"]).exists()
@@ -109,6 +111,8 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     assert len(manifest["bundles"]) == 2
     for bundle in manifest["bundles"]:
         assert bundle["record_kind"] == "answer_generation"
+        assert "claim_evidence" in bundle
+        assert "warnings" in bundle
         assert Path(bundle["artifacts"]["paper_tables_markdown"]).exists()
 
 

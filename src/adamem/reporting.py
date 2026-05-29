@@ -38,6 +38,8 @@ def write_experiment_bundle(
         "raw_output_count": audit["raw_output_count"],
         "supported_claims": audit["supported_claims"],
         "blocked_claims": audit["blocked_claims"],
+        "claim_evidence": audit.get("claim_evidence") or {},
+        "warnings": audit.get("warnings") or [],
         "artifacts": {
             "claim_audit_markdown": str(audit_md),
             "claim_audit_json": str(audit_json),

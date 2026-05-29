@@ -2161,3 +2161,18 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest tests/test_pilot.py tests/test_claims.py tests/test_reporting.py -q` -> `20 passed`
   - `PYTHONPATH=src python -m pytest -q` -> `143 passed`
   - `git diff --check` -> no issues
+
+### 2026-05-30 report manifest claim evidence
+
+- Extended `adamem.reporting` bundle manifests with:
+  - `claim_evidence`
+  - `warnings`
+- This makes batch report manifests usable for paper-track triage:
+  - Prepared LongMemEval-V2 bundles expose state-evidence counts without
+    opening per-run claim audit JSON files.
+  - Runs with missing metric boundaries, missing state-evidence summaries, or
+    other claim-audit warnings can be filtered directly from the manifest.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `6 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `143 passed`
+  - `git diff --check` -> no issues
