@@ -111,6 +111,18 @@ extraction on those true state cases.
   - Make plan resume/dry-run checks catch incomplete reporting stages.
   - Ensure later API-backed STALE pilots remain self-auditing at both the
     single-run and batch levels.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q`
+    -> `37 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `208 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - Full API-free smoke study plan execution in a temporary output directory:
+    `PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir <tmp>/study --run --json`
+    completed all 8 selected commands, reported 0 failed commands, 0 missing
+    declared outputs, and wrote the top-level `paper_readiness.json`.
+    The resulting readiness status was `needs_attention`, as expected for a
+    mock-provider smoke workflow that is plumbing evidence only.
 
 ### 2026-05-30 day-end handoff
 
