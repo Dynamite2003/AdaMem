@@ -220,6 +220,9 @@ def write_experiment_bundle_batch(
     method_md.write_text(method_coverage_markdown(method_coverage), encoding="utf-8")
     readiness_json.write_text(json.dumps(paper_readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     readiness_md.write_text(paper_readiness_markdown(paper_readiness), encoding="utf-8")
+    batch_manifest["paper_readiness"] = paper_readiness
+    batch_manifest["paper_claim_ready"] = bool(paper_readiness.get("paper_claim_ready"))
+    batch_manifest["paper_claim_blockers"] = list(paper_readiness.get("paper_claim_blockers") or [])
     batch_manifest["artifacts"] = {
         "claim_matrix_json": str(claim_matrix_json),
         "claim_matrix_markdown": str(claim_matrix_md),

@@ -244,6 +244,8 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["method_coverage_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_readiness_json"]).exists()
     assert Path(manifest["artifacts"]["paper_readiness_markdown"]).exists()
+    assert manifest["paper_claim_ready"] is False
+    assert manifest["paper_claim_blockers"] == manifest["paper_readiness"]["paper_claim_blockers"]
     assert len(manifest["bundles"]) == 3
     for bundle in manifest["bundles"]:
         assert "claim_evidence" in bundle
@@ -281,6 +283,8 @@ def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
 
     manifest = json.loads((output_dir / "batch_manifest.json").read_text(encoding="utf-8"))
     assert manifest["experiment_count"] == 1
+    assert manifest["paper_claim_ready"] is False
+    assert "paper_claim_blockers" in manifest
     assert manifest["bundles"][0]["record_kind"] == "answer_generation"
     assert Path(manifest["artifacts"]["claim_matrix_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()

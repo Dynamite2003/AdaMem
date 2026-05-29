@@ -120,6 +120,26 @@ extraction on those true state cases.
     for end-to-end answer evaluation, model coverage, benchmark coverage,
     method coverage, and named mechanism ablations.
 
+### 2026-05-30 batch manifest paper-claim gate
+
+- Embedded top-level paper-claim gate fields into directory report manifests:
+  - `batch_manifest["paper_readiness"]`
+  - `batch_manifest["paper_claim_ready"]`
+  - `batch_manifest["paper_claim_blockers"]`
+- Purpose:
+  - Let automation inspect a batch report's paper-level claim status without
+    opening `paper_readiness.json` separately.
+  - Keep single-run and batch report manifests consistent.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q`
+    -> `18 passed`
+  - Directory-mode CLI smoke confirmed stdout JSON and
+    `batch_manifest.json` both expose `paper_claim_ready=False` and matching
+    `paper_claim_blockers`.
+  - `PYTHONPATH=src python -m pytest -q` -> `209 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues.
+
 ### 2026-05-30 single-run method coverage artifacts
 
 - Added single-experiment method/ablation coverage artifacts to report bundles.
