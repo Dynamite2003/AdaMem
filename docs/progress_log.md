@@ -2951,3 +2951,27 @@ to a paper-facing claim and evaluation gate.
   - CLI smoke generated a smoke plan, then loaded the saved
     `paper_study_plan.json` with `--plan` and dry-ran the `diagnostic` stage
     successfully.
+
+### 2026-05-30 study plan fingerprint
+
+- Added stable SHA-256 plan fingerprints.
+- Fingerprint details:
+  - computed from canonical JSON with `plan_fingerprint` itself excluded
+  - generated plans store `plan_fingerprint`
+  - validation reports current and recorded fingerprints
+  - run summaries record the executed plan fingerprint
+  - saved-plan validation detects when an edited JSON no longer matches its
+    recorded fingerprint
+- Purpose:
+  - Make API-backed experiment execution traceable to an exact study-plan JSON
+    content, not only a path or command line.
+  - Support manual plan editing while still surfacing when the recorded
+    fingerprint is stale.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `17 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `45 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `177 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke generated a saved plan, loaded it with `--plan`, dry-ran
+    `diagnostic`, and confirmed validation/run summary fingerprints match.

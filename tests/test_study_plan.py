@@ -9,6 +9,7 @@ from adamem.study_plan import (
     load_paper_study_plan,
     main,
     parse_model_spec,
+    plan_fingerprint,
     run_study_plan,
     validate_paper_study_plan,
     write_paper_study_plan,
@@ -90,8 +91,11 @@ def test_build_smoke_study_plan_is_api_free_and_execution_ready() -> None:
         "primary_stale": None,
         "transfer_long_memory": None,
     }
+    assert plan["plan_fingerprint"] == plan_fingerprint(plan)
     assert "data_prep" not in command_stages
     assert validation["execution_ready"] is True
+    assert validation["plan_fingerprint"] == plan["plan_fingerprint"]
+    assert validation["plan_fingerprint_matches_recorded"] is True
     assert validation["required_env_vars"] == []
     assert validation["placeholder_models"] == []
     assert validation["command_count"] == 8
@@ -225,6 +229,19 @@ def test_load_paper_study_plan_reads_saved_plan(tmp_path: Path) -> None:
 
     assert loaded["profile"] == "smoke"
     assert loaded["commands"][0]["name"] == plan["commands"][0]["name"]
+    assert loaded["plan_fingerprint"] == plan_fingerprint(loaded)
+
+
+def test_plan_fingerprint_detects_saved_plan_edits(tmp_path: Path) -> None:
+    plan = build_smoke_study_plan(output_dir=tmp_path / "study")
+    original = plan_fingerprint(plan)
+    plan["commands"][0]["name"] = "edited"
+
+    validation = validate_paper_study_plan(plan)
+
+    assert plan_fingerprint(plan) != original
+    assert validation["recorded_plan_fingerprint"] == original
+    assert validation["plan_fingerprint_matches_recorded"] is False
 
 
 def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> None:
@@ -243,6 +260,8 @@ def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> Non
         for line in log_path.read_text(encoding="utf-8").splitlines()
     ]
     assert summary["status"] == "dry_run"
+    assert summary["plan_fingerprint"] == plan["plan_fingerprint"]
+    assert summary["recorded_plan_fingerprint"] == plan["plan_fingerprint"]
     assert summary["selected_command_count"] == 1
     assert summary["completed_command_count"] == 0
     assert records[0]["status"] == "dry_run"

@@ -755,6 +755,9 @@ Completed API-free foundations:
 - `adamem.study_plan --plan`, a saved-plan loader for executing or validating
   an edited `paper_study_plan.json`. This is the intended path after replacing
   placeholder provider/model labels with real API-backed settings.
+- Study plans carry a stable SHA-256 fingerprint. Validation and run summaries
+  report the current fingerprint and whether it matches the recorded
+  fingerprint, so edited plan JSON files can be traced precisely.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

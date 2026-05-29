@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -241,6 +242,7 @@ def build_paper_study_plan(
             "STALE remains the primary benchmark; transfer results are used for generality and no-regression evidence.",
         ],
     }
+    plan["plan_fingerprint"] = plan_fingerprint(plan)
     return plan
 
 
@@ -293,6 +295,7 @@ def build_smoke_study_plan(
         "Smoke output must be treated as plumbing evidence only.",
         "Paper claims still require full STALE data, non-mock answer/judge models, transfer benchmarks, and reporting audits.",
     ]
+    plan["plan_fingerprint"] = plan_fingerprint(plan)
     return plan
 
 
@@ -304,6 +307,7 @@ def write_paper_study_plan(plan: dict[str, Any], output_dir: str | Path) -> dict
     sh_path = output / "paper_study_commands.sh"
     validation_path = output / "paper_study_validation.json"
     validation_md_path = output / "paper_study_validation.md"
+    plan["plan_fingerprint"] = plan_fingerprint(plan)
     validation = validate_paper_study_plan(plan)
     json_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     md_path.write_text(paper_study_plan_markdown(plan), encoding="utf-8")
@@ -355,6 +359,17 @@ def write_loaded_plan_artifacts(
     }
 
 
+def plan_fingerprint(plan: dict[str, Any]) -> str:
+    payload = _fingerprint_payload(plan)
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def run_study_plan(
     plan: dict[str, Any],
     *,
@@ -396,6 +411,8 @@ def run_study_plan(
                 break
     return {
         "schema_version": "adamem.paper_study_run.v1",
+        "plan_fingerprint": plan_fingerprint(plan),
+        "recorded_plan_fingerprint": plan.get("plan_fingerprint"),
         "status": status,
         "dry_run": dry_run,
         "log_path": str(log),
@@ -444,6 +461,8 @@ def validate_paper_study_plan(
     check_env: bool = False,
 ) -> dict[str, Any]:
     root_path = Path(root) if root is not None else Path.cwd()
+    current_fingerprint = plan_fingerprint(plan)
+    recorded_fingerprint = plan.get("plan_fingerprint")
     datasets = plan.get("datasets") or {}
     data_sources = plan.get("data_sources") or {}
     prep_sources = _prep_sources_by_dataset(plan)
@@ -544,6 +563,12 @@ def validate_paper_study_plan(
 
     return {
         "schema_version": "adamem.paper_study_validation.v1",
+        "plan_fingerprint": current_fingerprint,
+        "recorded_plan_fingerprint": recorded_fingerprint,
+        "plan_fingerprint_recorded": bool(recorded_fingerprint),
+        "plan_fingerprint_matches_recorded": (
+            recorded_fingerprint is None or recorded_fingerprint == current_fingerprint
+        ),
         "execution_ready": not missing_requirements,
         "missing_requirements": missing_requirements,
         "dataset_checks": dataset_checks,
@@ -572,6 +597,14 @@ def validate_paper_study_plan(
 
 def paper_study_validation_markdown(validation: dict[str, Any]) -> str:
     lines = ["# AdaMem Paper Study Validation", ""]
+    lines.append(f"Plan fingerprint: `{validation.get('plan_fingerprint') or '<missing>'}`")
+    if validation.get("recorded_plan_fingerprint"):
+        lines.append(f"Recorded fingerprint: `{validation.get('recorded_plan_fingerprint')}`")
+        lines.append(
+            "Fingerprint matches recorded: "
+            f"`{bool(validation.get('plan_fingerprint_matches_recorded'))}`"
+        )
+    lines.append("")
     lines.append(f"Execution ready: `{bool(validation.get('execution_ready'))}`")
     missing = validation.get("missing_requirements") or []
     lines.append(
@@ -1052,6 +1085,20 @@ def _prep_sources_by_dataset(plan: dict[str, Any]) -> dict[str, str]:
         if dataset and source:
             sources[str(dataset)] = str(source)
     return sources
+
+
+def _fingerprint_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _fingerprint_payload(item)
+            for key, item in value.items()
+            if key != "plan_fingerprint"
+        }
+    if isinstance(value, list):
+        return [_fingerprint_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return [_fingerprint_payload(item) for item in value]
+    return value
 
 
 def _run_command_record(
