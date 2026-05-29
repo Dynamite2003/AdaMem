@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from adamem.claims import audit_experiment, claim_audit_markdown
+from adamem.compare import paired_comparison_markdown, paired_comparison_summary
 from adamem.tables import load_benchmark_records, paper_table_markdown, paper_table_summary
 
 
@@ -63,6 +64,22 @@ def write_experiment_bundle(
         manifest["record_kind"] = table_summary.get("kind")
         manifest["artifacts"]["paper_tables_markdown"] = str(table_md)
         manifest["artifacts"]["paper_tables_json"] = str(table_json)
+        comparison_summary = paired_comparison_summary(
+            records,
+            group_fields=table_group_fields,
+        )
+        comparison_md = output / f"{stem}.paired_comparison.md"
+        comparison_json = output / f"{stem}.paired_comparison.json"
+        comparison_md.write_text(
+            paired_comparison_markdown(
+                comparison_summary,
+                title=f"{stem} Paired Comparison",
+            ),
+            encoding="utf-8",
+        )
+        comparison_json.write_text(json.dumps(comparison_summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        manifest["artifacts"]["paired_comparison_markdown"] = str(comparison_md)
+        manifest["artifacts"]["paired_comparison_json"] = str(comparison_json)
     except Exception as exc:  # pragma: no cover - exercised by CLI workflows.
         manifest["table_error"] = f"{type(exc).__name__}: {exc}"
 

@@ -380,6 +380,16 @@ PYTHONPATH=src python -m adamem.reporting /tmp/adamem_ama_answer_generation_smok
 ```
 
 Batch mode writes one sub-bundle per experiment and a `batch_manifest.json`.
+Bundles also include paired baseline comparisons. For retrieval records with
+evidence labels, the comparison metric defaults to evidence support; otherwise
+it compares exact `passed` support. Generation and STALE judge records compare
+end-to-end correctness.
+
+You can run paired comparison directly:
+
+```bash
+PYTHONPATH=src python -m adamem.compare results/ama_public_20_full/ama_public_20.experiment.json --group-fields question_type --output /tmp/ama_public_20.paired.md
+```
 
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes

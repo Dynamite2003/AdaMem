@@ -533,6 +533,10 @@ Completed API-free foundations:
   audit files, and a manifest. If the input is a directory, it batches every
   `*experiment.json` file into per-experiment sub-bundles and a top-level
   batch manifest.
+- `adamem.compare`, a paired baseline comparison command for retrieval,
+  answer-generation, and STALE judge records. Report bundles include its
+  Markdown/JSON artifacts so paper tables can report gained/lost/net records
+  against a reference baseline.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

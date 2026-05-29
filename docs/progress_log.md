@@ -229,6 +229,24 @@ extraction on those true state cases.
     answer-generation bundle.
   - The batch manifest recorded record kinds `retrieval` and
     `answer_generation`.
+- Added `src/adamem/compare.py` and the `adamem-compare` console script:
+  - Computes paired baseline comparisons on shared `(case_id, query_id)` keys.
+  - Supports retrieval records, answer-generation records, and STALE judge raw
+    outputs.
+  - Reports gained, lost, net delta, both-correct, both-wrong, and a two-sided
+    paired sign-test p value.
+  - Retrieval comparison auto-selects `evidence_support_matched` when records
+    contain expected evidence labels, otherwise it uses exact `passed` support.
+  - Report bundles now include paired-comparison Markdown/JSON artifacts.
+- Re-ran the AMA 20 report-bundle smoke with paired comparisons:
+  - Comparison metric: `evidence_support_matched`.
+  - Reference: `semantic_only`.
+  - `trajectory_step_readout` vs `semantic_only`: common `240`, gained `205`,
+    lost `0`, net `+205`.
+  - By AMA question type, trajectory-step readout gained A `67`, B `52`, C
+    `50`, D `36` evidence-supported records with no losses.
+  - Interpretation: this is a strong paired retrieval/evidence-support signal,
+    but still not an answer-accuracy or SOTA claim.
 
 ## Completed Work
 
