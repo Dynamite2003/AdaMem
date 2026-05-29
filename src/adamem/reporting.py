@@ -148,7 +148,7 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         evidence = manifest.get("claim_evidence") or {}
         state_evidence = evidence.get("prepared_state_evidence") or {}
         retrieval = evidence.get("retrieval_transfer") or {}
-        rows.append({
+        row = {
             "experiment": manifest.get("experiment"),
             "run_type": manifest.get("run_type"),
             "dataset": manifest.get("dataset"),
@@ -164,7 +164,11 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "paired_no_regression_count": len(retrieval.get("paired_no_regression") or []),
             "supported_claim_count": len(manifest.get("supported_claims") or []),
             "blocked_claim_count": len(manifest.get("blocked_claims") or {}),
-        })
+        }
+        gate, reasons = _claim_readiness_gate(row)
+        row["readiness_gate"] = gate
+        row["readiness_reasons"] = reasons
+        rows.append(row)
     return rows
 
 
@@ -172,24 +176,66 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| experiment | gate | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     if not rows:
-        lines.append("| <none> | <none> | 0 | 0 | 0 | 0/0 | 0.00% | 0 |")
+        lines.append("| <none> | needs_attention | <none> | 0 | 0 | 0 | 0/0 | 0.00% | 0 |")
         return "\n".join(lines) + "\n"
     for row in rows:
         experiment = Path(str(row.get("experiment") or "<missing>")).name
         expected = int(row.get("state_expected_questions") or 0)
         matching = int(row.get("state_matching_questions") or 0)
         lines.append(
-            f"| {experiment} | {row.get('run_type') or '<missing>'} | "
+            f"| {experiment} | {row.get('readiness_gate') or '<missing>'} | "
+            f"{row.get('run_type') or '<missing>'} | "
             f"{row['supported_claim_count']} | {row['blocked_claim_count']} | "
             f"{row['warning_count']} | {matching}/{expected} | "
             f"{float(row.get('state_available_rate') or 0.0):.2%} | "
             f"{row['paired_no_regression_count']} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def _claim_readiness_gate(row: dict[str, Any]) -> tuple[str, list[str]]:
+    supported = set(str(claim) for claim in row.get("supported_claims") or [])
+    blocked = set(str(claim) for claim in row.get("blocked_claims") or [])
+    reasons: list[str] = []
+    if int(row.get("warning_count") or 0) > 0:
+        reasons.append("claim_audit_warnings_present")
+    if int(row.get("raw_output_count") or 0) == 0:
+        reasons.append("no_case_level_or_raw_records")
+    if "unclassified_experiment" in supported:
+        reasons.append("unclassified_experiment")
+    if reasons:
+        return "needs_attention", reasons
+    if "sota" not in blocked and (
+        "answer_accuracy_candidate" in supported
+        or "stale_answer_accuracy_candidate" in supported
+    ):
+        return "sota_candidate", ["no_sota_blocker_recorded"]
+    if "answer_accuracy_candidate" in supported or "stale_answer_accuracy_candidate" in supported:
+        return "answer_candidate", ["answer_accuracy_candidate_but_sota_blocked"]
+    if _has_diagnostic_claim(supported):
+        diagnostic_reasons = ["diagnostic_or_mechanism_claim_only"]
+        if "answer_accuracy" in blocked or "stale_answer_accuracy" in blocked:
+            diagnostic_reasons.append("answer_accuracy_blocked")
+        if "sota" in blocked:
+            diagnostic_reasons.append("sota_blocked")
+        return "diagnostic_ready", diagnostic_reasons
+    return "needs_attention", ["no_paper_relevant_supported_claim"]
+
+
+def _has_diagnostic_claim(supported: set[str]) -> bool:
+    return any(
+        claim.endswith("_diagnostics")
+        or claim.endswith("_readiness")
+        or claim.endswith("_audit")
+        or claim.endswith("_resolution")
+        or claim.endswith("_no_regression")
+        or claim.endswith("_transfer")
+        for claim in supported
+    )
 
 
 def main(argv: list[str] | None = None) -> None:

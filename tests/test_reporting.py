@@ -120,6 +120,8 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     by_name = {Path(row["experiment"]).name: row for row in matrix}
     assert by_name["lme_v2_prepared.experiment.json"]["state_matching_questions"] == 1
     assert by_name["lme_v2_prepared.experiment.json"]["state_available_rate"] == 1.0
+    assert by_name["lme_v2_prepared.experiment.json"]["readiness_gate"] == "diagnostic_ready"
+    assert "answer_accuracy_blocked" in by_name["lme_v2_prepared.experiment.json"]["readiness_reasons"]
 
 
 def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
@@ -182,9 +184,52 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "paired_no_regression_count": 1,
         "supported_claim_count": 2,
         "blocked_claim_count": 1,
+        "readiness_gate": "diagnostic_ready",
+        "readiness_reasons": [
+            "diagnostic_or_mechanism_claim_only",
+            "answer_accuracy_blocked",
+        ],
     }]
+    assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
+
+
+def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
+    rows = claim_matrix_rows([
+        {
+            "experiment": "answer.experiment.json",
+            "run_type": "jsonl_answer_generation_benchmark",
+            "dataset": "dataset.jsonl",
+            "raw_output_count": 12,
+            "supported_claims": ["answer_accuracy_candidate"],
+            "blocked_claims": {"sota": ["no strong baselines"]},
+            "warnings": [],
+            "claim_evidence": {},
+        },
+        {
+            "experiment": "bad.experiment.json",
+            "run_type": "unknown",
+            "dataset": "dataset.jsonl",
+            "raw_output_count": 0,
+            "supported_claims": ["unclassified_experiment"],
+            "blocked_claims": {"answer_accuracy": ["unrecognized"]},
+            "warnings": ["ground_truth_runtime_use is not explicitly forbidden"],
+            "claim_evidence": {},
+        },
+    ])
+
+    by_name = {Path(row["experiment"]).name: row for row in rows}
+    assert by_name["answer.experiment.json"]["readiness_gate"] == "answer_candidate"
+    assert by_name["answer.experiment.json"]["readiness_reasons"] == [
+        "answer_accuracy_candidate_but_sota_blocked"
+    ]
+    assert by_name["bad.experiment.json"]["readiness_gate"] == "needs_attention"
+    assert by_name["bad.experiment.json"]["readiness_reasons"] == [
+        "claim_audit_warnings_present",
+        "no_case_level_or_raw_records",
+        "unclassified_experiment",
+    ]
 
 
 def _write_answer_generation_experiment(tmp_path: Path, *, stem: str = "generation") -> Path:

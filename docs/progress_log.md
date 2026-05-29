@@ -2193,3 +2193,26 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `7 passed`
   - `PYTHONPATH=src python -m pytest -q` -> `144 passed`
   - `git diff --check` -> no issues
+
+### 2026-05-30 claim matrix readiness gates
+
+- Added machine-readable `readiness_gate` and `readiness_reasons` to each
+  claim-matrix row.
+- Current gates:
+  - `needs_attention`: warnings, missing case/raw records, unclassified
+    experiment, or no paper-relevant supported claim.
+  - `diagnostic_ready`: retrieval, mechanism, readiness, or no-regression
+    diagnostics are usable, but answer accuracy or SOTA is still blocked.
+  - `answer_candidate`: answer-accuracy candidate exists, but SOTA remains
+    blocked.
+  - `sota_candidate`: answer/stale-answer candidate with no SOTA blocker
+    recorded.
+- Purpose:
+  - Make batch experiment directories machine-filterable before paper table
+    assembly.
+  - Prevent diagnostic-only artifacts from being accidentally promoted to
+    answer-accuracy or SOTA claims.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `8 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `145 passed`
+  - `git diff --check` -> no issues

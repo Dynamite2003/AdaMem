@@ -607,7 +607,9 @@ Completed API-free foundations:
   without opening every audit JSON. Batch mode also writes `claim_matrix.json`
   and `claim_matrix.md`, which flatten per-experiment claim evidence such as
   state-evidence coverage and paired no-regression counts for paper-track
-  screening.
+  screening. Each row includes a `readiness_gate` such as `diagnostic_ready`,
+  `answer_candidate`, `sota_candidate`, or `needs_attention`, plus explicit
+  reasons so paper scripts can filter results without parsing prose.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records
