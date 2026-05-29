@@ -349,6 +349,11 @@ def test_diagnostic_case_records_export_failures(tmp_path: Path) -> None:
     assert any("current_evidence_not_recalled" in record["failure_modes"] for record in records)
     assert any("trace" in record for record in records)
     assert any(record["active_state_count"] > 0 for record in records if record["baseline"] == "state_readout")
+    assert any(
+        "state_authority_absent_or_extraction_failure" in record["failure_attributions"]
+        for record in records
+        if record["baseline"] == "semantic_only"
+    )
 
 
 def test_diagnostic_failure_summary_groups_records(tmp_path: Path) -> None:
@@ -370,5 +375,10 @@ def test_diagnostic_failure_summary_groups_records(tmp_path: Path) -> None:
     assert summary["total_records"] == len(records)
     assert summary["by_baseline"]["semantic_only"] >= 1
     assert summary["by_failure_mode"]["current_evidence_not_recalled"] >= 1
+    assert summary["by_failure_attribution"]["state_authority_absent_or_extraction_failure"] >= 1
+    assert "state_authority_absent_or_extraction_failure" in summary["by_baseline_failure_attribution"][
+        "semantic_only"
+    ]
+    assert "Failure Attributions By Baseline" in report
     assert "Failure Modes By Baseline" in report
     assert "Representative Examples" in report

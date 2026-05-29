@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from adamem.baselines import default_ablation_configs
 from adamem.config import AdaMemConfig
+from adamem.error_taxonomy import attribution_counts, attribution_counts_by_baseline, jsonl_failure_attributions
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem
 from adamem.state import StateExtractor, state_slot_matches_query
@@ -141,6 +142,8 @@ def benchmark_failure_summary(
         "total_records": len(records),
         "by_baseline": {},
         "failure_modes": {},
+        "failure_attributions": {},
+        "failure_attributions_by_baseline": {},
         "by_metadata": {},
         "state_readout_exposure": {},
         "unknown_current": {},
@@ -181,6 +184,8 @@ def benchmark_failure_summary(
     for record in records:
         for mode in record["failure_modes"]:
             summary["failure_modes"][mode] = summary["failure_modes"].get(mode, 0) + 1
+    summary["failure_attributions"] = attribution_counts(records)
+    summary["failure_attributions_by_baseline"] = attribution_counts_by_baseline(records)
 
     for field_name in group_fields:
         field_summary: dict[str, Any] = {}
@@ -420,6 +425,22 @@ def benchmark_failure_report(
         lines.append(f"| {mode} | {count} |")
     lines.append("")
 
+    if summary["failure_attributions"]:
+        lines.append("## Failure Attributions")
+        lines.append("| attribution | count |")
+        lines.append("| --- | ---: |")
+        for attribution, count in summary["failure_attributions"].items():
+            lines.append(f"| {attribution} | {count} |")
+        lines.append("")
+
+        lines.append("## Failure Attributions By Baseline")
+        lines.append("| baseline | attribution | count |")
+        lines.append("| --- | --- | ---: |")
+        for baseline, counts in summary["failure_attributions_by_baseline"].items():
+            for attribution, count in counts.items():
+                lines.append(f"| {baseline} | {attribution} | {count} |")
+        lines.append("")
+
     failures = [record for record in records if not record["passed"]]
     lines.append("## Representative Failures")
     for record in failures[:max_examples]:
@@ -576,7 +597,7 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
     if not state_sensitive and state_retrieval_count > 0:
         failure_modes.append("state_readout_unmarked_exposure")
     state_inventory = dict(query.state_inventory)
-    return {
+    record = {
         "baseline": baseline,
         "case_id": query.case_id,
         "query_id": query.query_id,
@@ -620,6 +641,8 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
         "state_readout_expected": state_readout_expected,
         **state_inventory,
     }
+    record["failure_attributions"] = jsonl_failure_attributions(record)
+    return record
 
 
 def _aggregate_records(records: list[dict[str, Any]]) -> dict[str, Any]:

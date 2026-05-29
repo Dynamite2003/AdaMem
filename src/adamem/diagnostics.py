@@ -5,6 +5,7 @@ from typing import Any, Iterable
 
 from adamem.bench import MemoryQACase, QuerySpec
 from adamem.config import AdaMemConfig
+from adamem.error_taxonomy import stale_failure_attributions
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem, MemoryResult
 from adamem.state import StateExtractor
@@ -350,6 +351,7 @@ def diagnostic_case_records(
             }
             if include_trace:
                 record["trace"] = query.trace
+            record["failure_attributions"] = stale_failure_attributions(record)
             records.append(record)
     return records
 
@@ -362,7 +364,9 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
     by_stale_type: dict[str, int] = {}
     by_failure_mode: dict[str, int] = {}
     by_analysis_flag: dict[str, int] = {}
+    by_failure_attribution: dict[str, int] = {}
     by_baseline_failure_mode: dict[str, dict[str, int]] = {}
+    by_baseline_failure_attribution: dict[str, dict[str, int]] = {}
     examples_by_failure_mode: dict[str, list[dict[str, Any]]] = {}
 
     for record in records:
@@ -385,6 +389,11 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
         analysis_flags = [str(flag) for flag in record.get("analysis_flags", [])]
         for flag in analysis_flags:
             by_analysis_flag[flag] = by_analysis_flag.get(flag, 0) + 1
+        for attribution in record.get("failure_attributions") or []:
+            key = str(attribution)
+            by_failure_attribution[key] = by_failure_attribution.get(key, 0) + 1
+            nested = by_baseline_failure_attribution.setdefault(baseline, {})
+            nested[key] = nested.get(key, 0) + 1
 
     return {
         "total_records": len(records),
@@ -392,10 +401,15 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
         "by_dim": _sorted_counts(by_dim),
         "by_stale_type": _sorted_counts(by_stale_type),
         "by_failure_mode": _sorted_counts(by_failure_mode),
+        "by_failure_attribution": _sorted_counts(by_failure_attribution),
         "by_analysis_flag": _sorted_counts(by_analysis_flag),
         "by_baseline_failure_mode": {
             baseline: _sorted_counts(counts)
             for baseline, counts in sorted(by_baseline_failure_mode.items())
+        },
+        "by_baseline_failure_attribution": {
+            baseline: _sorted_counts(counts)
+            for baseline, counts in sorted(by_baseline_failure_attribution.items())
         },
         "examples_by_failure_mode": examples_by_failure_mode,
     }
@@ -407,6 +421,7 @@ def diagnostic_failure_report(records: list[dict[str, Any]], *, max_examples: in
     lines.append(f"Total diagnostic records: {summary['total_records']}")
     lines.append("")
     _append_count_table(lines, "Failure Modes", summary["by_failure_mode"])
+    _append_count_table(lines, "Failure Attributions", summary["by_failure_attribution"])
     _append_count_table(lines, "Baselines", summary["by_baseline"])
     _append_count_table(lines, "STALE Dimensions", summary["by_dim"])
     _append_count_table(lines, "STALE Types", summary["by_stale_type"])
@@ -420,6 +435,15 @@ def diagnostic_failure_report(records: list[dict[str, Any]], *, max_examples: in
     for baseline, counts in summary["by_baseline_failure_mode"].items():
         for mode, count in counts.items():
             lines.append(f"| {baseline} | {mode} | {count} |")
+    lines.append("")
+
+    lines.append("## Failure Attributions By Baseline")
+    lines.append("")
+    lines.append("| baseline | attribution | count |")
+    lines.append("| --- | --- | ---: |")
+    for baseline, counts in summary["by_baseline_failure_attribution"].items():
+        for attribution, count in counts.items():
+            lines.append(f"| {baseline} | {attribution} | {count} |")
     lines.append("")
 
     lines.append("## Representative Examples")

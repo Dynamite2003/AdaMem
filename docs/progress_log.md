@@ -2335,3 +2335,42 @@ to a paper-facing claim and evaluation gate.
     `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only state_readout --max-cases 1 --benchmark-cases-output /tmp/adamem_state_inventory_records.jsonl --benchmark-report-output /tmp/adamem_state_inventory_report.md --json`
     wrote `state_memory_count=0` for `semantic_only`, active state slots for
     `state_readout`, and a `State Memory Inventory` report section.
+
+### 2026-05-30 failure-attribution taxonomy
+
+- Added `adamem.error_taxonomy` with conservative attribution helpers for:
+  - JSONL retrieval benchmark records.
+  - STALE retrieval diagnostic records.
+- JSONL case records now include `failure_attributions`, and JSONL summaries /
+  Markdown reports aggregate:
+  - `failure_attributions`
+  - `failure_attributions_by_baseline`
+- STALE diagnostic case records now include `failure_attributions`, and STALE
+  diagnostic summaries / reports aggregate:
+  - `by_failure_attribution`
+  - `by_baseline_failure_attribution`
+- Current attribution labels include:
+  - `state_authority_absent_or_extraction_failure`
+  - `state_readout_failure`
+  - `state_routing_failure`
+  - `retrieval_failure`
+  - `retrieval_or_readout_failure`
+  - `stale_adjudication_failure`
+  - `stale_adjudication_missing`
+  - `premise_correction_failure`
+  - `ranking_failure`
+- Purpose:
+  - Convert case-level traces and state inventory into machine-filterable
+    paper error categories.
+  - Keep the labels conservative so they guide representative-case inspection
+    without overclaiming causal proof.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_benchmark_failure_summary_groups_by_metadata tests/test_stale.py::test_diagnostic_case_records_export_failures tests/test_stale.py::test_diagnostic_failure_summary_groups_records -q` -> `3 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py tests/test_stale.py tests/test_tables.py tests/test_reporting.py -q` -> `63 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `150 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke:
+    `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only state_readout --max-cases 1 --benchmark-report-output /tmp/adamem_failure_attribution_report.md --json`
+    wrote a report containing `Failure Attributions` and
+    `state_authority_absent_or_extraction_failure`.

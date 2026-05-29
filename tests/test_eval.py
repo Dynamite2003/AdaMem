@@ -946,6 +946,7 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert "## Paper Metrics" in report
     assert "## State Readout Exposure" in report
     assert "## State Memory Inventory" in report
+    assert "## Failure Attributions" in report
     assert "## Premise Correction" in report
     assert "## Evidence Support" in report
     assert summary["diagnostics_by_metadata"]["dimension"]["implicit_policy_adaptation"]["state_readout"][
@@ -957,6 +958,12 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert summary["paper_metrics"]["state_readout"]["unmarked_state_exposure_rate"] is None
     assert summary["paper_metrics"]["state_readout"]["premise_correction_rate"] == 0.0
     assert summary["paper_metrics"]["semantic_only"]["state_readout_missing_rate"] == 1.0
+    assert summary["failure_attributions"]["state_authority_absent_or_extraction_failure"] == 7
+    assert "stale_filtering_or_baseline_limitation" in summary["failure_attributions"]
+    assert summary["failure_attributions_by_baseline"]["semantic_only"][
+        "state_authority_absent_or_extraction_failure"
+    ] == 7
+    assert "state_authority_absent_or_extraction_failure" in records[0]["failure_attributions"]
     assert summary["state_memory_inventory"]["semantic_only"]["max_state_memory_count"] == 0
     assert summary["state_memory_inventory"]["state_readout"]["records_with_state_memory"] == 7
     assert "runtime.staging_build_runner.status" in summary["state_memory_inventory"]["state_readout"][

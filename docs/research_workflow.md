@@ -594,6 +594,13 @@ Completed API-free foundations:
   derived state count, active/stale state count, unknown-current count, and
   active/stale slots without using benchmark labels, which separates extractor
   failures from readout/adjudication failures.
+- Failure-attribution taxonomy for JSONL retrieval records and STALE
+  diagnostic records. Current categories are conservative labels such as
+  `state_authority_absent_or_extraction_failure`, `state_readout_failure`,
+  `state_routing_failure`, `retrieval_failure`,
+  `stale_adjudication_failure`, `premise_correction_failure`, and
+  `ranking_failure`; use them as triage signals, not as final causal claims
+  without representative case inspection.
 - `trajectory_step_readout`, a narrow step-aware trajectory retrieval
   ablation. It authorizes matching `Step N` or short step-range memories by
   trajectory metadata and is useful for separating step evidence recall from

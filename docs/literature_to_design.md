@@ -231,6 +231,10 @@ Current implementation:
   active/stale state counts, unknown-current counts, and active/stale slots,
   which helps distinguish extraction failures from readout or adjudication
   failures.
+- JSONL and STALE diagnostic records now include conservative
+  `failure_attributions` derived from failure modes, state inventory, and trace
+  fields. These are triage labels for paper error analysis, not final causal
+  proof without representative case inspection.
 - Markdown failure reports aggregate records by failure mode, baseline, STALE
   dimension, stale type, and representative examples.
 
