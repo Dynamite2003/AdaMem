@@ -2929,3 +2929,25 @@ to a paper-facing claim and evaluation gate.
   - `git diff --check` -> no issues
   - Smoke runner execution over `reporting` stage completed with
     `missing_output_count=0` and confirmed the declared `output_dir` exists.
+
+### 2026-05-30 saved study plan loading
+
+- Added `adamem-study-plan --plan PATH`.
+- Saved-plan mode:
+  - loads an existing `paper_study_plan.json`
+  - rewrites Markdown/Shell/validation views from that exact JSON
+  - can execute the loaded plan with `--run`, `--dry-run`, and `--stage`
+  - does not regenerate the command matrix from default CLI settings
+- Purpose:
+  - Support the real API workflow where the plan JSON is generated first, then
+    provider/model labels or paths are edited before execution.
+  - Preserve the edited JSON as the execution source of truth.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `16 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `44 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `176 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke generated a smoke plan, then loaded the saved
+    `paper_study_plan.json` with `--plan` and dry-ran the `diagnostic` stage
+    successfully.

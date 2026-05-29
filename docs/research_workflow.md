@@ -66,6 +66,7 @@ PYTHONPATH=src python -m adamem.stale_pipeline benchmarks/stale_mini.jsonl --inp
 PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output results/stale_pilot_mock.json
 PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke --json
 PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke_run --run --dry-run --stage diagnostic --json
+PYTHONPATH=src python -m adamem.study_plan --plan /tmp/adamem_study_smoke/paper_study_plan.json --run --dry-run --stage diagnostic --json
 PYTHONPATH=src python -m adamem.study_plan --output-dir results/paper_study_plan --json
 ```
 
@@ -122,6 +123,9 @@ Outputs:
   `--dry-run` writes command records without executing them, and repeatable
   `--stage` filters the run to stages such as `diagnostic`, `answer_judge`,
   `mechanism_ablation`, `transfer`, or `reporting`.
+- Saved or manually edited plans can be loaded with
+  `--plan path/to/paper_study_plan.json`, then validated or run without
+  regenerating the command matrix from CLI defaults.
 - Notes on any regression before new work begins.
 
 Done when:
@@ -748,6 +752,9 @@ Completed API-free foundations:
   returns successfully but fails to create its experiment/report artifact can
   still be caught in the run log. Use `--dry-run` and `--stage ...` before real
   API execution.
+- `adamem.study_plan --plan`, a saved-plan loader for executing or validating
+  an edited `paper_study_plan.json`. This is the intended path after replacing
+  placeholder provider/model labels with real API-backed settings.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

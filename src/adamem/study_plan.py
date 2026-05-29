@@ -319,6 +319,42 @@ def write_paper_study_plan(plan: dict[str, Any], output_dir: str | Path) -> dict
     }
 
 
+def load_paper_study_plan(path: str | Path) -> dict[str, Any]:
+    plan_path = Path(path)
+    with plan_path.open("r", encoding="utf-8") as handle:
+        plan = json.load(handle)
+    if not isinstance(plan, dict):
+        raise ValueError(f"study plan JSON must contain an object: {plan_path}")
+    return plan
+
+
+def write_loaded_plan_artifacts(
+    plan: dict[str, Any],
+    *,
+    plan_path: str | Path,
+    output_dir: str | Path,
+    check_env: bool = False,
+) -> dict[str, str]:
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    md_path = output / "paper_study_plan.md"
+    sh_path = output / "paper_study_commands.sh"
+    validation_path = output / "paper_study_validation.json"
+    validation_md_path = output / "paper_study_validation.md"
+    validation = validate_paper_study_plan(plan, check_env=check_env)
+    md_path.write_text(paper_study_plan_markdown(plan), encoding="utf-8")
+    sh_path.write_text(paper_study_plan_shell(plan), encoding="utf-8")
+    validation_path.write_text(json.dumps(validation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    validation_md_path.write_text(paper_study_validation_markdown(validation), encoding="utf-8")
+    return {
+        "json": str(plan_path),
+        "markdown": str(md_path),
+        "shell": str(sh_path),
+        "validation_json": str(validation_path),
+        "validation_markdown": str(validation_md_path),
+    }
+
+
 def run_study_plan(
     plan: dict[str, Any],
     *,
@@ -1166,9 +1202,10 @@ def _count_values(values: Iterable[Any]) -> dict[str, int]:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Generate a paper-track AdaMem study plan without running API calls."
+        description="Generate, validate, or run AdaMem paper-track study plans."
     )
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--plan", type=Path, help="Load an existing paper_study_plan.json instead of generating a new one.")
+    parser.add_argument("--output-dir", type=Path, help="Artifact directory. Required when generating a new plan.")
     parser.add_argument("--profile", choices=["paper", "smoke"], default="paper")
     parser.add_argument("--stale-dataset", help="Defaults to OUTPUT_DIR/data/stale.adamem.jsonl")
     parser.add_argument("--transfer-dataset", help="Defaults to OUTPUT_DIR/data/longmemeval_s.adamem.jsonl")
@@ -1203,42 +1240,55 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     try:
-        if args.profile == "smoke":
-            plan = build_smoke_study_plan(
-                output_dir=args.output_dir,
-                stale_dataset=args.stale_dataset or "benchmarks/stale_mini.jsonl",
-                transfer_dataset=args.transfer_dataset or "benchmarks/dynamic_state_transfer.jsonl",
-                stale_types=args.stale_types,
-                limit_per_stale_type=args.limit_per_stale_type,
-                transfer_max_cases=args.transfer_max_cases,
-                answer_models=args.answer_models or SMOKE_ANSWER_MODELS,
-                judge_models=args.judge_models or SMOKE_JUDGE_MODELS,
-                state_extractor_model=args.state_extractor_model or SMOKE_STATE_EXTRACTOR_MODEL,
-                top_k=args.top_k,
-                max_context_chars=args.max_context_chars,
+        if args.plan:
+            plan = load_paper_study_plan(args.plan)
+            output_dir = args.output_dir or Path(str(plan.get("output_dir") or args.plan.parent))
+            artifacts = write_loaded_plan_artifacts(
+                plan,
+                plan_path=args.plan,
+                output_dir=output_dir,
+                check_env=args.check_env,
             )
         else:
-            plan = build_paper_study_plan(
-                output_dir=args.output_dir,
-                stale_dataset=args.stale_dataset,
-                transfer_dataset=args.transfer_dataset,
-                stale_source=None if args.no_data_prep else args.stale_source,
-                transfer_source=None if args.no_data_prep else args.transfer_source,
-                ama_output_source=None if args.no_ama else args.ama_output_source,
-                stale_types=args.stale_types,
-                limit_per_stale_type=args.limit_per_stale_type,
-                transfer_max_cases=args.transfer_max_cases,
-                ama_limit=args.ama_limit,
-                answer_models=args.answer_models or DEFAULT_ANSWER_MODELS,
-                judge_models=args.judge_models or DEFAULT_JUDGE_MODELS,
-                state_extractor_model=args.state_extractor_model or "<state_extractor_provider>:<state_extractor_model>",
-                top_k=args.top_k,
-                max_context_chars=args.max_context_chars,
-            )
+            if args.output_dir is None:
+                parser.error("--output-dir is required when generating a new plan")
+            output_dir = args.output_dir
+            if args.profile == "smoke":
+                plan = build_smoke_study_plan(
+                    output_dir=output_dir,
+                    stale_dataset=args.stale_dataset or "benchmarks/stale_mini.jsonl",
+                    transfer_dataset=args.transfer_dataset or "benchmarks/dynamic_state_transfer.jsonl",
+                    stale_types=args.stale_types,
+                    limit_per_stale_type=args.limit_per_stale_type,
+                    transfer_max_cases=args.transfer_max_cases,
+                    answer_models=args.answer_models or SMOKE_ANSWER_MODELS,
+                    judge_models=args.judge_models or SMOKE_JUDGE_MODELS,
+                    state_extractor_model=args.state_extractor_model or SMOKE_STATE_EXTRACTOR_MODEL,
+                    top_k=args.top_k,
+                    max_context_chars=args.max_context_chars,
+                )
+            else:
+                plan = build_paper_study_plan(
+                    output_dir=output_dir,
+                    stale_dataset=args.stale_dataset,
+                    transfer_dataset=args.transfer_dataset,
+                    stale_source=None if args.no_data_prep else args.stale_source,
+                    transfer_source=None if args.no_data_prep else args.transfer_source,
+                    ama_output_source=None if args.no_ama else args.ama_output_source,
+                    stale_types=args.stale_types,
+                    limit_per_stale_type=args.limit_per_stale_type,
+                    transfer_max_cases=args.transfer_max_cases,
+                    ama_limit=args.ama_limit,
+                    answer_models=args.answer_models or DEFAULT_ANSWER_MODELS,
+                    judge_models=args.judge_models or DEFAULT_JUDGE_MODELS,
+                    state_extractor_model=args.state_extractor_model or "<state_extractor_provider>:<state_extractor_model>",
+                    top_k=args.top_k,
+                    max_context_chars=args.max_context_chars,
+                )
+            artifacts = write_paper_study_plan(plan, output_dir)
     except ValueError as exc:
         parser.error(str(exc))
-    artifacts = write_paper_study_plan(plan, args.output_dir)
-    if args.check_env:
+    if args.check_env and not args.plan:
         validation = validate_paper_study_plan(plan, check_env=True)
         Path(artifacts["validation_json"]).write_text(
             json.dumps(validation, ensure_ascii=False, indent=2) + "\n",
@@ -1258,10 +1308,10 @@ def main(argv: list[str] | None = None) -> None:
             dry_run=args.dry_run,
             require_ready=not args.allow_not_ready,
             check_env=args.check_env,
-            log_path=args.run_log,
+            log_path=args.run_log or Path(output_dir) / "paper_study_run.records.jsonl",
         )
-        run_summary_path = Path(args.output_dir) / "paper_study_run.summary.json"
-        run_summary_md_path = Path(args.output_dir) / "paper_study_run.summary.md"
+        run_summary_path = Path(output_dir) / "paper_study_run.summary.json"
+        run_summary_md_path = Path(output_dir) / "paper_study_run.summary.md"
         run_summary_path.write_text(json.dumps(run_summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         run_summary_md_path.write_text(study_run_summary_markdown(run_summary), encoding="utf-8")
         artifacts["run_summary_json"] = str(run_summary_path)

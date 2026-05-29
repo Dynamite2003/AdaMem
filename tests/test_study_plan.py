@@ -6,6 +6,7 @@ from pathlib import Path
 from adamem.study_plan import (
     build_paper_study_plan,
     build_smoke_study_plan,
+    load_paper_study_plan,
     main,
     parse_model_spec,
     run_study_plan,
@@ -216,6 +217,16 @@ def test_write_paper_study_plan_outputs_json_markdown_and_shell(tmp_path: Path) 
     assert "AdaMem Paper Study Validation" in validation_md
 
 
+def test_load_paper_study_plan_reads_saved_plan(tmp_path: Path) -> None:
+    plan = build_smoke_study_plan(output_dir=tmp_path / "study")
+    artifacts = write_paper_study_plan(plan, tmp_path / "study")
+
+    loaded = load_paper_study_plan(artifacts["json"])
+
+    assert loaded["profile"] == "smoke"
+    assert loaded["commands"][0]["name"] == plan["commands"][0]["name"]
+
+
 def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> None:
     plan = build_smoke_study_plan(output_dir=tmp_path / "study")
     log_path = tmp_path / "study" / "run.records.jsonl"
@@ -340,3 +351,31 @@ def test_study_plan_cli_can_dry_run_smoke_profile(tmp_path: Path) -> None:
     assert summary["status"] == "dry_run"
     assert summary["selected_command_count"] == 1
     assert (output_dir / "paper_study_run.summary.md").exists()
+
+
+def test_study_plan_cli_can_run_saved_plan_without_regenerating(tmp_path: Path) -> None:
+    output_dir = tmp_path / "saved"
+    main([
+        "--profile",
+        "smoke",
+        "--output-dir",
+        str(output_dir),
+        "--json",
+    ])
+    plan_path = output_dir / "paper_study_plan.json"
+
+    main([
+        "--plan",
+        str(plan_path),
+        "--run",
+        "--dry-run",
+        "--stage",
+        "diagnostic",
+        "--json",
+    ])
+
+    summary = json.loads((output_dir / "paper_study_run.summary.json").read_text(encoding="utf-8"))
+    validation = json.loads((output_dir / "paper_study_validation.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "dry_run"
+    assert summary["selected_command_count"] == 1
+    assert validation["execution_ready"] is True
