@@ -763,9 +763,14 @@ Completed API-free foundations:
   readout. The same method audit records baseline provenance and separates
   API-free mainstream approximations from official or faithful reproductions,
   so SOTA-style claims remain blocked until strong baselines are actually
-  reproduced. Report bundles prefer artifact-level `baseline_provenance` over
-  the current registry when computing method coverage, which keeps old runs
-  and future official baseline reproductions auditable after code changes.
+  reproduced. It also emits a baseline reproduction plan for mainstream
+  approximations, including the exact reference implementation target where
+  known. Current targets are the A-MEM paper reproduction repository,
+  Graphiti/Zep's temporal context graph engine, and the official Mem0
+  implementation. Report bundles prefer artifact-level `baseline_provenance`
+  over the current registry when computing method coverage, which keeps old
+  runs and future official baseline reproductions auditable after code
+  changes.
   Top-level `paper_readiness.json` and `paper_readiness.md` summarize
   directory-level gate counts, top next actions, complete vs incomplete
   study-level model coverage, benchmark coverage gaps, method coverage gaps,

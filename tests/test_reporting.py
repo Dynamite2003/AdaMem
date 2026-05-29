@@ -462,12 +462,33 @@ def test_method_coverage_summary_tracks_paper_method_groups() -> None:
     assert summary["baseline_provenance"]["a_mem_evolution"]["implementation_status"] == (
         "api_free_approximation"
     )
+    assert summary["baseline_provenance"]["a_mem_evolution"]["reproduction_target_url"] == (
+        "https://github.com/WujiangXu/A-mem"
+    )
     assert summary["reproduction_status_counts"]["api_free_approximation"] == 1
     assert summary["mainstream_api_free_approximations"] == ["a_mem_evolution"]
     assert summary["official_or_faithful_mainstream_reproductions"] == []
     assert summary["sota_baseline_reproduction_ready"] is False
     assert summary["baseline_reproduction_gaps"] == [
         "official_or_faithful_mainstream_reproduction"
+    ]
+    assert summary["reproduction_target_count"] == 1
+    assert summary["baseline_reproduction_plan"] == [
+        {
+            "baseline": "a_mem_evolution",
+            "source_name": "A-MEM",
+            "source_url": "https://arxiv.org/abs/2502.12110",
+            "implementation_status": "api_free_approximation",
+            "status": "needs_official_or_faithful_run",
+            "reproduction_target_name": "A-MEM reproduction code",
+            "reproduction_target_url": "https://github.com/WujiangXu/A-mem",
+            "reproduction_target_note": (
+                "Use the paper reproduction repository for official/faithful LoCoMo-style runs."
+            ),
+            "next_action": (
+                "Run or wrap the target implementation on the same split and record provenance."
+            ),
+        }
     ]
     assert summary["mechanism_flags"]["state_readout"] is True
     assert summary["mechanism_flags"]["premise_correction"] is True
@@ -477,6 +498,7 @@ def test_method_coverage_summary_tracks_paper_method_groups() -> None:
     assert "SOTA baseline reproduction ready: `False`" in markdown
     assert "`official_or_faithful_mainstream_reproduction`" in markdown
     assert "[A-MEM](https://arxiv.org/abs/2502.12110)" in markdown
+    assert "[A-MEM reproduction code](https://github.com/WujiangXu/A-mem)" in markdown
 
 
 def test_method_coverage_uses_artifact_baseline_provenance_over_registry() -> None:
@@ -498,6 +520,9 @@ def test_method_coverage_uses_artifact_baseline_provenance_over_registry() -> No
                     "source_url": "https://arxiv.org/abs/2502.12110",
                     "implementation_status": "official_reproduction",
                     "reproduction_note": "Official A-MEM code path recorded by this experiment.",
+                    "reproduction_target_name": "A-MEM reproduction code",
+                    "reproduction_target_url": "https://github.com/WujiangXu/A-mem",
+                    "reproduction_target_note": "Official target used.",
                 },
                 "state_readout": {
                     "category": "state_aware",
@@ -517,6 +542,10 @@ def test_method_coverage_uses_artifact_baseline_provenance_over_registry() -> No
     assert summary["official_or_faithful_mainstream_reproductions"] == ["a_mem_evolution"]
     assert summary["mainstream_api_free_approximations"] == []
     assert summary["baseline_reproduction_gaps"] == []
+    assert summary["baseline_reproduction_plan"][0]["status"] == "ready"
+    assert summary["baseline_reproduction_plan"][0]["reproduction_target_url"] == (
+        "https://github.com/WujiangXu/A-mem"
+    )
 
 
 def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() -> None:

@@ -57,6 +57,45 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 baseline reproduction targets
+
+- Extended baseline provenance with explicit reproduction target fields:
+  - `reproduction_target_name`
+  - `reproduction_target_url`
+  - `reproduction_target_note`
+- Added reproduction targets for the current mainstream-memory approximations:
+  - `a_mem_evolution` -> A-MEM paper reproduction repository
+    `https://github.com/WujiangXu/A-mem`
+  - `zep_temporal_kg` -> Graphiti/Zep temporal context graph engine
+    `https://github.com/getzep/graphiti`
+  - `mem0_extraction` -> official Mem0 implementation
+    `https://github.com/mem0ai/mem0`
+- Report method coverage now includes a `baseline_reproduction_plan` and
+  `reproduction_target_count`, and Markdown reports include a dedicated
+  baseline reproduction plan table.
+- Paper readiness summaries also carry the reproduction plan so single-run and
+  batch reports can explain exactly what official/faithful baseline run is
+  still missing.
+- Claim audits and report bundles preserve target fields from artifact-level
+  provenance.
+- Purpose:
+  - Convert the SOTA baseline blocker from a generic warning into an executable
+    plan tied to real reference implementations.
+  - Keep current API-free approximations useful for design iteration while
+    making it explicit that official/faithful reproduction remains required
+    before SOTA-style claims.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_experiments.py tests/test_reporting.py tests/test_claims.py tests/test_study_plan.py -q`
+    -> `73 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `208 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI report-bundle smoke with a temporary experiment containing
+    `a_mem_evolution` confirmed `method_coverage.json` includes one
+    `baseline_reproduction_plan` item with status
+    `needs_official_or_faithful_run` and target
+    `https://github.com/WujiangXu/A-mem`.
+
 ### 2026-05-30 single-run method coverage artifacts
 
 - Added single-experiment method/ablation coverage artifacts to report bundles.

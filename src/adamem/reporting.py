@@ -498,6 +498,10 @@ def method_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, An
     baseline_reproduction_gaps: list[str] = []
     if mainstream_names and not official_or_faithful_mainstream:
         baseline_reproduction_gaps.append("official_or_faithful_mainstream_reproduction")
+    reproduction_plan = _baseline_reproduction_plan(
+        baseline_provenance,
+        mainstream_names,
+    )
     required_groups = {
         "raw_retrieval_reference": _category_present(categories, {"raw_turn_retrieval"}),
         "mainstream_memory_approximation": _category_present(categories, {"mainstream_approximation"}),
@@ -557,6 +561,10 @@ def method_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, An
         "official_or_faithful_mainstream_reproductions": official_or_faithful_mainstream,
         "sota_baseline_reproduction_ready": bool(official_or_faithful_mainstream),
         "baseline_reproduction_gaps": baseline_reproduction_gaps,
+        "baseline_reproduction_plan": reproduction_plan,
+        "reproduction_target_count": sum(
+            1 for item in reproduction_plan if item.get("reproduction_target_url")
+        ),
         "required_groups": required_groups,
         "mechanism_flags": mechanism_flags,
         "missing_requirements": missing_requirements,
@@ -594,6 +602,21 @@ def method_coverage_markdown(summary: dict[str, Any]) -> str:
             "API-free mainstream approximations: "
             + ", ".join(f"`{item}`" for item in approximations)
         )
+    reproduction_plan = summary.get("baseline_reproduction_plan") or []
+    if reproduction_plan:
+        lines.append("")
+        lines.append("## Baseline Reproduction Plan")
+        lines.append("| baseline | status | target | next action |")
+        lines.append("| --- | --- | --- | --- |")
+        for item in reproduction_plan:
+            target = str(item.get("reproduction_target_name") or "-")
+            url = str(item.get("reproduction_target_url") or "")
+            if url:
+                target = f"[{target}]({url})"
+            lines.append(
+                f"| `{item.get('baseline')}` | `{item.get('status')}` | "
+                f"{target} | {item.get('next_action') or ''} |"
+            )
     lines.append("")
     lines.append("## Required Groups")
     for group, present in (summary.get("required_groups") or {}).items():
@@ -633,6 +656,38 @@ def method_coverage_markdown(summary: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _baseline_reproduction_plan(
+    baseline_provenance: dict[str, dict[str, str]],
+    mainstream_names: Iterable[str],
+) -> list[dict[str, str]]:
+    plan: list[dict[str, str]] = []
+    for name in sorted(mainstream_names):
+        info = baseline_provenance.get(name) or {}
+        status = str(info.get("implementation_status") or "unknown")
+        target_url = str(info.get("reproduction_target_url") or "")
+        if status in SOTA_BASELINE_REPRODUCTION_STATUSES:
+            plan_status = "ready"
+            next_action = "Use this artifact as the official/faithful baseline evidence."
+        elif target_url:
+            plan_status = "needs_official_or_faithful_run"
+            next_action = "Run or wrap the target implementation on the same split and record provenance."
+        else:
+            plan_status = "needs_reproduction_target"
+            next_action = "Identify an official implementation or define a faithful reimplementation protocol."
+        plan.append({
+            "baseline": name,
+            "source_name": str(info.get("source_name") or ""),
+            "source_url": str(info.get("source_url") or ""),
+            "implementation_status": status,
+            "status": plan_status,
+            "reproduction_target_name": str(info.get("reproduction_target_name") or ""),
+            "reproduction_target_url": target_url,
+            "reproduction_target_note": str(info.get("reproduction_target_note") or ""),
+            "next_action": next_action,
+        })
+    return plan
+
+
 def _manifest_baseline_provenance(manifest: dict[str, Any]) -> dict[str, dict[str, str]]:
     provenance = manifest.get("baseline_provenance")
     if not isinstance(provenance, dict):
@@ -647,6 +702,9 @@ def _manifest_baseline_provenance(manifest: dict[str, Any]) -> dict[str, dict[st
             "source_url": str(item.get("source_url") or ""),
             "implementation_status": str(item.get("implementation_status") or ""),
             "reproduction_note": str(item.get("reproduction_note") or ""),
+            "reproduction_target_name": str(item.get("reproduction_target_name") or ""),
+            "reproduction_target_url": str(item.get("reproduction_target_url") or ""),
+            "reproduction_target_note": str(item.get("reproduction_target_note") or ""),
         }
     return normalized
 
@@ -696,6 +754,7 @@ def paper_readiness_summary(
         "baseline_reproduction_status_counts": dict(
             method_coverage.get("reproduction_status_counts") or {}
         ),
+        "baseline_reproduction_plan": list(method_coverage.get("baseline_reproduction_plan") or []),
         "mainstream_api_free_approximations": list(
             method_coverage.get("mainstream_api_free_approximations") or []
         ),
@@ -763,6 +822,18 @@ def paper_readiness_markdown(summary: dict[str, Any]) -> str:
         lines.append("## Baseline Reproduction Gaps")
         for item in reproduction_gaps:
             lines.append(f"- `{item}`")
+    reproduction_plan = summary.get("baseline_reproduction_plan") or []
+    if reproduction_plan:
+        lines.append("")
+        lines.append("## Baseline Reproduction Plan")
+        for item in reproduction_plan:
+            target = str(item.get("reproduction_target_name") or "-")
+            url = str(item.get("reproduction_target_url") or "")
+            if url:
+                target = f"[{target}]({url})"
+            lines.append(
+                f"- `{item.get('baseline')}`: `{item.get('status')}` via {target}"
+            )
     approximations = summary.get("mainstream_api_free_approximations") or []
     if approximations:
         lines.append("")

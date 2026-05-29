@@ -15,6 +15,9 @@ class BaselineSpec:
     source_url: str = ""
     implementation_status: str = "adamem_native"
     reproduction_note: str = "Project-native method or local control."
+    reproduction_target_name: str = ""
+    reproduction_target_url: str = ""
+    reproduction_target_note: str = ""
 
     def config_dict(self) -> dict[str, object]:
         return asdict(self.config)
@@ -26,6 +29,9 @@ class BaselineSpec:
             "source_url": self.source_url,
             "implementation_status": self.implementation_status,
             "reproduction_note": self.reproduction_note,
+            "reproduction_target_name": self.reproduction_target_name,
+            "reproduction_target_url": self.reproduction_target_url,
+            "reproduction_target_note": self.reproduction_target_note,
         }
 
 
@@ -96,6 +102,11 @@ def baseline_registry() -> dict[str, BaselineSpec]:
                 "Approximates memory evolution locally; replace with or validate against "
                 "the official implementation before SOTA-style claims."
             ),
+            reproduction_target_name="A-MEM reproduction code",
+            reproduction_target_url="https://github.com/WujiangXu/A-mem",
+            reproduction_target_note=(
+                "Use the paper reproduction repository for official/faithful LoCoMo-style runs."
+            ),
         ),
         BaselineSpec(
             name="zep_temporal_kg",
@@ -118,6 +129,11 @@ def baseline_registry() -> dict[str, BaselineSpec]:
                 "Approximates temporal KG validity and readout locally; replace with or "
                 "validate against Graphiti/Zep before SOTA-style claims."
             ),
+            reproduction_target_name="Graphiti",
+            reproduction_target_url="https://github.com/getzep/graphiti",
+            reproduction_target_note=(
+                "Use the open-source temporal context graph engine for faithful temporal-KG baselines."
+            ),
         ),
         BaselineSpec(
             name="mem0_extraction",
@@ -138,6 +154,11 @@ def baseline_registry() -> dict[str, BaselineSpec]:
             reproduction_note=(
                 "Approximates salient extraction and compact readout locally; replace "
                 "with or validate against official Mem0 before SOTA-style claims."
+            ),
+            reproduction_target_name="Mem0",
+            reproduction_target_url="https://github.com/mem0ai/mem0",
+            reproduction_target_note=(
+                "Use the official memory-layer implementation or evaluation framework for faithful runs."
             ),
         ),
         BaselineSpec(
@@ -361,14 +382,17 @@ def select_baselines(
 def baseline_report(specs: dict[str, BaselineSpec] | None = None) -> str:
     specs = specs or baseline_registry()
     lines = ["# AdaMem Baseline Registry", ""]
-    lines.append("| name | category | implementation | source | description |")
-    lines.append("| --- | --- | --- | --- | --- |")
+    lines.append("| name | category | implementation | source | reproduction target | description |")
+    lines.append("| --- | --- | --- | --- | --- | --- |")
     for spec in specs.values():
         source = spec.source_name
         if spec.source_url:
             source = f"[{source}]({spec.source_url})"
+        target = spec.reproduction_target_name or "-"
+        if spec.reproduction_target_url:
+            target = f"[{target}]({spec.reproduction_target_url})"
         lines.append(
             f"| {spec.name} | {spec.category} | {spec.implementation_status} | "
-            f"{source} | {spec.description} |"
+            f"{source} | {target} | {spec.description} |"
         )
     return "\n".join(lines) + "\n"

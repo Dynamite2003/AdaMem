@@ -818,6 +818,9 @@ def _baseline_provenance(
             "source_url": str(item.get("source_url") or ""),
             "implementation_status": str(item.get("implementation_status") or ""),
             "reproduction_note": str(item.get("reproduction_note") or ""),
+            "reproduction_target_name": str(item.get("reproduction_target_name") or ""),
+            "reproduction_target_url": str(item.get("reproduction_target_url") or ""),
+            "reproduction_target_note": str(item.get("reproduction_target_note") or ""),
         }
     return normalized
 

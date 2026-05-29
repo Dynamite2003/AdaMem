@@ -49,9 +49,14 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
     assert configs["mem0_extraction"].use_salient_memory_only is True
     assert specs["a_mem_evolution"].source_name == "A-MEM"
     assert specs["a_mem_evolution"].implementation_status == "api_free_approximation"
+    assert specs["a_mem_evolution"].reproduction_target_url == "https://github.com/WujiangXu/A-mem"
     assert specs["zep_temporal_kg"].source_url == "https://arxiv.org/abs/2501.13956"
+    assert specs["zep_temporal_kg"].reproduction_target_url == "https://github.com/getzep/graphiti"
     assert specs["mem0_extraction"].provenance_dict()["category"] == "mainstream_approximation"
     assert specs["mem0_extraction"].provenance_dict()["source_name"] == "Mem0"
+    assert specs["mem0_extraction"].provenance_dict()["reproduction_target_url"] == (
+        "https://github.com/mem0ai/mem0"
+    )
     assert configs["trajectory_step_readout"].use_trajectory_step_readout is True
     assert configs["full"].use_graph is True
     assert configs["semantic_state_readout"].use_graph is False
@@ -117,6 +122,11 @@ def test_experiment_record_writes_reproducible_json(tmp_path) -> None:
         "reproduction_note": (
             "Approximates memory evolution locally; replace with or validate against "
             "the official implementation before SOTA-style claims."
+        ),
+        "reproduction_target_name": "A-MEM reproduction code",
+        "reproduction_target_url": "https://github.com/WujiangXu/A-mem",
+        "reproduction_target_note": (
+            "Use the paper reproduction repository for official/faithful LoCoMo-style runs."
         ),
     }
     assert data["diagnostics"] == [{"current_recall_rate": 0.0}]

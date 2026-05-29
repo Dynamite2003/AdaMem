@@ -164,6 +164,15 @@ Current implementation:
   provenance, and method coverage uses that artifact provenance before falling
   back to the current registry. This keeps future official/faithful baseline
   reproductions distinguishable from the current API-free approximations.
+- Baseline provenance now also carries an explicit reproduction target for
+  mainstream approximations. Current targets are:
+  - A-MEM paper reproduction code: `https://github.com/WujiangXu/A-mem`
+  - Graphiti/Zep temporal context graph engine:
+    `https://github.com/getzep/graphiti`
+  - Mem0 official memory-layer implementation:
+    `https://github.com/mem0ai/mem0`
+  These targets turn the SOTA blocker into an executable reproduction plan;
+  they do not make the current API-free approximations official baselines.
 - Answer-generation and STALE judge runs additionally require provider/model
   settings, `top_k`, `max_context_chars`, and answer/judge prompts where
   applicable.
