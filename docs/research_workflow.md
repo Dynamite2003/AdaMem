@@ -64,6 +64,7 @@ PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.j
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl --diagnostic-report-output results/stale_failure_report.md
 PYTHONPATH=src python -m adamem.stale_pipeline benchmarks/stale_mini.jsonl --input-format adamem-jsonl --output-dir /tmp/adamem_stale_pipeline_smoke --run-name stale_mini_pipeline --baselines semantic_state_adjudication semantic_state_premise_correction --max-cases 1 --json
 PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output results/stale_pilot_mock.json
+PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke --json
 PYTHONPATH=src python -m adamem.study_plan --output-dir results/paper_study_plan --json
 ```
 
@@ -111,6 +112,11 @@ Outputs:
   command is present. By default, generated full benchmark JSONL files are
   written under `OUTPUT_DIR/data/` instead of `benchmarks/`, because full
   conversions can be large and should not become tracked fixtures by accident.
+- API-free smoke-study plan artifacts can be generated with
+  `--profile smoke`. This profile uses tracked mini/local fixtures and mock
+  providers only. It validates conversion-free STALE diagnostics, mock
+  answer/judge plumbing, LLM-extractor plumbing, transfer retrieval, and batch
+  reporting, but it is explicitly not paper evidence.
 - Notes on any regression before new work begins.
 
 Done when:
@@ -726,6 +732,11 @@ Completed API-free foundations:
   `OUTPUT_DIR/data/` rather than tracked fixtures. Its method-coverage preview
   is a planning check only; final claims must use the generated experiment
   records and report bundle audits.
+- `adamem.study_plan --profile smoke`, an API-free local rehearsal profile
+  over `benchmarks/stale_mini.jsonl` and
+  `benchmarks/dynamic_state_transfer.jsonl` with mock LLM providers. Use it to
+  verify the generated runbook, experiment writers, and batch reporting before
+  spending API budget. Treat all smoke outputs as plumbing evidence only.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

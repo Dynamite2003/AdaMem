@@ -5,6 +5,7 @@ from pathlib import Path
 
 from adamem.study_plan import (
     build_paper_study_plan,
+    build_smoke_study_plan,
     main,
     parse_model_spec,
     validate_paper_study_plan,
@@ -72,6 +73,26 @@ def test_build_paper_study_plan_covers_method_and_model_matrix(tmp_path: Path) -
         for command in plan["commands"]
         if command["stage"] == "mechanism_ablation"
     )
+
+
+def test_build_smoke_study_plan_is_api_free_and_execution_ready() -> None:
+    plan = build_smoke_study_plan(output_dir="results/smoke")
+
+    validation = validate_paper_study_plan(plan)
+    command_stages = [command["stage"] for command in plan["commands"]]
+
+    assert plan["profile"] == "smoke"
+    assert plan["datasets"]["primary_stale"] == "benchmarks/stale_mini.jsonl"
+    assert plan["datasets"]["transfer_long_memory"] == "benchmarks/dynamic_state_transfer.jsonl"
+    assert plan["data_sources"] == {
+        "primary_stale": None,
+        "transfer_long_memory": None,
+    }
+    assert "data_prep" not in command_stages
+    assert validation["execution_ready"] is True
+    assert validation["required_env_vars"] == []
+    assert validation["placeholder_models"] == []
+    assert validation["command_count"] == 8
 
 
 def test_validate_paper_study_plan_reports_placeholders_and_missing_paths(tmp_path: Path) -> None:
@@ -219,3 +240,20 @@ def test_study_plan_cli_writes_artifacts(tmp_path: Path) -> None:
     assert (output_dir / "paper_study_commands.sh").exists()
     assert (output_dir / "paper_study_validation.json").exists()
     assert (output_dir / "paper_study_validation.md").exists()
+
+
+def test_study_plan_cli_writes_smoke_profile(tmp_path: Path) -> None:
+    output_dir = tmp_path / "cli-smoke"
+
+    main([
+        "--profile",
+        "smoke",
+        "--output-dir",
+        str(output_dir),
+        "--json",
+    ])
+
+    data = json.loads((output_dir / "paper_study_plan.json").read_text(encoding="utf-8"))
+    validation = json.loads((output_dir / "paper_study_validation.json").read_text(encoding="utf-8"))
+    assert data["profile"] == "smoke"
+    assert validation["execution_ready"] is True

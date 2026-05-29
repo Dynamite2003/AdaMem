@@ -231,6 +231,7 @@ PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.j
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl --diagnostic-report-output results/stale_failure_report.md
 PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output results/stale_pilot_mock.json
+PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke --json
 PYTHONPATH=src python -m adamem.study_plan --output-dir results/paper_study_plan --json
 PYTHONPATH=src python -m adamem.convert locomo data/locomo10.json benchmarks/locomo10.adamem.jsonl
 PYTHONPATH=src python -m adamem.convert stale data/T1_T2_400_FULL.json benchmarks/stale.adamem.jsonl

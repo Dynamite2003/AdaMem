@@ -2840,3 +2840,35 @@ to a paper-facing claim and evaluation gate.
     `OUTPUT_DIR/data/`, not `benchmarks/`.
   - LongMemEval conversion smoke wrote `3` cases from
     `data/longmemeval_s_cleaned.json` to a temporary `OUTPUT_DIR/data` path.
+
+### 2026-05-30 API-free smoke study profile
+
+- Added `adamem-study-plan --profile smoke`.
+- The smoke profile uses tracked local fixtures only:
+  - `benchmarks/stale_mini.jsonl`
+  - `benchmarks/dynamic_state_transfer.jsonl`
+- It uses mock providers only:
+  - two mock answer model labels
+  - two mock judge model labels
+  - one mock LLM state-extractor label
+- The smoke plan includes:
+  - STALE retrieval diagnostics
+  - mock STALE answer/judge runs
+  - mock LLM state-extractor ablation
+  - dynamic-state transfer retrieval
+  - batch report generation
+- Purpose:
+  - Provide a no-key local rehearsal for the generated runbook, experiment
+    writers, and report bundle before spending API budget.
+  - Keep smoke outputs clearly outside paper evidence; they validate plumbing
+    only.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `11 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `39 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `171 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI generation smoke marked validation `execution_ready=True` and wrote an
+    8-command smoke plan.
+  - Running the generated smoke shell completed and produced `7` experiment
+    artifacts plus batch `method_coverage` and `paper_readiness` artifacts.

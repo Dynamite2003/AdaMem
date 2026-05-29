@@ -57,6 +57,9 @@ DEFAULT_JUDGE_MODELS = [
     "<judge_provider_a>:<judge_model_a>",
     "<judge_provider_b>:<judge_model_b>",
 ]
+SMOKE_ANSWER_MODELS = ["mock:answer-a", "mock:answer-b"]
+SMOKE_JUDGE_MODELS = ["mock:judge-a", "mock:judge-b"]
+SMOKE_STATE_EXTRACTOR_MODEL = "mock:state-extractor"
 DEFAULT_STALE_SOURCE = "data/T1_T2_400_FULL.json"
 DEFAULT_TRANSFER_SOURCE = "data/longmemeval_s_cleaned.json"
 
@@ -236,6 +239,58 @@ def build_paper_study_plan(
             "STALE remains the primary benchmark; transfer results are used for generality and no-regression evidence.",
         ],
     }
+    return plan
+
+
+def build_smoke_study_plan(
+    *,
+    output_dir: str | Path,
+    stale_dataset: str | Path | None = "benchmarks/stale_mini.jsonl",
+    transfer_dataset: str | Path | None = "benchmarks/dynamic_state_transfer.jsonl",
+    stale_types: Iterable[str] = ("T1", "T2"),
+    limit_per_stale_type: int = 1,
+    transfer_max_cases: int = 2,
+    answer_models: Iterable[str] = SMOKE_ANSWER_MODELS,
+    judge_models: Iterable[str] = SMOKE_JUDGE_MODELS,
+    state_extractor_model: str = SMOKE_STATE_EXTRACTOR_MODEL,
+    top_k: int = 4,
+    max_context_chars: int = 2000,
+) -> dict[str, Any]:
+    plan = build_paper_study_plan(
+        output_dir=output_dir,
+        stale_dataset=stale_dataset,
+        transfer_dataset=transfer_dataset,
+        stale_source=None,
+        transfer_source=None,
+        ama_output_source=None,
+        stale_types=stale_types,
+        limit_per_stale_type=limit_per_stale_type,
+        transfer_max_cases=transfer_max_cases,
+        ama_limit=0,
+        answer_models=answer_models,
+        judge_models=judge_models,
+        state_extractor_model=state_extractor_model,
+        top_k=top_k,
+        max_context_chars=max_context_chars,
+    )
+    plan["profile"] = "smoke"
+    plan["objective"] = "api_free_smoke_study_plan"
+    plan["claim_boundary"] = (
+        "This smoke plan validates local plumbing only. It uses mini/local fixtures "
+        "and mock LLM providers, so it cannot support paper benchmark, answer-accuracy, "
+        "or SOTA claims."
+    )
+    plan["artifact_policy"] = {
+        "generated_datasets_default": "tracked_smoke_fixtures",
+        "reason": (
+            "Smoke runs use existing small fixtures and write only run outputs under "
+            "the requested study output directory."
+        ),
+    }
+    plan["post_run_gates"] = [
+        "Smoke output must be treated as plumbing evidence only.",
+        "Paper claims still require full STALE data, non-mock answer/judge models, transfer benchmarks, and reporting audits.",
+    ]
     return plan
 
 
@@ -921,6 +976,7 @@ def main(argv: list[str] | None = None) -> None:
         description="Generate a paper-track AdaMem study plan without running API calls."
     )
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--profile", choices=["paper", "smoke"], default="paper")
     parser.add_argument("--stale-dataset", help="Defaults to OUTPUT_DIR/data/stale.adamem.jsonl")
     parser.add_argument("--transfer-dataset", help="Defaults to OUTPUT_DIR/data/longmemeval_s.adamem.jsonl")
     parser.add_argument("--stale-source", default=DEFAULT_STALE_SOURCE)
@@ -936,7 +992,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--judge-model", action="append", dest="judge_models")
     parser.add_argument(
         "--state-extractor-model",
-        default="<state_extractor_provider>:<state_extractor_model>",
         help="provider:model for LLM extractor ablation.",
     )
     parser.add_argument("--top-k", type=int, default=8)
@@ -950,23 +1005,38 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     try:
-        plan = build_paper_study_plan(
-            output_dir=args.output_dir,
-            stale_dataset=args.stale_dataset,
-            transfer_dataset=args.transfer_dataset,
-            stale_source=None if args.no_data_prep else args.stale_source,
-            transfer_source=None if args.no_data_prep else args.transfer_source,
-            ama_output_source=None if args.no_ama else args.ama_output_source,
-            stale_types=args.stale_types,
-            limit_per_stale_type=args.limit_per_stale_type,
-            transfer_max_cases=args.transfer_max_cases,
-            ama_limit=args.ama_limit,
-            answer_models=args.answer_models or DEFAULT_ANSWER_MODELS,
-            judge_models=args.judge_models or DEFAULT_JUDGE_MODELS,
-            state_extractor_model=args.state_extractor_model,
-            top_k=args.top_k,
-            max_context_chars=args.max_context_chars,
-        )
+        if args.profile == "smoke":
+            plan = build_smoke_study_plan(
+                output_dir=args.output_dir,
+                stale_dataset=args.stale_dataset or "benchmarks/stale_mini.jsonl",
+                transfer_dataset=args.transfer_dataset or "benchmarks/dynamic_state_transfer.jsonl",
+                stale_types=args.stale_types,
+                limit_per_stale_type=args.limit_per_stale_type,
+                transfer_max_cases=args.transfer_max_cases,
+                answer_models=args.answer_models or SMOKE_ANSWER_MODELS,
+                judge_models=args.judge_models or SMOKE_JUDGE_MODELS,
+                state_extractor_model=args.state_extractor_model or SMOKE_STATE_EXTRACTOR_MODEL,
+                top_k=args.top_k,
+                max_context_chars=args.max_context_chars,
+            )
+        else:
+            plan = build_paper_study_plan(
+                output_dir=args.output_dir,
+                stale_dataset=args.stale_dataset,
+                transfer_dataset=args.transfer_dataset,
+                stale_source=None if args.no_data_prep else args.stale_source,
+                transfer_source=None if args.no_data_prep else args.transfer_source,
+                ama_output_source=None if args.no_ama else args.ama_output_source,
+                stale_types=args.stale_types,
+                limit_per_stale_type=args.limit_per_stale_type,
+                transfer_max_cases=args.transfer_max_cases,
+                ama_limit=args.ama_limit,
+                answer_models=args.answer_models or DEFAULT_ANSWER_MODELS,
+                judge_models=args.judge_models or DEFAULT_JUDGE_MODELS,
+                state_extractor_model=args.state_extractor_model or "<state_extractor_provider>:<state_extractor_model>",
+                top_k=args.top_k,
+                max_context_chars=args.max_context_chars,
+            )
     except ValueError as exc:
         parser.error(str(exc))
     artifacts = write_paper_study_plan(plan, args.output_dir)
