@@ -102,6 +102,24 @@ extraction on those true state cases.
   - Interpretation: this strengthens the reproducibility and reporting path,
     but still supports only a retrieval/answerability claim, not final
     answer-accuracy or SOTA claims.
+- Added `src/adamem/answer_eval.py` and the `adamem-answer-eval` console
+  script:
+  - Runs answer generation over AdaMem JSONL cases using the same baseline
+    registry as retrieval benchmarks.
+  - Keeps answer generation grounded in retrieved memory excerpts and separates
+    runtime answer generation from evaluation scoring.
+  - Provides deterministic `SubstringAnswerScorer` for API-free harness smoke
+    tests and `LLMAnswerScorer` for later answer/judge providers.
+  - Writes case records and experiment JSON with prompts, raw answers, scorer
+    outputs, model/provider notes, and explicit `ground_truth_runtime_use:
+    forbidden`.
+- Added tests for answer benchmark aggregation, LLM-judge prompt recording, and
+  CLI records/experiment output.
+- Ran an API-free answer-eval smoke command:
+  `PYTHONPATH=src python -m adamem.answer_eval --dataset benchmarks/tiny_memory_qa.jsonl --baselines semantic_only --answer-provider mock --mock-answer "Office door code is 9876." --records-output /tmp/adamem_answer_eval_records.jsonl --experiment-output /tmp/adamem_answer_eval_experiment.json`
+  - Result: command completed and wrote records/experiment artifacts.
+  - Interpretation: this validates the answer-evaluation plumbing only; the
+    mock answer is not a benchmark result.
 
 ## Completed Work
 

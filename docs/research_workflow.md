@@ -510,6 +510,10 @@ Completed API-free foundations:
   experiment JSON files. It follows `notes.records_path` when raw outputs are
   not embedded, and emits Markdown or JSON tables with overall and grouped
   support, evidence, answerability, and structured-basis diagnostics.
+- `adamem.answer_eval`, a mockable answer-generation evaluation path for
+  AdaMem JSONL cases. It separates runtime answer generation from evaluation
+  scoring, supports deterministic substring smoke tests and LLM-judge scoring,
+  and records prompts/raw outputs in experiment JSON.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

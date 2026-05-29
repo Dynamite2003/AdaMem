@@ -307,6 +307,16 @@ The table utility reads benchmark records directly, or follows
 retrieval support, evidence support, answer-keyword recall, structured-basis
 recall, and grouped breakdowns without manually parsing Markdown reports.
 
+For API-key-free answer-evaluation plumbing, use the mockable answer path:
+
+```bash
+PYTHONPATH=src python -m adamem.answer_eval --dataset benchmarks/tiny_memory_qa.jsonl --baselines semantic_only --answer-provider mock --mock-answer "Office door code is 9876." --records-output /tmp/adamem_answer_eval_records.jsonl --experiment-output /tmp/adamem_answer_eval_experiment.json
+```
+
+This command is a harness smoke test, not a benchmark result. It fixes the
+answer prompt, scorer interface, raw-output record format, and experiment JSON
+notes before real answer and judge providers are plugged in.
+
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes
 retrieval of the matching trajectory steps by metadata instead of relying only
