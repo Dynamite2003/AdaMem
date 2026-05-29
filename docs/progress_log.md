@@ -3083,3 +3083,24 @@ to a paper-facing claim and evaluation gate.
     `settings_provenance`.
   - CLI rejected a settings JSON containing an `api_key` field with
     `credential-like fields`.
+
+### 2026-05-30 settings provenance audit artifacts
+
+- Propagated `settings_provenance` into:
+  - `paper_study_validation.json`
+  - `paper_study_validation.md`
+  - `paper_study_run.summary.json`
+  - `paper_study_run.summary.md`
+- Purpose:
+  - Make validation and run-summary artifacts independently traceable to the
+    settings content that generated the study plan.
+  - Avoid requiring reviewers to open the full plan JSON just to verify which
+    editable settings produced a run.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `26 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `54 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `186 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI settings dry-run confirmed provenance appears in validation JSON, run
+    summary JSON, and run summary Markdown.

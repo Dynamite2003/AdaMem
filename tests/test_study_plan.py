@@ -183,6 +183,7 @@ def test_build_study_plan_from_settings_uses_api_pilot_models(tmp_path: Path) ->
     assert plan["settings_provenance"]["schema_version"] == STUDY_SETTINGS_SCHEMA_VERSION
     assert plan["settings_provenance"]["settings_fingerprint"] == settings_fingerprint(settings)
     assert plan["settings_provenance"]["output_dir_overridden"] is False
+    assert validation["settings_provenance"] == plan["settings_provenance"]
     assert validation["execution_ready"] is True
     assert validation["required_env_vars"] == ["GEMINI_API_KEY", "OPENAI_API_KEY"]
 
@@ -391,6 +392,7 @@ def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> Non
     assert summary["status"] == "dry_run"
     assert summary["plan_fingerprint"] == plan["plan_fingerprint"]
     assert summary["recorded_plan_fingerprint"] == plan["plan_fingerprint"]
+    assert summary["settings_provenance"] == {}
     assert summary["selected_command_count"] == 1
     assert summary["completed_command_count"] == 0
     assert records[0]["status"] == "dry_run"
@@ -524,11 +526,40 @@ def test_study_plan_cli_generates_from_settings(tmp_path: Path) -> None:
 
     plan = json.loads((tmp_path / "settings-study" / "paper_study_plan.json").read_text(encoding="utf-8"))
     validation = json.loads((tmp_path / "settings-study" / "paper_study_validation.json").read_text(encoding="utf-8"))
+    validation_md = (tmp_path / "settings-study" / "paper_study_validation.md").read_text(encoding="utf-8")
     assert plan["model_requirements"]["answer_models"] == ["openai:gpt-a", "gemini:gemini-a"]
     assert plan["split"]["limit_per_stale_type"] == 1
     assert plan["settings_provenance"]["settings_path"] == str(settings_path)
     assert plan["settings_provenance"]["settings_fingerprint"] == settings_fingerprint(settings)
+    assert validation["settings_provenance"] == plan["settings_provenance"]
+    assert "Settings Provenance" in validation_md
     assert validation["execution_ready"] is True
+
+
+def test_study_plan_cli_run_summary_records_settings_provenance(tmp_path: Path) -> None:
+    settings_path = tmp_path / "settings-run.json"
+    settings = {
+        "schema_version": STUDY_SETTINGS_SCHEMA_VERSION,
+        "profile": "smoke",
+        "output_dir": str(tmp_path / "settings-run-study"),
+    }
+    settings_path.write_text(json.dumps(settings, ensure_ascii=False), encoding="utf-8")
+
+    main([
+        "--settings",
+        str(settings_path),
+        "--run",
+        "--dry-run",
+        "--stage",
+        "diagnostic",
+        "--json",
+    ])
+
+    summary = json.loads((tmp_path / "settings-run-study" / "paper_study_run.summary.json").read_text(encoding="utf-8"))
+    summary_md = (tmp_path / "settings-run-study" / "paper_study_run.summary.md").read_text(encoding="utf-8")
+    assert summary["settings_provenance"]["settings_path"] == str(settings_path)
+    assert summary["settings_provenance"]["settings_fingerprint"] == settings_fingerprint(settings)
+    assert "Settings Provenance" in summary_md
 
 
 def test_study_plan_cli_can_dry_run_smoke_profile(tmp_path: Path) -> None:

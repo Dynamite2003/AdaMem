@@ -591,6 +591,7 @@ def run_study_plan(
         "schema_version": "adamem.paper_study_run.v1",
         "plan_fingerprint": plan_fingerprint(plan),
         "recorded_plan_fingerprint": plan.get("plan_fingerprint"),
+        "settings_provenance": dict(plan.get("settings_provenance") or {}),
         "status": status,
         "dry_run": dry_run,
         "log_path": str(log),
@@ -617,6 +618,14 @@ def study_run_summary_markdown(summary: dict[str, Any]) -> str:
     lines.append(f"Failed commands: `{int(summary.get('failed_command_count') or 0)}`")
     lines.append(f"Missing outputs: `{int(summary.get('missing_output_count') or 0)}`")
     lines.append(f"Log: `{summary.get('log_path')}`")
+    provenance = summary.get("settings_provenance") or {}
+    if provenance:
+        lines.append("")
+        lines.append("## Settings Provenance")
+        lines.append(f"- Settings fingerprint: `{provenance.get('settings_fingerprint')}`")
+        if provenance.get("settings_path"):
+            lines.append(f"- Settings path: `{provenance.get('settings_path')}`")
+        lines.append(f"- Output dir overridden: `{bool(provenance.get('output_dir_overridden'))}`")
     lines.append("")
     lines.append("| # | status | stage | name | seconds | missing outputs |")
     lines.append("| ---: | --- | --- | --- | ---: | ---: |")
@@ -750,6 +759,7 @@ def validate_paper_study_plan(
         "recorded_plan_fingerprint": recorded_fingerprint,
         "plan_fingerprint_recorded": bool(recorded_fingerprint),
         "plan_fingerprint_matches_recorded": fingerprint_matches_recorded,
+        "settings_provenance": dict(plan.get("settings_provenance") or {}),
         "execution_ready": not missing_requirements,
         "missing_requirements": missing_requirements,
         "dataset_checks": dataset_checks,
@@ -785,6 +795,14 @@ def paper_study_validation_markdown(validation: dict[str, Any]) -> str:
             "Fingerprint matches recorded: "
             f"`{bool(validation.get('plan_fingerprint_matches_recorded'))}`"
         )
+    provenance = validation.get("settings_provenance") or {}
+    if provenance:
+        lines.append("")
+        lines.append("## Settings Provenance")
+        lines.append(f"- Settings fingerprint: `{provenance.get('settings_fingerprint')}`")
+        if provenance.get("settings_path"):
+            lines.append(f"- Settings path: `{provenance.get('settings_path')}`")
+        lines.append(f"- Output dir overridden: `{bool(provenance.get('output_dir_overridden'))}`")
     lines.append("")
     lines.append(f"Execution ready: `{bool(validation.get('execution_ready'))}`")
     missing = validation.get("missing_requirements") or []

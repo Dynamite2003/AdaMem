@@ -127,7 +127,8 @@ Outputs:
   settings JSON. Then generate the concrete plan with
   `PYTHONPATH=src python -m adamem.study_plan --settings results/api_pilot_settings.json --check-env --json`.
   The generated `paper_study_plan.json` records the settings fingerprint and,
-  for CLI-generated plans, the settings path. Settings files that contain
+  for CLI-generated plans, the settings path. The same provenance is carried
+  into validation artifacts and run summaries. Settings files that contain
   credential-like keys such as `api_key`, `token`, `secret`, or `password` are
   rejected at load time.
 - Study plans can also be executed through the same CLI with `--run`.
