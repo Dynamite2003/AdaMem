@@ -506,6 +506,10 @@ Completed API-free foundations:
   baselines, writes Markdown reports, records JSONL, and compact experiment
   JSON. Use `--answer-only` for larger smoke runs because answer-mode reports
   already include evidence support and answerability diagnostics.
+- `adamem.tables`, a compact paper-table summarizer for benchmark records or
+  experiment JSON files. It follows `notes.records_path` when raw outputs are
+  not embedded, and emits Markdown or JSON tables with overall and grouped
+  support, evidence, answerability, and structured-basis diagnostics.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

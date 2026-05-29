@@ -1,0 +1,165 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from adamem.tables import (
+    load_benchmark_records,
+    paper_table_markdown,
+    paper_table_summary,
+    write_paper_table,
+)
+
+
+def test_paper_table_summary_reports_overall_and_grouped_metrics() -> None:
+    records = [
+        _record(
+            baseline="semantic_only",
+            question_type="A",
+            passed=False,
+            evidence_matched=False,
+            answer_recall=0.25,
+            basis_recall=0.25,
+        ),
+        _record(
+            baseline="trajectory_step_readout",
+            question_type="A",
+            passed=False,
+            evidence_matched=True,
+            answer_recall=0.25,
+            basis_recall=0.75,
+            basis_matched=True,
+            answer_basis="Step 7 action: right",
+        ),
+        _record(
+            baseline="semantic_only",
+            question_type="B",
+            passed=True,
+            evidence_matched=True,
+            answer_recall=1.0,
+            basis_recall=1.0,
+            answer_matched=True,
+            basis_matched=True,
+            answer_basis="direct support",
+        ),
+        _record(
+            baseline="trajectory_step_readout",
+            question_type="B",
+            passed=True,
+            evidence_matched=True,
+            answer_recall=1.0,
+            basis_recall=1.0,
+            answer_matched=True,
+            basis_matched=True,
+            answer_basis="direct support",
+        ),
+    ]
+
+    summary = paper_table_summary(records, group_fields=["question_type"])
+
+    assert summary["total_records"] == 4
+    by_baseline = {row["baseline"]: row for row in summary["overall"]}
+    assert by_baseline["semantic_only"]["support"] == "1/2"
+    assert by_baseline["semantic_only"]["evidence_support"] == "1/2"
+    assert by_baseline["trajectory_step_readout"]["evidence_support"] == "2/2"
+    assert by_baseline["trajectory_step_readout"]["basis_matched"] == "2/2"
+    grouped = {
+        (row["value"], row["baseline"]): row
+        for row in summary["by_group"]["question_type"]
+    }
+    assert grouped[("A", "semantic_only")]["evidence_support"] == "0/1"
+    assert grouped[("A", "trajectory_step_readout")]["basis_matched"] == "1/1"
+
+
+def test_paper_table_markdown_is_compact_and_reproducible() -> None:
+    markdown = paper_table_markdown(
+        [_record(baseline="trajectory_step_readout", question_type="C")],
+        group_fields=["question_type"],
+        title="AMA Pilot Tables",
+    )
+
+    assert markdown.startswith("# AMA Pilot Tables\n")
+    assert "| trajectory_step_readout | 0/1 | 0.00% | 1/1 | 50.00% | 50.00% | 0/1 |" in markdown
+    assert "## By question_type" in markdown
+    assert "| C | trajectory_step_readout | 0/1 | 0.00% | 1/1 | 50.00% | 50.00% | 0/1 |" in markdown
+
+
+def test_load_benchmark_records_follows_experiment_records_path(tmp_path: Path) -> None:
+    records_path = tmp_path / "records.jsonl"
+    record = _record(baseline="semantic_only")
+    records_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    experiment_path = tmp_path / "experiment.json"
+    experiment_path.write_text(
+        json.dumps({"raw_outputs": [], "notes": {"records_path": "records.jsonl"}}),
+        encoding="utf-8",
+    )
+
+    assert load_benchmark_records(experiment_path) == [record]
+
+
+def test_write_paper_table_json(tmp_path: Path) -> None:
+    records_path = tmp_path / "records.jsonl"
+    output_path = tmp_path / "table.json"
+    records_path.write_text(
+        json.dumps(_record(baseline="trajectory_step_readout")) + "\n",
+        encoding="utf-8",
+    )
+
+    written = write_paper_table(records_path, output_path, output_format="json")
+    payload = json.loads(written.read_text(encoding="utf-8"))
+
+    assert written == output_path
+    assert payload["overall"][0]["baseline"] == "trajectory_step_readout"
+    assert payload["overall"][0]["evidence_support"] == "1/1"
+
+
+def _record(
+    *,
+    baseline: str,
+    question_type: str = "A",
+    passed: bool = False,
+    evidence_matched: bool = True,
+    answer_recall: float = 0.5,
+    basis_recall: float = 0.5,
+    answer_matched: bool = False,
+    basis_matched: bool = False,
+    answer_basis: str = "",
+) -> dict[str, object]:
+    missing_evidence = [] if evidence_matched else ["step001"]
+    return {
+        "baseline": baseline,
+        "case_id": "case-1",
+        "query_id": f"query-{question_type}",
+        "query": "What happened at Step 1?",
+        "passed": passed,
+        "retrieved": [],
+        "expected_substrings": ["answer"],
+        "forbidden_substrings": [],
+        "missing_expected": [] if passed else ["answer"],
+        "present_forbidden": [],
+        "failure_modes": [] if passed else ["expected_support_missing"],
+        "metadata": {"question_type": question_type, "benchmark": "ama"},
+        "trace": [],
+        "expected_evidence": ["step001"],
+        "missing_evidence": missing_evidence,
+        "evidence_support_matched": evidence_matched,
+        "graph_evidence_hit_count": 0,
+        "graph_evidence_hits": [],
+        "graph_retrieval_count": 0,
+        "answer_keywords": ["answer", "step"],
+        "missing_answer_keywords": [] if answer_matched else ["answer"],
+        "answer_keyword_support_matched": answer_matched,
+        "answer_keyword_recall": answer_recall,
+        "answer_basis": answer_basis,
+        "basis_missing_answer_keywords": [] if basis_matched else ["answer"],
+        "basis_answer_keyword_support_matched": basis_matched,
+        "basis_answer_keyword_recall": basis_recall,
+        "state_retrieval_count": 0,
+        "retrieved_state_slots": [],
+        "expected_state_slots": [],
+        "unexpected_state_slots": [],
+        "state_slot_matched": False,
+        "state_sensitive": False,
+        "state_available": False,
+        "state_readout_expected": False,
+    }

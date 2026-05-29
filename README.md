@@ -294,6 +294,19 @@ support and answerability diagnostics. Reports include grouped diagnostics for
 metadata such as AMA `question_type`, so A/B/C/D evidence and answerability can
 be inspected even when exact answer-string accuracy is zero.
 
+To regenerate compact paper-table summaries from records or experiment JSON,
+use:
+
+```bash
+PYTHONPATH=src python -m adamem.tables results/ama_public_20_full/ama_public_20.records.jsonl --group-fields question_type --title "AMA Public 20 API-Free Tables" --output results/ama_public_20_full/ama_public_20.paper_tables.md
+PYTHONPATH=src python -m adamem.tables results/ama_public_20_full/ama_public_20.experiment.json --format json --group-fields question_type --output results/ama_public_20_full/ama_public_20.paper_tables.json
+```
+
+The table utility reads benchmark records directly, or follows
+`notes.records_path` from compact experiment JSON files. It reports exact
+retrieval support, evidence support, answer-keyword recall, structured-basis
+recall, and grouped breakdowns without manually parsing Markdown reports.
+
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes
 retrieval of the matching trajectory steps by metadata instead of relying only

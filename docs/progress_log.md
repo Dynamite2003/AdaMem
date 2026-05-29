@@ -74,6 +74,35 @@ extraction on those true state cases.
   judge path so API keys can be plugged in later without changing the benchmark
   record format.
 
+### 2026-05-31
+
+- Added `src/adamem/tables.py` and the `adamem-tables` console script:
+  - Reads benchmark records from JSONL, JSON arrays, or compact experiment JSON
+    files.
+  - When experiment JSON does not embed raw outputs, follows
+    `notes.records_path` to the sidecar records file.
+  - Emits Markdown or JSON paper-table summaries with overall support,
+    evidence support, answer-keyword recall, structured-basis recall, and
+    grouped metadata breakdowns.
+- Added deterministic tests for paper-table summaries, Markdown formatting,
+  experiment-record path resolution, and JSON output writing.
+- Generated API-free paper tables from the existing 20-episode public AMA
+  pilot:
+  - Markdown:
+    `results/ama_public_20_full/ama_public_20.paper_tables.md`
+  - JSON:
+    `results/ama_public_20_full/ama_public_20.paper_tables.json`
+  - Overall table:
+    - `full`: support `0/240`, evidence support `0/239`, answer recall
+      `19.07%`, basis recall `19.07%`, basis matched `19/240`.
+    - `semantic_only`: support `0/240`, evidence support `34/239`, answer
+      recall `15.36%`, basis recall `15.68%`, basis matched `14/240`.
+    - `trajectory_step_readout`: support `0/240`, evidence support `239/239`,
+      answer recall `20.54%`, basis recall `24.34%`, basis matched `32/240`.
+  - Interpretation: this strengthens the reproducibility and reporting path,
+    but still supports only a retrieval/answerability claim, not final
+    answer-accuracy or SOTA claims.
+
 ## Completed Work
 
 ### 2026-05-29
