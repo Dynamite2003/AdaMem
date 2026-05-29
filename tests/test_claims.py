@@ -530,10 +530,104 @@ def test_claim_audit_records_reproducibility_coverage(tmp_path: Path) -> None:
 
     assert "reproducibility_audit" in audit["supported_claims"]
     assert audit["baseline_provenance"]["a_mem_evolution"]["category"] == "mainstream_approximation"
+    assert audit["claim_evidence"]["baseline_reproduction"]["complete"] is False
+    assert audit["claim_evidence"]["baseline_reproduction"]["api_free_mainstream_approximations"] == [
+        "a_mem_evolution"
+    ]
+    assert audit["claim_evidence"]["baseline_reproduction"]["missing_requirements"] == [
+        "official_or_faithful_mainstream_reproduction"
+    ]
     assert reproducibility["complete"] is True
     assert reproducibility["missing"] == []
     assert "baseline_provenance" in reproducibility["present"]
+    assert "Baseline Reproduction" in markdown
     assert "Reproducibility" in markdown
+
+
+def test_claim_audit_supports_official_baseline_reproduction_evidence(tmp_path: Path) -> None:
+    experiment = tmp_path / "official_baseline_stale.experiment.json"
+    experiment.write_text(
+        json.dumps({
+            "schema_version": "adamem.experiment.v1",
+            "run_name": "official_baseline_stale",
+            "run_type": "stale_llm_judge",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "baseline_names": ["semantic_only", "a_mem_evolution", "state_readout"],
+            "baseline_configs": {
+                "semantic_only": {"use_graph": False},
+                "a_mem_evolution": {"external_runner": "official"},
+                "state_readout": {"use_state_memory": True, "use_state_readout": True},
+            },
+            "baseline_provenance": {
+                "semantic_only": {
+                    "category": "raw_turn_retrieval",
+                    "source_name": "AdaMem",
+                    "source_url": "",
+                    "implementation_status": "adamem_native",
+                    "reproduction_note": "Project-native retrieval control.",
+                },
+                "a_mem_evolution": {
+                    "category": "mainstream_approximation",
+                    "source_name": "A-MEM",
+                    "source_url": "https://arxiv.org/abs/2502.12110",
+                    "implementation_status": "official_reproduction",
+                    "reproduction_note": "Official A-MEM code path recorded for this run.",
+                },
+                "state_readout": {
+                    "category": "state_aware",
+                    "source_name": "AdaMem",
+                    "source_url": "",
+                    "implementation_status": "adamem_native",
+                    "reproduction_note": "Project-native method.",
+                },
+            },
+            "raw_outputs": [
+                {
+                    "baseline": "state_readout",
+                    "case_id": "c1",
+                    "query_id": "q1",
+                    "judge_correct": True,
+                    "answer_provider": "openai",
+                    "answer_model": "gpt-4o-mini",
+                    "judge_provider": "openai",
+                    "judge_model": "gpt-5",
+                },
+                {
+                    "baseline": "a_mem_evolution",
+                    "case_id": "c2",
+                    "query_id": "q2",
+                    "judge_correct": True,
+                    "answer_provider": "gemini",
+                    "answer_model": "gemini-1.5-flash",
+                    "judge_provider": "gemini",
+                    "judge_model": "gemini-2.5-pro",
+                },
+            ],
+            "notes": {
+                "ground_truth_runtime_use": "forbidden",
+                "ground_truth_judge_use": "allowed",
+                "answer_provider": "openai",
+                "answer_model": "gpt-4o-mini",
+                "judge_provider": "openai",
+                "judge_model": "gpt-5",
+            },
+            "command": ["python", "-m", "adamem.eval", "--stale", "benchmarks/stale.adamem.jsonl"],
+            "commit": "abc123",
+        }),
+        encoding="utf-8",
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+    reproduction = audit["claim_evidence"]["baseline_reproduction"]
+
+    assert "baseline_reproduction_audit" in audit["supported_claims"]
+    assert "model_robustness_audit" in audit["supported_claims"]
+    assert reproduction["complete"] is True
+    assert reproduction["official_or_faithful_mainstream_reproductions"] == ["a_mem_evolution"]
+    assert reproduction["missing_requirements"] == []
+    assert "sota" not in audit["blocked_claims"]
+    assert "Official/faithful mainstream reproductions" in markdown
 
 
 def test_claim_audit_flags_missing_baseline_provenance(tmp_path: Path) -> None:

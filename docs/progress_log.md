@@ -3387,3 +3387,34 @@ to a paper-facing claim and evaluation gate.
     reported `sota_baseline_reproduction_ready=True`,
     `official_or_faithful_mainstream_reproductions=a_mem_evolution`, and no
     baseline reproduction gap.
+
+### 2026-05-30 single-experiment baseline reproduction audit
+
+- Claim audits now compute `baseline_reproduction` evidence from
+  artifact-level baseline provenance.
+- SOTA blockers for answer-generation and STALE judge runs now separate:
+  - missing official/faithful mainstream baseline reproduction
+  - missing model or judge robustness
+- Claim matrix rows now expose baseline reproduction completeness,
+  official/faithful mainstream reproduction counts, and reproduction gaps.
+- `paper_next_steps.md` can now recommend
+  `add_official_or_faithful_baseline_reproduction` independently from
+  `add_missing_baseline_categories`.
+- Purpose:
+  - Let a single experiment artifact prove whether its mainstream baselines
+    are official/faithful reproductions or only API-free approximations.
+  - Prevent answer-accuracy candidate runs from being treated as SOTA
+    candidates unless strong baseline reproduction evidence is present in the
+    artifact.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py -q` -> `15 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py -q` -> `31 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py tests/test_experiments.py -q` -> `35 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `200 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI claim/reporting smoke confirmed a default local A-MEM run reports
+    `official_or_faithful_mainstream_reproduction` missing, while an artifact
+    marked `official_reproduction` reports `baseline_reproduction_audit`,
+    no SOTA blocker, reporting `sota_baseline_reproduction_ready=True`, and
+    claim-matrix official count `1`.

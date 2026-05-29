@@ -733,6 +733,9 @@ Completed API-free foundations:
   record answer-model and judge-model coverage. Missing multiple-answer-model,
   multiple-judge-model, or semantic-LLM-judge requirements appear as model
   gaps and trigger `add_model_or_judge_robustness_runs`. Claim audits also
+  compute single-experiment baseline-reproduction evidence from artifact-level
+  provenance and keep SOTA blocked when a run has only API-free mainstream
+  approximations rather than official or faithful reproductions. They also
   record reproducibility packets covering schema version, commit, command,
   dataset, baseline configs, baseline provenance, case-level records,
   provider/model settings, prompt templates, and retrieval context settings

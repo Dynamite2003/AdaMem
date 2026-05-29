@@ -85,6 +85,9 @@ Current implementation:
   `baseline_reproduction_gaps`, and API-free mainstream approximations so
   A-MEM, Zep/Graphiti, and Mem0-inspired local controls are not mistaken for
   strong baseline reproductions.
+- Claim audits now also compute single-experiment baseline-reproduction
+  evidence from artifact-level provenance. SOTA blockers distinguish missing
+  official/faithful mainstream reproductions from model-robustness gaps.
 - It separately flags named mechanism evidence for state readout, dependency
   propagation, source adjudication, premise correction, LLM state extraction,
   and trajectory-step readout.

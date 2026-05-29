@@ -203,6 +203,7 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         state_evidence = evidence.get("prepared_state_evidence") or {}
         retrieval = evidence.get("retrieval_transfer") or {}
         baseline_coverage = evidence.get("baseline_coverage") or {}
+        baseline_reproduction = evidence.get("baseline_reproduction") or {}
         model_coverage = evidence.get("model_coverage") or {}
         reproducibility = evidence.get("reproducibility") or {}
         dataset_scope = manifest.get("dataset_scope") or {}
@@ -229,6 +230,11 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "baseline_coverage_complete": bool(baseline_coverage.get("complete")),
             "baseline_category_count": int(baseline_coverage.get("category_count") or 0),
             "missing_baseline_groups": list(baseline_coverage.get("missing_groups") or []),
+            "baseline_reproduction_complete": bool(baseline_reproduction.get("complete")),
+            "official_or_faithful_baseline_count": len(
+                baseline_reproduction.get("official_or_faithful_mainstream_reproductions") or []
+            ),
+            "baseline_reproduction_gaps": list(baseline_reproduction.get("missing_requirements") or []),
             "model_coverage_complete": bool(model_coverage.get("complete")),
             "answer_model_count": int(model_coverage.get("answer_model_count") or 0),
             "judge_model_count": int(model_coverage.get("judge_model_count") or 0),
@@ -727,13 +733,13 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | model gaps | repro gaps | no-reg pairs | top attribution |",
-        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- |",
+        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | baseline repro | model gaps | repro gaps | no-reg pairs | top attribution |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | ---: | --- |",
     ]
     if not rows:
         lines.append(
             "| <none> | needs_attention | add_experiment_records | unknown | <none> | "
-            "0 | 0 | 0 | 0/0 | 0.00% | - | - | - | 0 | - |"
+            "0 | 0 | 0 | 0/0 | 0.00% | - | - | - | - | 0 | - |"
         )
         return "\n".join(lines) + "\n"
     for row in rows:
@@ -749,6 +755,7 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
             f"{row['warning_count']} | {matching}/{expected} | "
             f"{float(row.get('state_available_rate') or 0.0):.2%} | "
             f"{_format_missing_baseline_groups(row)} | "
+            f"{_format_baseline_reproduction(row)} | "
             f"{_format_missing_model_requirements(row)} | "
             f"{_format_missing_reproducibility_items(row)} | "
             f"{row['paired_no_regression_count']} | "
@@ -958,6 +965,8 @@ def _paper_next_actions(row: dict[str, Any]) -> list[str]:
         actions.append("inspect_representative_failure_attributions")
     if row.get("missing_baseline_groups"):
         actions.append("add_missing_baseline_categories")
+    if row.get("baseline_reproduction_gaps"):
+        actions.append("add_official_or_faithful_baseline_reproduction")
     if row.get("missing_model_requirements"):
         actions.append("add_model_or_judge_robustness_runs")
     if row.get("missing_reproducibility_items"):
@@ -1047,6 +1056,16 @@ def _format_missing_baseline_groups(row: dict[str, Any]) -> str:
     if not missing:
         return "-"
     return ", ".join(missing)
+
+
+def _format_baseline_reproduction(row: dict[str, Any]) -> str:
+    missing = [str(item) for item in row.get("baseline_reproduction_gaps") or []]
+    if missing:
+        return ", ".join(missing)
+    official = int(row.get("official_or_faithful_baseline_count") or 0)
+    if official:
+        return f"official/faithful {official}"
+    return "-"
 
 
 def _format_missing_model_requirements(row: dict[str, Any]) -> str:

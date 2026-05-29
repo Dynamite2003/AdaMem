@@ -31,6 +31,10 @@ RETRIEVAL_RUN_TYPES = {
     "ama_public_evidence_pilot",
     "longmemeval_v2_prepared_answer_support_pilot",
 }
+STRONG_BASELINE_REPRODUCTION_STATUSES = {
+    "official_reproduction",
+    "faithful_reimplementation",
+}
 
 
 def audit_experiment(path: str | Path) -> dict[str, Any]:
@@ -45,6 +49,7 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         notes = {}
     providers = _providers(notes)
     baselines = [str(name) for name in experiment.get("baseline_names") or []]
+    baseline_provenance = _baseline_provenance(experiment, baselines)
     raw_outputs = experiment.get("raw_outputs") or []
     results = experiment.get("results")
     raw_output_count = _evidence_record_count(experiment_path, raw_outputs, results, notes)
@@ -98,7 +103,6 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
             blocked["answer_accuracy"].append("substring scorer is not a semantic judge")
         else:
             supported.append("answer_accuracy_candidate")
-        blocked["sota"].append("no official strong-baseline reproduction evidence")
     elif run_type == "stale_llm_judge":
         if _uses_mock_provider(providers):
             supported.append("stale_judge_plumbing")
@@ -107,7 +111,6 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
             supported.append("stale_answer_accuracy_candidate")
         if raw_output_count == 0:
             blocked["stale_answer_accuracy"].append("no raw per-query judge outputs")
-        blocked["sota"].append("no multi-model judge robustness or strong-baseline reproduction evidence")
     elif run_type == "stale_retrieval_diagnostics":
         supported.append("stale_retrieval_diagnostics")
         supported.append("mechanism_error_analysis")
@@ -134,6 +137,17 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         claim_evidence["model_coverage"] = model_coverage
         if model_coverage["complete"]:
             supported.append("model_robustness_audit")
+    baseline_reproduction = _baseline_reproduction_evidence(baselines, baseline_provenance)
+    if baseline_reproduction:
+        claim_evidence["baseline_reproduction"] = baseline_reproduction
+        if baseline_reproduction["complete"]:
+            supported.append("baseline_reproduction_audit")
+    _add_sota_evidence_blockers(
+        blocked,
+        run_type=run_type,
+        model_coverage=model_coverage,
+        baseline_reproduction=baseline_reproduction,
+    )
     reproducibility = _reproducibility_evidence(
         experiment,
         run_type=run_type,
@@ -157,7 +171,7 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         "split_or_case_limit": experiment.get("split_or_case_limit"),
         "dataset_scope": dataset_scope,
         "baselines": baselines,
-        "baseline_provenance": _baseline_provenance(experiment, baselines),
+        "baseline_provenance": baseline_provenance,
         "providers": providers,
         "supported_claims": supported,
         "blocked_claims": {key: value for key, value in blocked.items() if value},
@@ -226,6 +240,32 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
             )
         for category, names in baseline_coverage.get("categories", {}).items():
             lines.append(f"- Category `{category}`: {', '.join(f'`{name}`' for name in names)}")
+    baseline_reproduction = claim_evidence.get("baseline_reproduction")
+    if baseline_reproduction:
+        lines.append("")
+        lines.append("## Baseline Reproduction")
+        lines.append(f"- Complete for SOTA audit: `{baseline_reproduction['complete']}`")
+        if baseline_reproduction.get("official_or_faithful_mainstream_reproductions"):
+            lines.append(
+                "- Official/faithful mainstream reproductions: "
+                + ", ".join(
+                    f"`{name}`"
+                    for name in baseline_reproduction["official_or_faithful_mainstream_reproductions"]
+                )
+            )
+        if baseline_reproduction.get("api_free_mainstream_approximations"):
+            lines.append(
+                "- API-free mainstream approximations: "
+                + ", ".join(
+                    f"`{name}`"
+                    for name in baseline_reproduction["api_free_mainstream_approximations"]
+                )
+            )
+        if baseline_reproduction.get("missing_requirements"):
+            lines.append(
+                "- Missing requirements: "
+                + ", ".join(f"`{name}`" for name in baseline_reproduction["missing_requirements"])
+            )
     if model_coverage:
         lines.append("")
         lines.append("## Model Coverage")
@@ -575,6 +615,59 @@ def _model_coverage_evidence(
         "missing_requirements": missing,
         "complete": not missing,
     }
+
+
+def _baseline_reproduction_evidence(
+    baselines: list[str],
+    provenance: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    if not baselines:
+        return {}
+    mainstream = [
+        name for name in baselines
+        if provenance.get(name, {}).get("category") == "mainstream_approximation"
+    ]
+    official_or_faithful = [
+        name for name in mainstream
+        if provenance.get(name, {}).get("implementation_status")
+        in STRONG_BASELINE_REPRODUCTION_STATUSES
+    ]
+    api_free = [
+        name for name in mainstream
+        if provenance.get(name, {}).get("implementation_status") == "api_free_approximation"
+    ]
+    missing_provenance = [name for name in baselines if name not in provenance]
+    missing_requirements: list[str] = []
+    if missing_provenance:
+        missing_requirements.append("baseline_provenance")
+    if not mainstream:
+        missing_requirements.append("mainstream_memory_baseline")
+    if not official_or_faithful:
+        missing_requirements.append("official_or_faithful_mainstream_reproduction")
+    return {
+        "baseline_count": len(baselines),
+        "mainstream_baselines": mainstream,
+        "api_free_mainstream_approximations": api_free,
+        "official_or_faithful_mainstream_reproductions": official_or_faithful,
+        "missing_provenance": missing_provenance,
+        "missing_requirements": missing_requirements,
+        "complete": not missing_requirements,
+    }
+
+
+def _add_sota_evidence_blockers(
+    blocked: dict[str, list[str]],
+    *,
+    run_type: str,
+    model_coverage: dict[str, Any],
+    baseline_reproduction: dict[str, Any],
+) -> None:
+    if run_type not in ANSWER_RUN_TYPES | {"stale_llm_judge"}:
+        return
+    if not baseline_reproduction.get("complete"):
+        blocked["sota"].append("no official strong-baseline reproduction evidence")
+    if model_coverage and not model_coverage.get("complete"):
+        blocked["sota"].append("model or judge robustness incomplete")
 
 
 def _model_ids(

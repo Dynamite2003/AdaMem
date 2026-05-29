@@ -223,6 +223,9 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "baseline_coverage_complete": False,
         "baseline_category_count": 0,
         "missing_baseline_groups": [],
+        "baseline_reproduction_complete": False,
+        "official_or_faithful_baseline_count": 0,
+        "baseline_reproduction_gaps": [],
         "model_coverage_complete": False,
         "answer_model_count": 0,
         "judge_model_count": 0,
@@ -248,7 +251,7 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
-    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | model gaps | repro gaps | no-reg pairs | top attribution |" in markdown
+    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | baseline repro | model gaps | repro gaps | no-reg pairs | top attribution |" in markdown
 
 
 def test_study_model_coverage_merges_comparable_experiments() -> None:
