@@ -218,6 +218,17 @@ extraction on those true state cases.
     JSON counterparts, and a manifest.
   - The bundle table reproduced the 20-episode AMA retrieval/answerability
     diagnostics, while the claim audit blocked answer-accuracy and SOTA claims.
+- Extended `adamem.reporting` with directory batch mode:
+  - If the input path is a directory, it scans `*experiment.json`, writes one
+    sub-bundle per experiment, and emits a top-level `batch_manifest.json`.
+  - This is useful for AMA public pilots because a single output directory can
+    contain answerability, evidence, and generation experiment files.
+- Ran a batch reporting smoke:
+  `PYTHONPATH=src python -m adamem.reporting /tmp/adamem_ama_answer_generation_smoke --output-dir /tmp/adamem_report_batch_smoke --group-fields question_type --json`
+  - Result: found `2` experiments and produced one retrieval bundle plus one
+    answer-generation bundle.
+  - The batch manifest recorded record kinds `retrieval` and
+    `answer_generation`.
 
 ## Completed Work
 

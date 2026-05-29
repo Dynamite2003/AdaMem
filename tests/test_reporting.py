@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from adamem.reporting import main, write_experiment_bundle
+from adamem.reporting import main, write_experiment_bundle, write_experiment_bundle_batch
 
 
 def test_write_experiment_bundle_for_answer_generation(tmp_path: Path) -> None:
@@ -50,8 +50,46 @@ def test_reporting_cli_writes_manifest_json(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["claim_audit_json"]).exists()
 
 
-def _write_answer_generation_experiment(tmp_path: Path) -> Path:
-    records_path = tmp_path / "generation.records.jsonl"
+def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
+    experiment_a = _write_answer_generation_experiment(tmp_path, stem="generation_a")
+    experiment_b = _write_answer_generation_experiment(tmp_path, stem="generation_b")
+    output_dir = tmp_path / "batch"
+
+    manifest = write_experiment_bundle_batch(
+        tmp_path,
+        output_dir,
+        group_fields=["question_type"],
+    )
+
+    assert manifest["experiment_count"] == 2
+    assert manifest["experiments"] == [str(experiment_a), str(experiment_b)]
+    assert Path(manifest["manifest"]).exists()
+    assert len(manifest["bundles"]) == 2
+    for bundle in manifest["bundles"]:
+        assert bundle["record_kind"] == "answer_generation"
+        assert Path(bundle["artifacts"]["paper_tables_markdown"]).exists()
+
+
+def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
+    _write_answer_generation_experiment(tmp_path, stem="generation_cli")
+    output_dir = tmp_path / "cli-batch"
+
+    main([
+        str(tmp_path),
+        "--output-dir",
+        str(output_dir),
+        "--group-fields",
+        "question_type",
+        "--json",
+    ])
+
+    manifest = json.loads((output_dir / "batch_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["experiment_count"] == 1
+    assert manifest["bundles"][0]["record_kind"] == "answer_generation"
+
+
+def _write_answer_generation_experiment(tmp_path: Path, *, stem: str = "generation") -> Path:
+    records_path = tmp_path / f"{stem}.records.jsonl"
     records_path.write_text(
         json.dumps({
             "baseline": "trajectory_step_readout",
@@ -69,7 +107,7 @@ def _write_answer_generation_experiment(tmp_path: Path) -> Path:
         }) + "\n",
         encoding="utf-8",
     )
-    experiment = tmp_path / "generation.experiment.json"
+    experiment = tmp_path / f"{stem}.experiment.json"
     experiment.write_text(
         json.dumps({
             "run_name": "generation",
@@ -79,7 +117,7 @@ def _write_answer_generation_experiment(tmp_path: Path) -> Path:
             "results": {"trajectory_step_readout": {"correct": 1, "total": 1}},
             "raw_outputs": [],
             "notes": {
-                "records_path": "generation.records.jsonl",
+                "records_path": records_path.name,
                 "ground_truth_runtime_use": "forbidden",
                 "ground_truth_evaluation_use": "answer_scorer_only",
                 "answer_provider": "mock",

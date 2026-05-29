@@ -372,6 +372,15 @@ PYTHONPATH=src python -m adamem.reporting results/ama_public_20_full/ama_public_
 The bundle writes paper tables, claim-audit Markdown/JSON, and a manifest that
 links all generated artifacts.
 
+If a directory contains multiple `*experiment.json` files, the same command
+runs in batch mode:
+
+```bash
+PYTHONPATH=src python -m adamem.reporting /tmp/adamem_ama_answer_generation_smoke --output-dir /tmp/adamem_report_batch_smoke --group-fields question_type
+```
+
+Batch mode writes one sub-bundle per experiment and a `batch_manifest.json`.
+
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes
 retrieval of the matching trajectory steps by metadata instead of relying only

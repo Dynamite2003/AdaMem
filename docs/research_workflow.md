@@ -530,7 +530,9 @@ Completed API-free foundations:
   sidecar record counts.
 - `adamem.reporting`, a report-bundle command that combines `adamem.tables`
   and `adamem.claims` for one experiment JSON and writes paper tables, claim
-  audit files, and a manifest.
+  audit files, and a manifest. If the input is a directory, it batches every
+  `*experiment.json` file into per-experiment sub-bundles and a top-level
+  batch manifest.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

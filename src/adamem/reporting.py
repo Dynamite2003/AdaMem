@@ -72,31 +72,79 @@ def write_experiment_bundle(
     return manifest
 
 
+def write_experiment_bundle_batch(
+    input_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    pattern: str = "*experiment.json",
+    group_fields: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    source = Path(input_dir)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    experiments = sorted(path for path in source.glob(pattern) if path.is_file())
+    manifests: list[dict[str, Any]] = []
+    for experiment in experiments:
+        bundle_dir = output / experiment.stem
+        manifests.append(
+            write_experiment_bundle(
+                experiment,
+                bundle_dir,
+                group_fields=group_fields,
+            )
+        )
+    batch_manifest = {
+        "input_dir": str(source),
+        "output_dir": str(output),
+        "pattern": pattern,
+        "experiment_count": len(experiments),
+        "experiments": [manifest["experiment"] for manifest in manifests],
+        "bundles": manifests,
+    }
+    manifest_path = output / "batch_manifest.json"
+    batch_manifest["manifest"] = str(manifest_path)
+    manifest_path.write_text(json.dumps(batch_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return batch_manifest
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Build a reproducible paper-report bundle for an AdaMem experiment."
+        description="Build reproducible paper-report bundles for AdaMem experiments."
     )
-    parser.add_argument("experiment", type=Path)
+    parser.add_argument("input", type=Path, help="Experiment JSON or directory containing *experiment.json files")
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--pattern", default="*experiment.json", help="Directory mode glob pattern")
     parser.add_argument("--group-fields", nargs="+")
     parser.add_argument("--title")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    manifest = write_experiment_bundle(
-        args.experiment,
-        args.output_dir,
-        group_fields=args.group_fields,
-        title=args.title,
-    )
+    if args.input.is_dir():
+        manifest = write_experiment_bundle_batch(
+            args.input,
+            args.output_dir,
+            pattern=args.pattern,
+            group_fields=args.group_fields,
+        )
+    else:
+        manifest = write_experiment_bundle(
+            args.input,
+            args.output_dir,
+            group_fields=args.group_fields,
+            title=args.title,
+        )
     if args.json:
         print(json.dumps(manifest, ensure_ascii=False, indent=2))
     else:
-        print(f"wrote report bundle to {args.output_dir}")
-        for name, path in manifest["artifacts"].items():
-            print(f"{name}: {path}")
-        if "table_error" in manifest:
-            print(f"table_error: {manifest['table_error']}")
+        if args.input.is_dir():
+            print(f"wrote {manifest['experiment_count']} report bundles to {args.output_dir}")
+            print(f"batch_manifest: {manifest['manifest']}")
+        else:
+            print(f"wrote report bundle to {args.output_dir}")
+            for name, path in manifest["artifacts"].items():
+                print(f"{name}: {path}")
+            if "table_error" in manifest:
+                print(f"table_error: {manifest['table_error']}")
 
 
 if __name__ == "__main__":
