@@ -596,6 +596,81 @@ RUNTIME_NOUNS = {
     "tool",
 }
 
+ROLE_PATTERNS = [
+    re.compile(
+        r"\b(?:my\s+)?(?:current\s+)?(?:role|job\s+title|title|position)\s+is\s+"
+        r"(?P<value>[A-Za-z][A-Za-z0-9 _/'-]{2,50})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:my\s+)?(?:new\s+)(?:role|job\s+title|title|position)\s+is\s+"
+        r"(?P<value>[A-Za-z][A-Za-z0-9 _/'-]{2,50})",
+        re.I,
+    ),
+]
+
+ROLE_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(
+        r"\b(?:i[’']?m|i am)\s+no\s+longer\s+(?:the\s+)?"
+        r"(?P<value>[A-Za-z][A-Za-z0-9 _/'-]{2,50})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:my\s+)?(?:role|job\s+title|title|position)\s+is\s+no\s+longer\s+"
+        r"(?P<value>[A-Za-z][A-Za-z0-9 _/'-]{2,50})",
+        re.I,
+    ),
+]
+
+ROLE_QUERY_TERMS = {
+    "position",
+    "responsibilities",
+    "responsibility",
+    "role",
+    "title",
+}
+
+ROLE_NOUNS = {
+    "architect",
+    "designer",
+    "developer",
+    "director",
+    "engineer",
+    "lead",
+    "manager",
+    "owner",
+    "pm",
+    "researcher",
+}
+
+MANAGER_PATTERNS = [
+    re.compile(
+        r"\b(?:my\s+)?(?:new\s+)?manager\s+is\s+(?P<person>[A-Z][A-Za-z .'-]{1,40})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?P<person>[A-Z][A-Za-z .'-]{1,40})\s+is\s+my\s+(?:new\s+)?manager\b",
+        re.I,
+    ),
+]
+
+MANAGER_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(
+        r"\b(?P<person>[A-Z][A-Za-z .'-]{1,40})\s+is\s+no\s+longer\s+my\s+manager\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:my\s+)?manager\s+is\s+no\s+longer\s+(?P<person>[A-Z][A-Za-z .'-]{1,40})",
+        re.I,
+    ),
+]
+
+MANAGER_QUERY_TERMS = {
+    "manager",
+    "reports to",
+    "supervisor",
+}
+
 
 def extract_state_patches(content: str, metadata: dict[str, object] | None = None) -> list[StatePatch]:
     """Deterministic state extractor used for API-free development.
@@ -686,6 +761,28 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
             status="unknown_current",
             invalidates_value=status,
         ))
+    role = _extract_role(content)
+    if role:
+        patches.append(StatePatch(slot="role.current", value=role, evidence=content))
+    elif role_unknown_current := _extract_role_unknown_current(content):
+        patches.append(StatePatch(
+            slot="role.current",
+            value="unknown-current",
+            evidence=content,
+            status="unknown_current",
+            invalidates_value=role_unknown_current,
+        ))
+    manager = _extract_manager(content)
+    if manager:
+        patches.append(StatePatch(slot="relationship.manager", value=manager, evidence=content))
+    elif manager_unknown_current := _extract_manager_unknown_current(content):
+        patches.append(StatePatch(
+            slot="relationship.manager",
+            value="unknown-current",
+            evidence=content,
+            status="unknown_current",
+            invalidates_value=manager_unknown_current,
+        ))
     return patches
 
 
@@ -712,6 +809,10 @@ def query_relevant_state_slots(query: str) -> list[str]:
         slots.append("workflow.*")
     if _has_runtime_intent(text):
         slots.append("runtime.*.status")
+    if _has_role_intent(text):
+        slots.append("role.current")
+    if _has_manager_intent(text):
+        slots.append("relationship.manager")
     return slots
 
 
@@ -823,6 +924,16 @@ def _has_runtime_intent(text: str) -> bool:
         return True
     status_terms = {"available", "blocked", "degraded", "down", "fixed", "healthy", "offline", "online", "status", "up"}
     return _has_any_term(text, {"job", "service", "system", "tool"}) and _has_any_term(text, status_terms)
+
+
+def _has_role_intent(text: str) -> bool:
+    if _has_any_term(text, ROLE_QUERY_TERMS):
+        return True
+    return _has_any_phrase(text, {"current job", "job title", "my job", "user job"})
+
+
+def _has_manager_intent(text: str) -> bool:
+    return _has_any_term(text, MANAGER_QUERY_TERMS)
 
 
 def _has_any_term(text: str, terms: set[str] | frozenset[str]) -> bool:
@@ -1024,6 +1135,50 @@ def _extract_runtime_unknown_current(content: str) -> tuple[str, str] | None:
     return None
 
 
+def _extract_role(content: str) -> str | None:
+    for pattern in ROLE_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        role = _clean_role_name(match.group("value"))
+        if role and _looks_like_role(role):
+            return role
+    return None
+
+
+def _extract_role_unknown_current(content: str) -> str | None:
+    for pattern in ROLE_UNKNOWN_CURRENT_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        role = _clean_role_name(match.group("value"))
+        if role and _looks_like_role(role):
+            return role
+    return None
+
+
+def _extract_manager(content: str) -> str | None:
+    for pattern in MANAGER_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        person = _clean_person_name(match.group("person"))
+        if person:
+            return person
+    return None
+
+
+def _extract_manager_unknown_current(content: str) -> str | None:
+    for pattern in MANAGER_UNKNOWN_CURRENT_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        person = _clean_person_name(match.group("person"))
+        if person:
+            return person
+    return None
+
+
 def _clean_state_value(raw: str) -> str:
     value = raw.strip(" .,!?:;[](){}\"'“”‘’").lower()
     words = value.split()
@@ -1050,6 +1205,30 @@ def _clean_resource_name(raw: str) -> str:
     for word in words:
         stripped = word.strip(" .,!?:;[](){}\"'“”‘’").lower()
         if stripped in {"is", "was", "has", "now", "currently"}:
+            break
+        kept.append(stripped)
+    return " ".join(kept).strip()
+
+
+def _clean_role_name(raw: str) -> str:
+    value = _clean_state_phrase(raw)
+    words = value.split()
+    kept: list[str] = []
+    for word in words:
+        stripped = word.strip(" .,!?:;[](){}\"'“”‘’").lower()
+        if stripped in {"and", "but", "for", "now", "with"}:
+            break
+        kept.append(stripped)
+    return " ".join(kept).strip()
+
+
+def _clean_person_name(raw: str) -> str:
+    value = raw.strip(" .,!?:;[](){}\"'“”‘’")
+    words = value.split()
+    kept: list[str] = []
+    for word in words:
+        stripped = word.strip(" .,!?:;[](){}\"'“”‘’")
+        if stripped.lower() in {"and", "but", "for", "from", "now", "since", "so", "that", "the", "to", "with"}:
             break
         kept.append(stripped)
     return " ".join(kept).strip()
@@ -1082,6 +1261,11 @@ def _looks_like_resource(resource: str) -> bool:
 def _looks_like_runtime(system: str) -> bool:
     tokens = set(re.findall(r"[a-z0-9]+", system.lower()))
     return bool(tokens & RUNTIME_NOUNS)
+
+
+def _looks_like_role(role: str) -> bool:
+    tokens = set(re.findall(r"[a-z0-9]+", role.lower()))
+    return bool(tokens & ROLE_NOUNS)
 
 
 def _normalize_resource_status(raw: str) -> str:

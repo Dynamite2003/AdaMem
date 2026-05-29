@@ -3418,3 +3418,33 @@ to a paper-facing claim and evaluation gate.
     marked `official_reproduction` reports `baseline_reproduction_audit`,
     no SOTA blocker, reporting `sota_baseline_reproduction_ready=True`, and
     claim-matrix official count `1`.
+
+### 2026-05-30 relationship and role state slots
+
+- Extended deterministic state extraction with:
+  - `role.current`
+  - `relationship.manager`
+- Added query routing for role/title/responsibility and manager/supervisor
+  intents.
+- Added state-readout and stale-premise-correction tests for role and manager
+  updates.
+- Extended `benchmarks/dynamic_state_transfer.jsonl` from 7 to 9
+  state-sensitive queries with current-role and current-manager cases.
+- Purpose:
+  - Cover two common stale-memory domains not captured by location, schedule,
+    preference, health, resource, workflow, or runtime status.
+  - Move the state-aware method closer to public long-memory and web-agent
+    benchmarks where user role and reporting relationships can affect
+    downstream decisions.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py -q` -> `45 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py tests/test_eval.py -q` -> `73 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `202 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI dynamic-state transfer smoke:
+    - `semantic_only` -> `0/9`
+    - `semantic_state_readout` -> `9/9`
+    - `semantic_state_adjudication` -> `9/9`
+    - `semantic_state_premise_correction` -> `9/9`
+    - `state_readout` -> `9/9`

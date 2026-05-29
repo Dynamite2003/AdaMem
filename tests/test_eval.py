@@ -937,8 +937,8 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     report = benchmark_failure_report(records, max_examples=1)
 
     assert summary["by_baseline"]["semantic_only"]["passed"] == 0
-    assert summary["by_baseline"]["state_readout"]["passed"] == 7
-    assert summary["failure_modes"]["expected_support_missing"] == 7
+    assert summary["by_baseline"]["state_readout"]["passed"] == 9
+    assert summary["failure_modes"]["expected_support_missing"] == 9
     assert "implicit_policy_adaptation" in summary["by_metadata"]["dimension"]
     assert "state_resolution" in summary["by_metadata"]["dimension"]
     assert "forbidden_support_present" in records[0]["failure_modes"]
@@ -959,26 +959,26 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert summary["paper_metrics"]["state_readout"]["unmarked_state_exposure_rate"] is None
     assert summary["paper_metrics"]["state_readout"]["premise_correction_rate"] == 0.0
     assert summary["paper_metrics"]["semantic_only"]["state_readout_missing_rate"] == 1.0
-    assert summary["failure_attributions"]["state_authority_absent_or_extraction_failure"] == 7
+    assert summary["failure_attributions"]["state_authority_absent_or_extraction_failure"] == 9
     assert "stale_filtering_or_baseline_limitation" in summary["failure_attributions"]
     assert summary["failure_attributions_by_baseline"]["semantic_only"][
         "state_authority_absent_or_extraction_failure"
-    ] == 7
+    ] == 9
     assert summary["examples_by_failure_attribution"]["state_authority_absent_or_extraction_failure"][0][
         "baseline"
     ] == "semantic_only"
     assert "state_authority_absent_or_extraction_failure" in records[0]["failure_attributions"]
     assert summary["state_memory_inventory"]["semantic_only"]["max_state_memory_count"] == 0
-    assert summary["state_memory_inventory"]["state_readout"]["records_with_state_memory"] == 7
+    assert summary["state_memory_inventory"]["state_readout"]["records_with_state_memory"] == 9
     assert "runtime.staging_build_runner.status" in summary["state_memory_inventory"]["state_readout"][
         "active_state_slots"
     ]
     assert records[-1]["active_state_count"] > 0
-    assert summary["state_readout_exposure"]["state_readout"]["state_retrieval_records"] == 7
-    assert summary["state_readout_exposure"]["state_readout"]["state_slot_match_records"] == 7
+    assert summary["state_readout_exposure"]["state_readout"]["state_retrieval_records"] == 9
+    assert summary["state_readout_exposure"]["state_readout"]["state_slot_match_records"] == 9
     assert summary["state_readout_exposure"]["state_readout"]["unmarked_state_retrieval_records"] == 0
-    assert summary["state_readout_exposure"]["semantic_only"]["state_readout_missing_records"] == 7
-    assert summary["failure_modes"]["state_readout_missing"] == 7
+    assert summary["state_readout_exposure"]["semantic_only"]["state_readout_missing_records"] == 9
+    assert summary["failure_modes"]["state_readout_missing"] == 9
 
 
 def test_jsonl_benchmark_metadata_diagnostics_include_evidence_and_answerability() -> None:
@@ -1035,12 +1035,12 @@ def test_jsonl_benchmark_summary_compares_pairs_against_first_baseline() -> None
 
     assert comparison["reference"] == "semantic_only"
     assert comparison["candidate"] == "semantic_state_readout"
-    assert comparison["common_total"] == 7
-    assert comparison["gained_passes"] == 7
+    assert comparison["common_total"] == 9
+    assert comparison["gained_passes"] == 9
     assert comparison["lost_passes"] == 0
-    assert comparison["net_delta"] == 7
+    assert comparison["net_delta"] == 9
     assert comparison["by_metadata"]["dimension"]["implicit_policy_adaptation"]["gained_passes"] == 2
-    assert comparison["by_metadata"]["dimension"]["premise_resistance"]["gained_passes"] == 4
+    assert comparison["by_metadata"]["dimension"]["premise_resistance"]["gained_passes"] == 6
     assert "Pairwise Vs semantic_only" in report
 
 
@@ -1058,13 +1058,19 @@ def test_jsonl_benchmark_treats_correction_text_as_resolved_forbidden_support() 
 
     assert results[0].passed == results[0].total
     correction = summary["premise_correction"]["semantic_state_premise_correction"]
-    assert correction["correction_records"] == 3
-    assert correction["correction_items"] == 3
-    assert correction["corrected_forbidden_records"] == 3
+    assert correction["correction_records"] == 5
+    assert correction["correction_items"] == 5
+    assert correction["corrected_forbidden_records"] == 5
     assert correction["unresolved_forbidden_records"] == 0
-    assert summary["paper_metrics"]["semantic_state_premise_correction"]["premise_correction_rate"] == 3 / 7
+    assert summary["paper_metrics"]["semantic_state_premise_correction"]["premise_correction_rate"] == 5 / 9
     assert "## Premise Correction" in report
-    for query_id in ("current_passport_status", "current_workflow_rule", "current_runtime_status"):
+    for query_id in (
+        "current_passport_status",
+        "current_workflow_rule",
+        "current_runtime_status",
+        "current_role",
+        "current_manager",
+    ):
         record = by_query[query_id]
         assert record["premise_correction_count"] == 1
         assert record["corrected_forbidden"]

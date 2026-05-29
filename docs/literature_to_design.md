@@ -216,6 +216,8 @@ Current implementation:
   old value.
 - The deterministic extractor covers unknown-current invalidations for
   location, resource status, workflow/runbook rules, and runtime/tool status.
+- The deterministic extractor now also covers current role and manager
+  relationship state, with slots `role.current` and `relationship.manager`.
 - JSONL reports now separate unknown-current records, unknown-current
   corrections, resolved invalidated-value mentions, and unresolved invalidated
   values. This avoids counting explicitly invalidated old values as ordinary
@@ -227,7 +229,8 @@ Required next evidence:
 - Tests for state replacement under paraphrases and unrelated updates.
 - Error analysis separating extraction failure from adjudication failure.
 - Extend unknown-current extraction to relationship, role, and preference
-  slots once a public state-sensitive transfer subset needs them.
+  slots once public state-sensitive transfer cases require invalidation without
+  a replacement value.
 
 ### 3. Slot-Aware Query Routing
 
@@ -251,8 +254,11 @@ Current implementation:
 - Runtime/tool status uses dynamic slots such as
   `runtime.staging_build_runner.status` and route through
   `runtime.*.status`.
-- Tests verify beverage, schedule, task, health, resource, workflow, and
-  runtime queries surface the intended active slot rather than unrelated state.
+- Role and manager relationship state use `role.current` and
+  `relationship.manager`.
+- Tests verify beverage, schedule, task, health, resource, workflow, runtime,
+  role, and manager queries surface the intended active slot rather than
+  unrelated state.
 - JSONL benchmark summaries now report state-readout exposure, including
   unmarked-query state exposure, so prompt pollution can be measured rather
   than inferred.
@@ -503,11 +509,12 @@ No claim should be made until the matching gate is satisfied.
 show that the code path transfers beyond STALE labels and location state, but
 it cannot support a paper generalization claim by itself.
 
-The fixture now covers seven state-sensitive cases: schedule availability, task
+The fixture now covers nine state-sensitive cases: schedule availability, task
 status, beverage preference, peanut-allergy clearance, passport renewal,
-checkout rollback runbook updates, and staging build runner restoration. The
-API-free result after adding workflow/runtime slots is `semantic_only` `0/7`
-and state-aware readout/adjudication variants `7/7`. This is useful as a guard
+checkout rollback runbook updates, staging build runner restoration, current
+role, and manager relationship. The API-free result after adding
+role/relationship slots is `semantic_only` `0/9` and state-aware
+readout/adjudication variants `9/9`. This is useful as a guard
 against overfitting to location updates, but it remains synthetic local
 evidence.
 

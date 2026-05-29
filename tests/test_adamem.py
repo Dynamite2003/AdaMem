@@ -818,6 +818,87 @@ def test_state_readout_handles_runtime_status_slot() -> None:
     assert "offline" not in results[0].item.content
 
 
+def test_state_readout_handles_role_and_manager_slots() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: My role is frontend lead.")
+    mem.observe("[2026-02-01] user: My current role is platform lead.")
+    mem.observe("[2026-01-01] user: My manager is Sam.")
+    mem.observe("[2026-02-01] user: My new manager is Priya.")
+
+    active = {
+        item.metadata["state_slot"]: item.metadata["state_value"]
+        for item in mem.store.all()
+        if item.kind == "state" and item.active
+    }
+
+    assert active["role.current"] == "platform lead"
+    assert active["relationship.manager"] == "Priya"
+
+    role_results = mem.retrieve("What role should guide my planning responsibilities?", top_k=2)
+    manager_results = mem.retrieve("Who is my manager for approvals?", top_k=2)
+
+    assert role_results[0].item.kind == "state"
+    assert role_results[0].item.metadata["state_slot"] == "role.current"
+    assert "platform lead" in role_results[0].item.content
+    assert "frontend lead" not in role_results[0].item.content
+    assert manager_results[0].item.kind == "state"
+    assert manager_results[0].item.metadata["state_slot"] == "relationship.manager"
+    assert "Priya" in manager_results[0].item.content
+    assert "Sam" not in manager_results[0].item.content
+
+
+def test_state_premise_correction_handles_stale_role_and_manager() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: My role is frontend lead.")
+    mem.observe("[2026-02-01] user: My current role is platform lead.")
+    mem.observe("[2026-01-01] user: My manager is Sam.")
+    mem.observe("[2026-02-01] user: My new manager is Priya.")
+
+    role_results = mem.retrieve(
+        "As the frontend lead, which planning responsibilities apply?",
+        top_k=1,
+    )
+    manager_results = mem.retrieve("Should I send approval to my manager Sam?", top_k=1)
+
+    assert role_results[0].item.kind == "state_correction"
+    assert role_results[0].item.metadata["state_slot"] == "role.current"
+    assert role_results[0].item.metadata["stale_value"] == "frontend lead"
+    assert role_results[0].item.metadata["current_value"] == "platform lead"
+    assert manager_results[0].item.kind == "state_correction"
+    assert manager_results[0].item.metadata["state_slot"] == "relationship.manager"
+    assert manager_results[0].item.metadata["stale_value"] == "Sam"
+    assert manager_results[0].item.metadata["current_value"] == "Priya"
+
+
 def test_state_records_do_not_pollute_generic_retrieval_without_authorization() -> None:
     mem = AdaMem(
         config=AdaMemConfig(
@@ -916,6 +997,8 @@ def test_query_state_router_uses_word_boundaries_and_intent_gates() -> None:
     assert query_relevant_state_slots("What is the migration status?") == ["task.*.status"]
     assert query_relevant_state_slots("What time can I meet with the user?") == ["schedule.availability"]
     assert query_relevant_state_slots("Is the staging build runner offline?") == ["runtime.*.status"]
+    assert query_relevant_state_slots("What role should guide my responsibilities?") == ["role.current"]
+    assert query_relevant_state_slots("Who is my manager for approvals?") == ["relationship.manager"]
     assert query_relevant_state_slots("Given the user's peanut allergy, what meal constraint applies?") == [
         "health.*.status"
     ]
@@ -934,6 +1017,7 @@ def test_query_state_router_uses_word_boundaries_and_intent_gates() -> None:
     assert query_relevant_state_slots("Where does my sister Emily live?") == []
     assert query_relevant_state_slots("What is the total number of online courses I've completed?") == []
     assert query_relevant_state_slots("What is the total number of comments on my Facebook Live session?") == []
+    assert query_relevant_state_slots("Who managed the 2024 project retrospective?") == []
 
 
 def test_state_authorization_can_be_disabled_for_ablation() -> None:
