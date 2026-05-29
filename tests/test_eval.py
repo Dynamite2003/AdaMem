@@ -947,6 +947,7 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert "## State Readout Exposure" in report
     assert "## State Memory Inventory" in report
     assert "## Failure Attributions" in report
+    assert "## Representative Failure Attributions" in report
     assert "## Premise Correction" in report
     assert "## Evidence Support" in report
     assert summary["diagnostics_by_metadata"]["dimension"]["implicit_policy_adaptation"]["state_readout"][
@@ -963,6 +964,9 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert summary["failure_attributions_by_baseline"]["semantic_only"][
         "state_authority_absent_or_extraction_failure"
     ] == 7
+    assert summary["examples_by_failure_attribution"]["state_authority_absent_or_extraction_failure"][0][
+        "baseline"
+    ] == "semantic_only"
     assert "state_authority_absent_or_extraction_failure" in records[0]["failure_attributions"]
     assert summary["state_memory_inventory"]["semantic_only"]["max_state_memory_count"] == 0
     assert summary["state_memory_inventory"]["state_readout"]["records_with_state_memory"] == 7

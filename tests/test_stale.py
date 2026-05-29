@@ -379,6 +379,10 @@ def test_diagnostic_failure_summary_groups_records(tmp_path: Path) -> None:
     assert "state_authority_absent_or_extraction_failure" in summary["by_baseline_failure_attribution"][
         "semantic_only"
     ]
+    assert summary["examples_by_failure_attribution"]["state_authority_absent_or_extraction_failure"][0][
+        "baseline"
+    ] == "semantic_only"
     assert "Failure Attributions By Baseline" in report
+    assert "Representative Failure Attributions" in report
     assert "Failure Modes By Baseline" in report
     assert "Representative Examples" in report

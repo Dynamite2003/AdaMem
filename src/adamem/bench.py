@@ -137,6 +137,7 @@ def benchmark_failure_summary(
     records: list[dict[str, Any]],
     *,
     group_fields: Iterable[str] = ("question_type", "dimension", "state_slot", "abstention"),
+    max_examples: int = 3,
 ) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "total_records": len(records),
@@ -144,6 +145,7 @@ def benchmark_failure_summary(
         "failure_modes": {},
         "failure_attributions": {},
         "failure_attributions_by_baseline": {},
+        "examples_by_failure_attribution": {},
         "by_metadata": {},
         "state_readout_exposure": {},
         "unknown_current": {},
@@ -186,6 +188,10 @@ def benchmark_failure_summary(
             summary["failure_modes"][mode] = summary["failure_modes"].get(mode, 0) + 1
     summary["failure_attributions"] = attribution_counts(records)
     summary["failure_attributions_by_baseline"] = attribution_counts_by_baseline(records)
+    summary["examples_by_failure_attribution"] = _examples_by_failure_attribution(
+        records,
+        max_examples=max_examples,
+    )
 
     for field_name in group_fields:
         field_summary: dict[str, Any] = {}
@@ -218,7 +224,7 @@ def benchmark_failure_report(
     group_fields: Iterable[str] = ("question_type", "dimension", "state_slot", "abstention"),
     max_examples: int = 2,
 ) -> str:
-    summary = benchmark_failure_summary(records, group_fields=group_fields)
+    summary = benchmark_failure_summary(records, group_fields=group_fields, max_examples=max_examples)
     lines = ["# JSONL Retrieval Benchmark Failure Report", ""]
     lines.append("## Baselines")
     lines.append("| baseline | passed | accuracy |")
@@ -441,6 +447,23 @@ def benchmark_failure_report(
                 lines.append(f"| {baseline} | {attribution} | {count} |")
         lines.append("")
 
+        lines.append("## Representative Failure Attributions")
+        for attribution, examples in summary["examples_by_failure_attribution"].items():
+            lines.append(f"### {attribution}")
+            for example in examples:
+                first = example.get("top_retrieved") or "<none>"
+                metadata = ", ".join(
+                    f"{key}={value}"
+                    for key, value in (example.get("metadata") or {}).items()
+                    if key in set(group_fields) and value is not None
+                )
+                metadata = metadata or "metadata=<none>"
+                lines.append(
+                    f"- `{example['baseline']}` `{example['case_id']}/{example['query_id']}` "
+                    f"({metadata}) modes={example['failure_modes']} top={first}"
+                )
+            lines.append("")
+
     failures = [record for record in records if not record["passed"]]
     lines.append("## Representative Failures")
     for record in failures[:max_examples]:
@@ -652,6 +675,33 @@ def _aggregate_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "passed": passed,
         "total": total,
         "accuracy": passed / total if total else 0.0,
+    }
+
+
+def _examples_by_failure_attribution(
+    records: list[dict[str, Any]],
+    *,
+    max_examples: int,
+) -> dict[str, list[dict[str, Any]]]:
+    examples: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        for attribution in record.get("failure_attributions") or []:
+            bucket = examples.setdefault(str(attribution), [])
+            if len(bucket) < max_examples:
+                bucket.append(_compact_failure_example(record))
+    return examples
+
+
+def _compact_failure_example(record: dict[str, Any]) -> dict[str, Any]:
+    retrieved = record.get("retrieved") or []
+    top_retrieved = str(retrieved[0])[:180] if retrieved else None
+    return {
+        "baseline": record.get("baseline"),
+        "case_id": record.get("case_id"),
+        "query_id": record.get("query_id"),
+        "metadata": dict(record.get("metadata") or {}),
+        "failure_modes": list(record.get("failure_modes") or []),
+        "top_retrieved": top_retrieved,
     }
 
 

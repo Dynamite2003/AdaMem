@@ -235,6 +235,9 @@ Current implementation:
   `failure_attributions` derived from failure modes, state inventory, and trace
   fields. These are triage labels for paper error analysis, not final causal
   proof without representative case inspection.
+- Reports include representative examples for each attribution, making it
+  easier to manually verify whether the triage label is a real mechanism
+  failure before using it in a paper table or discussion.
 - Markdown failure reports aggregate records by failure mode, baseline, STALE
   dimension, stale type, and representative examples.
 

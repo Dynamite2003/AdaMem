@@ -601,6 +601,9 @@ Completed API-free foundations:
   `stale_adjudication_failure`, `premise_correction_failure`, and
   `ranking_failure`; use them as triage signals, not as final causal claims
   without representative case inspection.
+- Representative examples by failure attribution in JSONL and STALE diagnostic
+  reports, so paper error analysis can inspect concrete cases for each
+  machine-labeled attribution category.
 - `trajectory_step_readout`, a narrow step-aware trajectory retrieval
   ablation. It authorizes matching `Step N` or short step-range memories by
   trajectory metadata and is useful for separating step evidence recall from

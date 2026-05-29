@@ -368,6 +368,7 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
     by_baseline_failure_mode: dict[str, dict[str, int]] = {}
     by_baseline_failure_attribution: dict[str, dict[str, int]] = {}
     examples_by_failure_mode: dict[str, list[dict[str, Any]]] = {}
+    examples_by_failure_attribution: dict[str, list[dict[str, Any]]] = {}
 
     for record in records:
         baseline = str(record.get("baseline") or "?")
@@ -394,6 +395,9 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
             by_failure_attribution[key] = by_failure_attribution.get(key, 0) + 1
             nested = by_baseline_failure_attribution.setdefault(baseline, {})
             nested[key] = nested.get(key, 0) + 1
+            examples = examples_by_failure_attribution.setdefault(key, [])
+            if len(examples) < max_examples:
+                examples.append(_compact_failure_example(record))
 
     return {
         "total_records": len(records),
@@ -412,6 +416,7 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
             for baseline, counts in sorted(by_baseline_failure_attribution.items())
         },
         "examples_by_failure_mode": examples_by_failure_mode,
+        "examples_by_failure_attribution": examples_by_failure_attribution,
     }
 
 
@@ -450,6 +455,18 @@ def diagnostic_failure_report(records: list[dict[str, Any]], *, max_examples: in
     lines.append("")
     for mode, examples in summary["examples_by_failure_mode"].items():
         lines.append(f"### {mode}")
+        for example in examples:
+            first = example.get("top_retrieved", "<none>")
+            lines.append(
+                f"- `{example['baseline']}` `{example['query_id']}` dim={example['dim']} "
+                f"type={example['stale_type']} top={first}"
+            )
+        lines.append("")
+
+    lines.append("## Representative Failure Attributions")
+    lines.append("")
+    for attribution, examples in summary["examples_by_failure_attribution"].items():
+        lines.append(f"### {attribution}")
         for example in examples:
             first = example.get("top_retrieved", "<none>")
             lines.append(
