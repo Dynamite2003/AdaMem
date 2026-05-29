@@ -8,6 +8,13 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from adamem.answer_eval import (
+    LLMAnswerScorer,
+    SubstringAnswerScorer,
+    answer_case_records,
+    answer_report,
+    run_answer_benchmark,
+)
 from adamem.baselines import select_baselines
 from adamem.bench import (
     benchmark_case_records,
@@ -18,6 +25,7 @@ from adamem.bench import (
 )
 from adamem.convert import convert_ama_file
 from adamem.experiments import experiment_record, write_experiment_record
+from adamem.llm import LLMClient, build_client
 
 
 AMA_PUBLIC_TEST_URL = (
@@ -34,6 +42,11 @@ def run_ama_public_pilot(
     top_k: int = 8,
     include_evidence_mode: bool = True,
     include_raw_outputs: bool = False,
+    include_answer_generation: bool = False,
+    answer_client: LLMClient | None = None,
+    answer_scorer: Any | None = None,
+    answer_generation_notes: dict[str, Any] | None = None,
+    max_context_chars: int = 4000,
 ) -> dict[str, Any]:
     """Run a reproducible API-free AMA-Bench trajectory pilot.
 
@@ -77,6 +90,27 @@ def run_ama_public_pilot(
         include_raw_outputs=include_raw_outputs,
     )
     timings["answer_eval_seconds"] = time.perf_counter() - started
+    generation_outputs: dict[str, Any] | None = None
+    if include_answer_generation:
+        if answer_client is None:
+            raise ValueError("answer_client is required when include_answer_generation=True")
+        answer_scorer = answer_scorer or SubstringAnswerScorer()
+        started = time.perf_counter()
+        generation_outputs = _run_answer_generation_pilot(
+            dataset=answer_path,
+            output_prefix=output / f"ama_public_{limit}.generation",
+            run_name=f"ama_public_{limit}_generation",
+            specs=specs,
+            source=source_label,
+            limit=limit,
+            top_k=top_k,
+            max_context_chars=max_context_chars,
+            answer_client=answer_client,
+            answer_scorer=answer_scorer,
+            answer_generation_notes=answer_generation_notes or {},
+            include_raw_outputs=include_raw_outputs,
+        )
+        timings["answer_generation_seconds"] = time.perf_counter() - started
     evidence_path = output / f"ama_public_{limit}.evidence.adamem.jsonl"
     evidence_count = 0
     evidence_outputs: dict[str, Any] | None = None
@@ -112,6 +146,7 @@ def run_ama_public_pilot(
         "evidence_dataset": str(evidence_path) if include_evidence_mode else None,
         "timings": {key: round(value, 4) for key, value in timings.items()},
         "answer": answer_outputs,
+        "answer_generation": generation_outputs,
         "evidence": evidence_outputs,
     }
 
@@ -177,9 +212,9 @@ def _run_jsonl_pilot(
     records = benchmark_case_records(results)
     summary = benchmark_failure_summary(records)
 
-    records_path = output_prefix.with_suffix(".records.jsonl")
-    report_path = output_prefix.with_suffix(".report.md")
-    experiment_path = output_prefix.with_suffix(".experiment.json")
+    records_path = _artifact_path(output_prefix, ".records.jsonl")
+    report_path = _artifact_path(output_prefix, ".report.md")
+    experiment_path = _artifact_path(output_prefix, ".experiment.json")
     _write_jsonl(records_path, records)
     _write_text(report_path, benchmark_failure_report(records))
 
@@ -218,6 +253,82 @@ def _run_jsonl_pilot(
     }
 
 
+def _run_answer_generation_pilot(
+    *,
+    dataset: Path,
+    output_prefix: Path,
+    run_name: str,
+    specs,
+    source: str,
+    limit: int,
+    top_k: int,
+    max_context_chars: int,
+    answer_client: LLMClient,
+    answer_scorer,
+    answer_generation_notes: dict[str, Any],
+    include_raw_outputs: bool,
+) -> dict[str, Any]:
+    cases = load_jsonl_cases(dataset)
+    configs = {name: spec.config for name, spec in specs.items()}
+    raw_outputs: list[dict[str, Any]] = []
+    started = time.perf_counter()
+    results = run_answer_benchmark(
+        cases,
+        answer_client=answer_client,
+        scorer=answer_scorer,
+        configs=configs,
+        top_k=top_k,
+        max_context_chars=max_context_chars,
+        raw_outputs=raw_outputs,
+    )
+    benchmark_seconds = time.perf_counter() - started
+    records = answer_case_records(results)
+
+    records_path = _artifact_path(output_prefix, ".records.jsonl")
+    report_path = _artifact_path(output_prefix, ".report.md")
+    experiment_path = _artifact_path(output_prefix, ".experiment.json")
+    _write_jsonl(records_path, records)
+    _write_text(report_path, answer_report(results))
+
+    aggregate = {
+        result.name: {
+            "correct": result.n_correct,
+            "total": result.n_total,
+            "accuracy": result.accuracy,
+        }
+        for result in results
+    }
+    notes = {
+        "source": source,
+        "top_k": top_k,
+        "max_context_chars": max_context_chars,
+        "records_path": str(records_path),
+        "raw_outputs_embedded": include_raw_outputs,
+        "benchmark_seconds": round(benchmark_seconds, 4),
+        "scorer": getattr(answer_scorer, "name", type(answer_scorer).__name__),
+        "ground_truth_runtime_use": "forbidden",
+        "ground_truth_evaluation_use": "answer_scorer_only",
+    }
+    notes.update(answer_generation_notes)
+    record = experiment_record(
+        run_name=run_name,
+        run_type="ama_public_answer_generation_pilot",
+        dataset=dataset,
+        split_or_case_limit=f"limit={limit}",
+        baselines=specs,
+        results=aggregate,
+        raw_outputs=raw_outputs if include_raw_outputs else [],
+        notes=notes,
+    )
+    write_experiment_record(experiment_path, record)
+    return {
+        "records_path": str(records_path),
+        "report_path": str(report_path),
+        "experiment_path": str(experiment_path),
+        "summary": aggregate,
+    }
+
+
 def _validate_jsonl_object(line: str, line_number: int) -> None:
     try:
         value = json.loads(line)
@@ -225,6 +336,10 @@ def _validate_jsonl_object(line: str, line_number: int) -> None:
         raise ValueError(f"JSONL line {line_number} is invalid JSON") from exc
     if not isinstance(value, dict):
         raise ValueError(f"JSONL line {line_number} must be an object")
+
+
+def _artifact_path(output_prefix: Path, suffix: str) -> Path:
+    return output_prefix.parent / f"{output_prefix.name}{suffix}"
 
 
 def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> Path:
@@ -250,6 +365,12 @@ def _is_url(value: str) -> bool:
     return value.startswith("http://") or value.startswith("https://")
 
 
+def _build_cli_client(provider: str, *, model: str, mock_response: str) -> LLMClient:
+    if provider == "mock":
+        return build_client(provider, model=model, responses=mock_response)
+    return build_client(provider, model=model)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run reproducible AdaMem research pilots.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -262,10 +383,36 @@ def main(argv: list[str] | None = None) -> None:
     ama.add_argument("--top-k", type=int, default=8)
     ama.add_argument("--answer-only", action="store_true", help="Skip separate evidence-mode conversion/eval")
     ama.add_argument("--include-raw-outputs", action="store_true", help="Embed records in experiment JSON")
+    ama.add_argument("--run-answer-generation", action="store_true", help="Also run answer generation/scoring")
+    ama.add_argument("--answer-provider", default="openai")
+    ama.add_argument("--answer-model", default="gpt-4o-mini")
+    ama.add_argument("--mock-answer", default="The memory does not provide enough information.")
+    ama.add_argument("--answer-scorer", choices=["substring", "llm"], default="substring")
+    ama.add_argument("--judge-provider", default="gemini")
+    ama.add_argument("--judge-model", default="gemini-1.5-flash")
+    ama.add_argument("--mock-judge", default="INCORRECT")
+    ama.add_argument("--max-context-chars", type=int, default=4000)
     ama.add_argument("--json", action="store_true", help="Emit JSON summary instead of text")
 
     args = parser.parse_args(argv)
     if args.command == "ama-public":
+        answer_client = None
+        answer_scorer = None
+        if args.run_answer_generation:
+            answer_client = _build_cli_client(
+                args.answer_provider,
+                model=args.answer_model,
+                mock_response=args.mock_answer,
+            )
+            if args.answer_scorer == "substring":
+                answer_scorer = SubstringAnswerScorer()
+            else:
+                judge_client = _build_cli_client(
+                    args.judge_provider,
+                    model=args.judge_model,
+                    mock_response=args.mock_judge,
+                )
+                answer_scorer = LLMAnswerScorer(judge_client)
         summary = run_ama_public_pilot(
             output_dir=args.output_dir,
             limit=args.limit,
@@ -274,12 +421,27 @@ def main(argv: list[str] | None = None) -> None:
             top_k=args.top_k,
             include_evidence_mode=not args.answer_only,
             include_raw_outputs=args.include_raw_outputs,
+            include_answer_generation=args.run_answer_generation,
+            answer_client=answer_client,
+            answer_scorer=answer_scorer,
+            answer_generation_notes={
+                "answer_provider": args.answer_provider,
+                "answer_model": args.answer_model,
+                "answer_model_required": args.answer_provider != "mock",
+                "answer_scorer": args.answer_scorer,
+                "judge_provider": args.judge_provider if args.answer_scorer == "llm" else None,
+                "judge_model": args.judge_model if args.answer_scorer == "llm" else None,
+                "judge_model_required": args.answer_scorer == "llm" and args.judge_provider != "mock",
+            } if args.run_answer_generation else None,
+            max_context_chars=args.max_context_chars,
         )
         if args.json:
             print(json.dumps(summary, ensure_ascii=False, indent=2))
         else:
             print(f"wrote AMA public pilot outputs to {args.output_dir}")
             print(f"answer report: {summary['answer']['report_path']}")
+            if summary["answer_generation"]:
+                print(f"answer generation report: {summary['answer_generation']['report_path']}")
             if summary["evidence"]:
                 print(f"evidence report: {summary['evidence']['report_path']}")
 

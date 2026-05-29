@@ -506,6 +506,11 @@ Completed API-free foundations:
   baselines, writes Markdown reports, records JSONL, and compact experiment
   JSON. Use `--answer-only` for larger smoke runs because answer-mode reports
   already include evidence support and answerability diagnostics.
+  `--run-answer-generation` additionally runs the shared answer-eval path and
+  writes separate `.generation.*` artifacts. Pilot stage outputs include the
+  stage name in each filename, such as `.answer.records.jsonl`,
+  `.evidence.records.jsonl`, and `.generation.records.jsonl`, to prevent
+  retrieval and answer-generation results from overwriting each other.
 - `adamem.tables`, a compact paper-table summarizer for benchmark records or
   experiment JSON files. It follows `notes.records_path` when raw outputs are
   not embedded, and emits Markdown or JSON tables with overall and grouped

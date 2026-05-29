@@ -298,8 +298,8 @@ To regenerate compact paper-table summaries from records or experiment JSON,
 use:
 
 ```bash
-PYTHONPATH=src python -m adamem.tables results/ama_public_20_full/ama_public_20.records.jsonl --group-fields question_type --title "AMA Public 20 API-Free Tables" --output results/ama_public_20_full/ama_public_20.paper_tables.md
-PYTHONPATH=src python -m adamem.tables results/ama_public_20_full/ama_public_20.experiment.json --format json --group-fields question_type --output results/ama_public_20_full/ama_public_20.paper_tables.json
+PYTHONPATH=src python -m adamem.tables results/ama_public_20_full/ama_public_20.answer.records.jsonl --group-fields question_type --title "AMA Public 20 API-Free Tables" --output results/ama_public_20_full/ama_public_20.paper_tables.md
+PYTHONPATH=src python -m adamem.tables results/ama_public_20_full/ama_public_20.answer.experiment.json --format json --group-fields question_type --output results/ama_public_20_full/ama_public_20.paper_tables.json
 ```
 
 The table utility reads benchmark records directly, or follows
@@ -316,6 +316,17 @@ PYTHONPATH=src python -m adamem.answer_eval --dataset benchmarks/tiny_memory_qa.
 This command is a harness smoke test, not a benchmark result. It fixes the
 answer prompt, scorer interface, raw-output record format, and experiment JSON
 notes before real answer and judge providers are plugged in.
+
+The public AMA pilot can also run this answer-generation stage directly:
+
+```bash
+PYTHONPATH=src python -m adamem.pilot ama-public --limit 1 --source results/ama_public_20_light/ama_public_20.raw.jsonl --output-dir /tmp/adamem_ama_answer_generation_smoke --baselines trajectory_step_readout --top-k 4 --answer-only --run-answer-generation --answer-provider mock --mock-answer "The memory does not provide enough information."
+```
+
+Stage outputs use explicit names such as `ama_public_1.answer.records.jsonl`,
+`ama_public_1.evidence.records.jsonl`, and
+`ama_public_1.generation.records.jsonl` so retrieval diagnostics and answer
+scoring cannot overwrite one another.
 
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes

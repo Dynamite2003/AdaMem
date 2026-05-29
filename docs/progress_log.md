@@ -120,6 +120,29 @@ extraction on those true state cases.
   - Result: command completed and wrote records/experiment artifacts.
   - Interpretation: this validates the answer-evaluation plumbing only; the
     mock answer is not a benchmark result.
+- Integrated answer generation into `adamem.pilot ama-public` as an explicit
+  optional stage:
+  - `--run-answer-generation` runs the shared answer-eval path after answer
+    conversion.
+  - Retrieval diagnostics still run by default; answer generation is opt-in so
+    API-free retrieval pilots remain unchanged.
+  - Stage artifacts now include stage names, e.g.
+    `.answer.records.jsonl`, `.evidence.records.jsonl`, and
+    `.generation.records.jsonl`. This fixes a discovered artifact-collision
+    bug where `Path.with_suffix()` caused different pilot stages to write the
+    same `ama_public_N.records.jsonl` path.
+- Added pilot tests for distinct stage artifact names and the optional
+  answer-generation stage.
+- Ran an AMA pilot answer-generation CLI smoke:
+  `PYTHONPATH=src python -m adamem.pilot ama-public --limit 1 --source results/ama_public_20_light/ama_public_20.raw.jsonl --output-dir /tmp/adamem_ama_answer_generation_smoke --baselines trajectory_step_readout --top-k 4 --answer-only --run-answer-generation --answer-provider mock --mock-answer "The memory does not provide enough information." --json`
+  - Result: wrote separate
+    `/tmp/adamem_ama_answer_generation_smoke/ama_public_1.answer.records.jsonl`
+    and
+    `/tmp/adamem_ama_answer_generation_smoke/ama_public_1.generation.records.jsonl`.
+  - Generation summary: `trajectory_step_readout` correct `0/12` with the mock
+    insufficiency answer.
+  - Interpretation: this is still a plumbing smoke test, not an answer-quality
+    benchmark.
 
 ## Completed Work
 
