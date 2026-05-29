@@ -1208,6 +1208,8 @@ def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_met
         },
     )
     records = benchmark_case_records(results)
+    summary = benchmark_failure_summary(records)
+    report = benchmark_failure_report(records)
     by_baseline = {record["baseline"]: record for record in records}
     adjudication_trace = by_baseline["semantic_state_adjudication"]["trace"][0]
     correction_trace = by_baseline["semantic_state_premise_correction"]["trace"][0]
@@ -1218,6 +1220,36 @@ def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_met
     assert correction_trace["metadata"]["stale_source_observation_label"] == "old_location"
     assert correction_trace["metadata"]["source_state_id"]
     assert correction_trace["metadata"]["stale_state_id"]
+    assert summary["state_source_trace"]["semantic_state_adjudication"] == {
+        "total": 1,
+        "state_trace_items": 1,
+        "state_trace_items_with_source_label": 1,
+        "state_source_trace_rate": 1.0,
+        "state_correction_trace_items": 0,
+        "state_correction_items_with_source_label": 0,
+        "state_correction_items_with_stale_source_label": 0,
+        "state_correction_source_trace_rate": None,
+        "state_correction_stale_source_trace_rate": None,
+    }
+    assert summary["state_source_trace"]["semantic_state_premise_correction"] == {
+        "total": 1,
+        "state_trace_items": 0,
+        "state_trace_items_with_source_label": 0,
+        "state_source_trace_rate": None,
+        "state_correction_trace_items": 1,
+        "state_correction_items_with_source_label": 1,
+        "state_correction_items_with_stale_source_label": 1,
+        "state_correction_source_trace_rate": 1.0,
+        "state_correction_stale_source_trace_rate": 1.0,
+    }
+    assert summary["paper_metrics"]["semantic_state_adjudication"]["state_source_trace_rate"] == 1.0
+    assert (
+        summary["paper_metrics"]["semantic_state_premise_correction"][
+            "state_correction_source_trace_rate"
+        ]
+        == 1.0
+    )
+    assert "## State Source Trace" in report
 
 
 def test_jsonl_records_expose_state_pollution_metrics() -> None:

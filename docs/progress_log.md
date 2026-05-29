@@ -3537,6 +3537,15 @@ to a paper-facing claim and evaluation gate.
 - Validation so far:
   - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata -q`
     -> `1 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py tests/test_reporting.py tests/test_claims.py -q`
+    -> `60 passed`
+  - CLI smoke on `benchmarks/unknown_current_state_transfer.jsonl` confirmed
+    the Markdown report includes `State Source Trace` and the experiment JSON
+    includes `state_source_trace_rate` plus
+    `state_correction_source_trace_rate`.
+  - `PYTHONPATH=src python -m pytest -q` -> `205 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
   - `PYTHONPATH=src python -m pytest tests/test_eval.py -q` -> `29 passed`
   - CLI trace smoke on `benchmarks/unknown_current_state_transfer.jsonl`
     confirmed `unknown_beverage_premise_resistance` correction metadata includes
@@ -3544,3 +3553,22 @@ to a paper-facing claim and evaluation gate.
     `stale_source_observation_label=old_beverage`.
   - `PYTHONPATH=src python -m pytest -q` -> `205 passed`
   - `python -m compileall -q src` -> no issues
+
+### 2026-05-30 state source trace coverage metrics
+
+- Added `state_source_trace` aggregation to JSONL benchmark failure summaries.
+  It reports:
+  - state readout trace items with `source_observation_label`
+  - premise-correction trace items with active-state source labels
+  - premise-correction trace items with stale-state source labels
+- Added `state_source_trace_rate`,
+  `state_correction_source_trace_rate`, and
+  `state_correction_stale_source_trace_rate` to paper metrics.
+- Markdown failure reports now include a `State Source Trace` section.
+- Purpose:
+  - Make provenance coverage machine-filterable for paper case-study selection.
+  - Avoid relying on manual JSONL inspection to determine whether state
+    readouts and corrections are auditable back to source observations.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata -q`
+    -> `1 passed`

@@ -150,6 +150,7 @@ def benchmark_failure_summary(
         "state_readout_exposure": {},
         "unknown_current": {},
         "premise_correction": {},
+        "state_source_trace": {},
         "evidence_support": {},
         "answerability": {},
         "paper_metrics": {},
@@ -165,6 +166,7 @@ def benchmark_failure_summary(
         summary["unknown_current"][baseline] = _unknown_current_aggregate(subset)
         summary["state_memory_inventory"][baseline] = state_inventory_aggregate(subset)
         summary["premise_correction"][baseline] = _premise_correction_aggregate(subset)
+        summary["state_source_trace"][baseline] = _state_source_trace_aggregate(subset)
         summary["evidence_support"][baseline] = _evidence_support_aggregate(subset)
         summary["answerability"][baseline] = _answerability_aggregate(subset)
     if baseline_order:
@@ -256,11 +258,12 @@ def benchmark_failure_report(
             "| baseline | support | accuracy | net vs reference | state slot match | "
             "state missing | slot mismatch | evidence support | graph evidence hit | "
             "answer keyword recall | basis keyword recall | unmarked state exposure | "
-            "unknown-current | unknown-current correction |"
+            "unknown-current | unknown-current correction | state source trace | "
+            "correction source trace |"
         )
         lines.append(
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-            "---: | ---: |"
+            "---: | ---: | ---: | ---: |"
         )
         for baseline, metrics in paper_metrics.items():
             lines.append(
@@ -275,7 +278,27 @@ def benchmark_failure_report(
                 f"{_format_optional_rate(metrics['basis_answer_keyword_recall_avg'])} | "
                 f"{_format_optional_rate(metrics['unmarked_state_exposure_rate'])} | "
                 f"{_format_optional_rate(metrics['unknown_current_rate'])} | "
-                f"{_format_optional_rate(metrics['unknown_current_correction_rate'])} |"
+                f"{_format_optional_rate(metrics['unknown_current_correction_rate'])} | "
+                f"{_format_optional_rate(metrics['state_source_trace_rate'])} | "
+                f"{_format_optional_rate(metrics['state_correction_source_trace_rate'])} |"
+            )
+        lines.append("")
+
+    source_trace = summary.get("state_source_trace", {})
+    if source_trace:
+        lines.append("## State Source Trace")
+        lines.append(
+            "| baseline | state traces | state source labels | correction traces | "
+            "active correction labels | stale correction labels |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+        for baseline, aggregate in source_trace.items():
+            lines.append(
+                f"| {baseline} | {aggregate['state_trace_items']} | "
+                f"{aggregate['state_trace_items_with_source_label']} | "
+                f"{aggregate['state_correction_trace_items']} | "
+                f"{aggregate['state_correction_items_with_source_label']} | "
+                f"{aggregate['state_correction_items_with_stale_source_label']} |"
             )
         lines.append("")
 
@@ -812,6 +835,47 @@ def _unknown_current_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _state_source_trace_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
+    state_items = [
+        item
+        for record in records
+        for item in record.get("trace") or []
+        if _is_state_readout_trace(item)
+    ]
+    correction_items = [
+        item
+        for record in records
+        for item in record.get("trace") or []
+        if _is_premise_correction_trace(item)
+    ]
+    state_with_source = sum(_has_trace_metadata(item, "source_observation_label") for item in state_items)
+    correction_with_source = sum(
+        _has_trace_metadata(item, "source_observation_label")
+        for item in correction_items
+    )
+    correction_with_stale_source = sum(
+        _has_trace_metadata(item, "stale_source_observation_label")
+        for item in correction_items
+    )
+    return {
+        "total": len(records),
+        "state_trace_items": len(state_items),
+        "state_trace_items_with_source_label": state_with_source,
+        "state_source_trace_rate": _ratio_or_none(state_with_source, len(state_items)),
+        "state_correction_trace_items": len(correction_items),
+        "state_correction_items_with_source_label": correction_with_source,
+        "state_correction_items_with_stale_source_label": correction_with_stale_source,
+        "state_correction_source_trace_rate": _ratio_or_none(
+            correction_with_source,
+            len(correction_items),
+        ),
+        "state_correction_stale_source_trace_rate": _ratio_or_none(
+            correction_with_stale_source,
+            len(correction_items),
+        ),
+    }
+
+
 def _evidence_support_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     evidence_records = [record for record in records if record["expected_evidence"]]
     return {
@@ -893,6 +957,7 @@ def _paper_metrics_for_baseline(
     exposure = summary["state_readout_exposure"][baseline]
     correction = summary["premise_correction"][baseline]
     unknown_current = summary["unknown_current"][baseline]
+    source_trace = summary["state_source_trace"][baseline]
     evidence = summary["evidence_support"][baseline]
     answerability = summary["answerability"][baseline]
     pairwise = summary.get("pairwise_vs_first_baseline", {})
@@ -930,6 +995,11 @@ def _paper_metrics_for_baseline(
         "unresolved_forbidden_rate": correction["unresolved_forbidden_rate"],
         "unknown_current_rate": unknown_current["unknown_current_rate"],
         "unknown_current_correction_rate": unknown_current["unknown_current_correction_rate"],
+        "state_source_trace_rate": source_trace["state_source_trace_rate"],
+        "state_correction_source_trace_rate": source_trace["state_correction_source_trace_rate"],
+        "state_correction_stale_source_trace_rate": (
+            source_trace["state_correction_stale_source_trace_rate"]
+        ),
     }
 
 
@@ -963,6 +1033,15 @@ def _is_premise_correction_trace(item: dict[str, Any]) -> bool:
         item.get("kind") == "state_correction"
         or item.get("relation") == "state_premise_correction"
     )
+
+
+def _is_state_readout_trace(item: dict[str, Any]) -> bool:
+    return item.get("kind") == "state" or item.get("relation") == "state"
+
+
+def _has_trace_metadata(item: dict[str, Any], key: str) -> bool:
+    metadata = item.get("metadata")
+    return isinstance(metadata, dict) and bool(metadata.get(key))
 
 
 def _has_grouped_diagnostic_signal(field_summary: dict[str, dict[str, dict[str, Any]]]) -> bool:

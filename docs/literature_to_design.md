@@ -227,6 +227,10 @@ Current implementation:
   observation labels during evaluation, and premise-correction traces expose
   both active-state and stale-state source labels. This is evaluation-only
   provenance; labels are not injected into runtime memory metadata.
+- Failure summaries, Markdown reports, and paper metrics now include
+  state-source trace coverage rates, so experiment bundles can be filtered for
+  runs whose state readouts and corrections are traceable to source
+  observations.
 
 Required next evidence:
 
