@@ -7,7 +7,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from adamem.state import query_relevant_state_slots
+from adamem.state import extract_state_patches, query_relevant_state_slots, state_slot_matches_query
 
 LONGMEMEVAL_V2_QUESTIONS_URL = (
     "https://huggingface.co/datasets/xiaowu0162/longmemeval-v2/raw/main/questions.jsonl"
@@ -237,6 +237,201 @@ def write_longmemeval_v2_prepared_split_validation(
         "report_path": str(report_path),
         "summary": summary,
     }
+
+
+def write_longmemeval_v2_prepared_state_evidence_audit(
+    split_records_source: str | Path,
+    haystack_source: str | Path,
+    trajectories_source: str | Path,
+    output_dir: str | Path,
+    *,
+    max_candidates_per_question: int = 50,
+) -> dict[str, Any]:
+    """Audit whether a prepared LME-V2 split has extractable state evidence.
+
+    The audit uses only selected split metadata, haystack trajectory ids, and
+    runtime trajectory text. It does not read reference answers or evaluator
+    labels, so the resulting artifact can guide API-budget decisions without
+    leaking target answers into the memory method.
+    """
+
+    split_records = _load_jsonl_objects(split_records_source)
+    haystacks = _load_haystack_json(haystack_source)
+    trajectory_records = list(_iter_jsonl_objects(trajectories_source))
+    records = list(longmemeval_v2_prepared_state_evidence_records(
+        split_records,
+        haystacks=haystacks,
+        trajectory_records=trajectory_records,
+        max_candidates_per_question=max_candidates_per_question,
+    ))
+    summary = summarize_longmemeval_v2_prepared_state_evidence(records)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    records_path = output / "longmemeval_v2_prepared_state_evidence.records.jsonl"
+    summary_path = output / "longmemeval_v2_prepared_state_evidence.summary.json"
+    report_path = output / "longmemeval_v2_prepared_state_evidence.report.md"
+    _write_jsonl(records_path, records)
+    _write_json(summary_path, summary)
+    report_path.write_text(longmemeval_v2_prepared_state_evidence_report(summary), encoding="utf-8")
+    return {
+        "split_records_source": str(split_records_source),
+        "haystack_source": str(haystack_source),
+        "trajectories_source": str(trajectories_source),
+        "records_path": str(records_path),
+        "summary_path": str(summary_path),
+        "report_path": str(report_path),
+        "summary": summary,
+    }
+
+
+def longmemeval_v2_prepared_state_evidence_records(
+    split_records: Iterable[Mapping[str, Any]],
+    *,
+    haystacks: Mapping[str, list[str]],
+    trajectory_records: Iterable[Mapping[str, Any]],
+    max_candidates_per_question: int = 50,
+) -> Iterable[dict[str, Any]]:
+    trajectories = {
+        _record_id(record): record
+        for record in trajectory_records
+        if _record_id(record)
+    }
+    for record in split_records:
+        question_id = str(record.get("id") or record.get("question_id") or "")
+        expected_slots = _split_record_state_slots(record)
+        trajectory_ids = [str(item) for item in haystacks.get(question_id, [])]
+        matched_trajectory_ids = [trajectory_id for trajectory_id in trajectory_ids if trajectory_id in trajectories]
+        missing_trajectory_ids = sorted(set(trajectory_ids) - set(matched_trajectory_ids))
+
+        matching_candidates: list[dict[str, Any]] = []
+        all_candidate_count = 0
+        matching_candidate_count = 0
+        truncated = False
+        for trajectory_id in matched_trajectory_ids:
+            trajectory = trajectories[trajectory_id]
+            for candidate in _trajectory_state_evidence_candidates(
+                trajectory,
+                expected_slots=expected_slots,
+            ):
+                all_candidate_count += 1
+                if candidate["matched_query_slot"]:
+                    matching_candidate_count += 1
+                    if len(matching_candidates) < max_candidates_per_question:
+                        matching_candidates.append(candidate)
+                    else:
+                        truncated = True
+
+        yield {
+            "id": question_id,
+            "split": record.get("split"),
+            "selection_group": record.get("selection_group"),
+            "question_type": record.get("question_type"),
+            "domain": record.get("domain"),
+            "environment": record.get("environment"),
+            "abstention": record.get("abstention"),
+            "image_required": record.get("image_required"),
+            "expected_state_slots": expected_slots,
+            "haystack_trajectory_count": len(trajectory_ids),
+            "matched_trajectory_count": len(matched_trajectory_ids),
+            "missing_trajectory_ids": missing_trajectory_ids,
+            "all_state_evidence_candidate_count": all_candidate_count,
+            "matching_state_evidence_candidate_count": matching_candidate_count,
+            "state_evidence_candidates": matching_candidates,
+            "state_evidence_truncated": truncated,
+            "state_available": bool(expected_slots) and matching_candidate_count > 0,
+            "label_use": "trajectory runtime text only; reference answers excluded",
+        }
+
+
+def summarize_longmemeval_v2_prepared_state_evidence(
+    records: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    record_list = list(records)
+    with_expected = [
+        record for record in record_list
+        if record.get("expected_state_slots")
+    ]
+    with_matching = [
+        record for record in with_expected
+        if record.get("state_available")
+    ]
+    summary = {
+        "total_questions": len(record_list),
+        "with_expected_state_slots": len(with_expected),
+        "with_matching_state_evidence": len(with_matching),
+        "without_matching_state_evidence": len(with_expected) - len(with_matching),
+        "state_available_rate": len(with_matching) / len(with_expected) if with_expected else 0.0,
+        "matching_state_evidence_candidate_total": sum(
+            int(record.get("matching_state_evidence_candidate_count") or 0)
+            for record in record_list
+        ),
+        "all_state_evidence_candidate_total": sum(
+            int(record.get("all_state_evidence_candidate_count") or 0)
+            for record in record_list
+        ),
+        "questions_with_missing_trajectories": sum(1 for record in record_list if record.get("missing_trajectory_ids")),
+        "missing_trajectory_total": sum(len(record.get("missing_trajectory_ids") or []) for record in record_list),
+        "truncated_question_count": sum(1 for record in record_list if record.get("state_evidence_truncated")),
+        "by_split": _state_evidence_group_summary(record_list, "split"),
+        "by_question_type": _state_evidence_group_summary(record_list, "question_type"),
+        "by_state_slot": _state_evidence_slot_summary(record_list),
+        "label_policy": "answers/eval labels are not read; only selected split metadata, haystacks, and trajectory runtime text are used",
+    }
+    return summary
+
+
+def longmemeval_v2_prepared_state_evidence_report(summary: Mapping[str, Any]) -> str:
+    lines = [
+        "# LongMemEval-V2 Prepared State Evidence Audit",
+        "",
+        f"Total questions: {summary['total_questions']}",
+        f"Questions with expected state slots: {summary['with_expected_state_slots']}",
+        f"With matching state evidence: {summary['with_matching_state_evidence']}",
+        f"Without matching state evidence: {summary['without_matching_state_evidence']}",
+        f"State-available rate: {summary['state_available_rate']:.2%}",
+        f"Matching candidates: {summary['matching_state_evidence_candidate_total']}",
+        f"All extracted candidates: {summary['all_state_evidence_candidate_total']}",
+        f"Questions with missing trajectories: {summary['questions_with_missing_trajectories']}",
+        f"Missing trajectories: {summary['missing_trajectory_total']}",
+        f"Truncated question records: {summary['truncated_question_count']}",
+        "",
+        "## Splits",
+        "",
+        "| split | questions | expected slots | with evidence | without evidence | candidates |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for split, aggregate in sorted(summary["by_split"].items()):
+        lines.append(
+            f"| {split} | {aggregate['questions']} | {aggregate['with_expected_state_slots']} | "
+            f"{aggregate['with_matching_state_evidence']} | {aggregate['without_matching_state_evidence']} | "
+            f"{aggregate['matching_state_evidence_candidate_total']} |"
+        )
+    lines.extend([
+        "",
+        "## Question Types",
+        "",
+        "| question_type | questions | expected slots | with evidence | without evidence | candidates |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ])
+    for question_type, aggregate in sorted(summary["by_question_type"].items()):
+        lines.append(
+            f"| {question_type} | {aggregate['questions']} | {aggregate['with_expected_state_slots']} | "
+            f"{aggregate['with_matching_state_evidence']} | {aggregate['without_matching_state_evidence']} | "
+            f"{aggregate['matching_state_evidence_candidate_total']} |"
+        )
+    lines.extend([
+        "",
+        "## State Slots",
+        "",
+        "| state_slot | questions | with evidence | without evidence | candidates |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ])
+    for slot, aggregate in sorted(summary["by_state_slot"].items()):
+        lines.append(
+            f"| {slot} | {aggregate['questions']} | {aggregate['with_matching_state_evidence']} | "
+            f"{aggregate['without_matching_state_evidence']} | {aggregate['matching_state_evidence_candidate_total']} |"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def validate_longmemeval_v2_prepared_split(
@@ -804,6 +999,164 @@ def _transfer_candidate_availability(
     return availability
 
 
+def _split_record_state_slots(record: Mapping[str, Any]) -> list[str]:
+    slots = [str(slot) for slot in _as_list(record.get("inferred_state_slots")) if str(slot)]
+    state_slot = record.get("state_slot")
+    if isinstance(state_slot, list):
+        slots.extend(str(slot) for slot in state_slot if str(slot))
+    elif state_slot:
+        slots.append(str(state_slot))
+    return list(dict.fromkeys(slots))
+
+
+def _trajectory_state_evidence_candidates(
+    trajectory: Mapping[str, Any],
+    *,
+    expected_slots: list[str],
+) -> Iterable[dict[str, Any]]:
+    trajectory_id = _record_id(trajectory)
+    states = trajectory.get("states") or []
+    if isinstance(states, Mapping):
+        states = states.get("states") or []
+    expected_slot_set = set(expected_slots)
+    for fallback_index, state in enumerate(states):
+        if not isinstance(state, Mapping):
+            continue
+        state_index = _state_index(state, fallback=fallback_index)
+        label = f"{trajectory_id}.s{state_index:04d}"
+        text = _trajectory_state_text(trajectory, state, label=label)
+        if not text:
+            continue
+        for patch in extract_state_patches(text):
+            yield {
+                "trajectory_id": trajectory_id,
+                "state_index": state_index,
+                "label": label,
+                "state_slot": patch.slot,
+                "state_value": patch.value,
+                "state_status": patch.status,
+                "invalidated_state_value": patch.invalidates_value,
+                "evidence": patch.evidence,
+                "matched_query_slot": (
+                    bool(expected_slot_set)
+                    and state_slot_matches_query(patch.slot, expected_slot_set)
+                ),
+                "source": "deterministic_state_extractor",
+            }
+
+
+def _state_index(state: Mapping[str, Any], *, fallback: int) -> int:
+    raw = state.get("state_index", state.get("step", fallback))
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _trajectory_state_text(
+    trajectory: Mapping[str, Any],
+    state: Mapping[str, Any],
+    *,
+    label: str,
+) -> str:
+    parts = [f"[{label}]"]
+    goal = _as_text(trajectory.get("goal"))
+    if goal:
+        parts.append(f"goal: {goal}")
+    url = _as_text(state.get("url"))
+    if url:
+        parts.append(f"url: {url}")
+    thought = _as_text(state.get("thought"))
+    if thought:
+        parts.append(f"thought: {thought}")
+    action = _as_text(state.get("action"))
+    if action:
+        parts.append(f"action: {action}")
+    accessibility_tree = _as_text(state.get("accessibility_tree"))
+    if accessibility_tree:
+        parts.append(f"observation: {accessibility_tree}")
+    return " | ".join(parts).strip()
+
+
+def _as_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value).strip()
+
+
+def _state_evidence_group_summary(
+    records: list[Mapping[str, Any]],
+    field_name: str,
+) -> dict[str, dict[str, int]]:
+    summary: dict[str, dict[str, int]] = {}
+    for record in records:
+        value = str(record.get(field_name) or "<missing>")
+        aggregate = summary.setdefault(value, _empty_state_evidence_aggregate())
+        _update_state_evidence_aggregate(aggregate, record)
+    return summary
+
+
+def _state_evidence_slot_summary(records: list[Mapping[str, Any]]) -> dict[str, dict[str, int]]:
+    summary: dict[str, dict[str, int]] = {}
+    for record in records:
+        expected_slots = [str(slot) for slot in record.get("expected_state_slots") or []]
+        for slot in expected_slots:
+            aggregate = summary.setdefault(slot, _empty_state_evidence_aggregate())
+            slot_candidates = [
+                candidate for candidate in record.get("state_evidence_candidates") or []
+                if state_slot_matches_query(str(candidate.get("state_slot") or ""), {slot})
+            ]
+            aggregate["questions"] += 1
+            aggregate["with_expected_state_slots"] += 1
+            if slot_candidates:
+                aggregate["with_matching_state_evidence"] += 1
+            else:
+                aggregate["without_matching_state_evidence"] += 1
+            aggregate["matching_state_evidence_candidate_total"] += len(slot_candidates)
+            if record.get("missing_trajectory_ids"):
+                aggregate["questions_with_missing_trajectories"] += 1
+    return summary
+
+
+def _empty_state_evidence_aggregate() -> dict[str, int]:
+    return {
+        "questions": 0,
+        "with_expected_state_slots": 0,
+        "with_matching_state_evidence": 0,
+        "without_matching_state_evidence": 0,
+        "matching_state_evidence_candidate_total": 0,
+        "all_state_evidence_candidate_total": 0,
+        "questions_with_missing_trajectories": 0,
+    }
+
+
+def _update_state_evidence_aggregate(
+    aggregate: dict[str, int],
+    record: Mapping[str, Any],
+) -> None:
+    has_expected = bool(record.get("expected_state_slots"))
+    has_evidence = bool(record.get("state_available"))
+    aggregate["questions"] += 1
+    if has_expected:
+        aggregate["with_expected_state_slots"] += 1
+        if has_evidence:
+            aggregate["with_matching_state_evidence"] += 1
+        else:
+            aggregate["without_matching_state_evidence"] += 1
+    aggregate["matching_state_evidence_candidate_total"] += int(
+        record.get("matching_state_evidence_candidate_count") or 0
+    )
+    aggregate["all_state_evidence_candidate_total"] += int(
+        record.get("all_state_evidence_candidate_count") or 0
+    )
+    if record.get("missing_trajectory_ids"):
+        aggregate["questions_with_missing_trajectories"] += 1
+
+
 def _load_jsonl_objects(source: str | Path, *, limit: int | None = None) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for line_number, line in enumerate(_read_source_text(source).splitlines(), start=1):
@@ -1043,6 +1396,17 @@ def main(argv: list[str] | None = None) -> None:
     validate.add_argument("--output-dir", type=Path, required=True)
     validate.add_argument("--json", action="store_true")
 
+    state_evidence = sub.add_parser(
+        "state-evidence-audit",
+        help="Audit prepared LongMemEval-V2 trajectories for deterministic state evidence",
+    )
+    state_evidence.add_argument("--split-records", type=Path, required=True)
+    state_evidence.add_argument("--haystack", default=LONGMEMEVAL_V2_SMALL_HAYSTACK_URL)
+    state_evidence.add_argument("--trajectories", required=True)
+    state_evidence.add_argument("--output-dir", type=Path, required=True)
+    state_evidence.add_argument("--max-candidates-per-question", type=int, default=50)
+    state_evidence.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "question-audit":
         result = write_longmemeval_v2_question_audit(
@@ -1105,6 +1469,19 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             print(f"wrote LongMemEval-V2 prepared split validation to {args.output_dir}")
+            print(f"report: {result['report_path']}")
+    elif args.command == "state-evidence-audit":
+        result = write_longmemeval_v2_prepared_state_evidence_audit(
+            args.split_records,
+            args.haystack,
+            args.trajectories,
+            args.output_dir,
+            max_candidates_per_question=args.max_candidates_per_question,
+        )
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"wrote LongMemEval-V2 prepared state-evidence audit to {args.output_dir}")
             print(f"report: {result['report_path']}")
 
 

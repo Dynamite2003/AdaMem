@@ -141,6 +141,10 @@ Required next evidence:
 - Report state-readout missing, slot-mismatch, and unmarked-exposure rates
   alongside answer accuracy in any paper-facing table where state-aware
   mechanisms are compared.
+- LongMemEval-V2 prepared splits can now be audited for actual trajectory-side
+  state evidence before API runs. This is important because LongMemEval-V2's
+  question type may suggest state transfer even when the selected text
+  trajectories do not expose a state patch that the current method can use.
 - JSONL benchmark reports now include a `Paper Metrics` table with support
   accuracy, net delta versus the reference baseline, state-slot match, missing
   readout, slot mismatch, and unmarked state exposure. These metrics are also

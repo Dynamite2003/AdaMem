@@ -2119,3 +2119,26 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py -q` -> `14 passed`
   - `PYTHONPATH=src python -m pytest -q` -> `141 passed`
   - `git diff --check` -> no issues
+
+### 2026-05-30 LongMemEval-V2 prepared state-evidence audit
+
+- Added `adamem.lme_v2 state-evidence-audit`:
+  - Input: selected split records, haystack mapping, and selected trajectory
+    JSONL.
+  - Scans trajectory runtime fields only with the deterministic state
+    extractor.
+  - Reports per-question matching state evidence for routed query state slots,
+    plus split/type/slot summaries.
+  - Keeps reference answers and evaluator labels out of the audit path.
+- Purpose:
+  - Before spending API budget on LongMemEval-V2 transfer runs, verify whether
+    selected questions are state-available for the current AdaMem state
+    extractor.
+  - Separate method failures from split/data failures when state-aware
+    mechanisms do not improve transfer metrics.
+- Updated workflow, benchmark data status, and literature-to-design docs with
+  the state-evidence audit command and claim boundary.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `14 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `143 passed`
+  - `git diff --check` -> no issues

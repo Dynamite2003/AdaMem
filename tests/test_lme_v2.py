@@ -5,14 +5,17 @@ from pathlib import Path
 
 from adamem.lme_v2 import (
     longmemeval_v2_split_trajectory_records,
+    longmemeval_v2_prepared_state_evidence_records,
     longmemeval_v2_question_audit_records,
     select_longmemeval_v2_transfer_split,
+    summarize_longmemeval_v2_prepared_state_evidence,
     summarize_longmemeval_v2_question_audit,
     summarize_longmemeval_v2_trajectory_manifest,
     summarize_longmemeval_v2_transfer_split,
     validate_longmemeval_v2_prepared_split,
     write_longmemeval_v2_extracted_trajectories,
     write_longmemeval_v2_prepared_split_validation,
+    write_longmemeval_v2_prepared_state_evidence_audit,
     write_longmemeval_v2_question_audit,
     write_longmemeval_v2_trajectory_manifest,
     write_longmemeval_v2_transfer_split,
@@ -516,6 +519,110 @@ def test_write_longmemeval_v2_prepared_split_validation_outputs_report(tmp_path:
     assert summary["valid"] is True
     assert summary["required_trajectories"] == 1
     assert "Prepared Split Validation" in report
+
+
+def test_longmemeval_v2_prepared_state_evidence_audit_matches_query_slots() -> None:
+    records = list(longmemeval_v2_prepared_state_evidence_records(
+        [
+            {
+                **_audit_record("q_dynamic", "dynamic-environment", state_slots=["runtime.*.status"]),
+                "split": "transfer",
+                "selection_group": "dynamic-environment",
+            },
+            {
+                **_audit_record("q_static", "static-environment", type_candidate=False),
+                "split": "static_clean_control",
+                "selection_group": "static_no_state_slot_signal",
+            },
+        ],
+        haystacks={
+            "q_dynamic": ["traj-dynamic", "traj-missing"],
+            "q_static": ["traj-static"],
+        },
+        trajectory_records=[
+            {
+                "id": "traj-dynamic",
+                "domain": "enterprise",
+                "environment": "workarena",
+                "goal": "Inspect the runner.",
+                "states": [
+                    {
+                        "state_index": 0,
+                        "accessibility_tree": "The staging build runner status is offline.",
+                    }
+                ],
+            },
+            {
+                "id": "traj-static",
+                "domain": "web",
+                "environment": "webarena-cms",
+                "states": [{"state_index": 0, "accessibility_tree": "Button label: Publish."}],
+            },
+        ],
+    ))
+    summary = summarize_longmemeval_v2_prepared_state_evidence(records)
+    by_id = {record["id"]: record for record in records}
+
+    assert by_id["q_dynamic"]["state_available"] is True
+    assert by_id["q_dynamic"]["missing_trajectory_ids"] == ["traj-missing"]
+    assert by_id["q_dynamic"]["matching_state_evidence_candidate_count"] == 1
+    assert by_id["q_dynamic"]["state_evidence_candidates"][0]["state_slot"] == "runtime.staging_build_runner_status.status"
+    assert by_id["q_dynamic"]["state_evidence_candidates"][0]["state_value"] == "offline"
+    assert by_id["q_static"]["state_available"] is False
+    assert by_id["q_static"]["expected_state_slots"] == []
+    assert all("answer" not in candidate for record in records for candidate in record["state_evidence_candidates"])
+    assert summary["total_questions"] == 2
+    assert summary["with_expected_state_slots"] == 1
+    assert summary["with_matching_state_evidence"] == 1
+    assert summary["missing_trajectory_total"] == 1
+    assert summary["by_split"]["transfer"]["with_matching_state_evidence"] == 1
+    assert summary["by_state_slot"]["runtime.*.status"]["matching_state_evidence_candidate_total"] == 1
+
+
+def test_write_longmemeval_v2_prepared_state_evidence_audit_outputs_artifacts(tmp_path: Path) -> None:
+    split_records = tmp_path / "split.records.jsonl"
+    split_records.write_text(
+        json.dumps({
+            **_audit_record("q_runtime", "dynamic-environment", state_slots=["runtime.*.status"]),
+            "split": "transfer",
+            "selection_group": "dynamic-environment",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    haystack = tmp_path / "haystack.json"
+    haystack.write_text(json.dumps({"q_runtime": ["traj-runtime"]}), encoding="utf-8")
+    trajectories = tmp_path / "selected_trajectories.jsonl"
+    trajectories.write_text(
+        json.dumps({
+            "id": "traj-runtime",
+            "domain": "enterprise",
+            "environment": "workarena",
+            "states": [
+                {
+                    "state_index": 3,
+                    "accessibility_tree": "Staging build runner status is online.",
+                }
+            ],
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    result = write_longmemeval_v2_prepared_state_evidence_audit(
+        split_records,
+        haystack,
+        trajectories,
+        tmp_path / "state-evidence",
+    )
+    records = [
+        json.loads(line)
+        for line in Path(result["records_path"]).read_text(encoding="utf-8").splitlines()
+    ]
+    summary = json.loads(Path(result["summary_path"]).read_text(encoding="utf-8"))
+    report = Path(result["report_path"]).read_text(encoding="utf-8")
+
+    assert records[0]["state_available"] is True
+    assert summary["with_matching_state_evidence"] == 1
+    assert "Prepared State Evidence Audit" in report
 
 
 def _audit_record(
