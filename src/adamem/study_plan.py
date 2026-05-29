@@ -575,10 +575,6 @@ def run_study_plan(
     log_path: str | Path | None = None,
 ) -> dict[str, Any]:
     root_path = Path(root) if root is not None else Path.cwd()
-    validation = validate_paper_study_plan(plan, root=root_path, check_env=check_env)
-    if require_ready and not validation["execution_ready"]:
-        missing = ", ".join(validation["missing_requirements"])
-        raise ValueError(f"study plan is not execution-ready: {missing}")
     allowed_stages = set(str(stage) for stage in stages or [])
     allowed_names = set(str(name) for name in command_names or [])
     selected = [
@@ -593,6 +589,15 @@ def run_study_plan(
         available = ", ".join(str(command.get("name")) for command in plan.get("commands") or [])
         requested = ", ".join(sorted(allowed_names))
         raise ValueError(f"no study plan commands matched --command filter: {requested}; available: {available}")
+    validation = validate_paper_study_plan(
+        plan,
+        root=root_path,
+        check_env=check_env,
+        env_commands=selected if (allowed_names or allowed_stages) else None,
+    )
+    if require_ready and not validation["execution_ready"]:
+        missing = ", ".join(validation["missing_requirements"])
+        raise ValueError(f"study plan is not execution-ready: {missing}")
     output_dir = Path(str(plan.get("output_dir") or "."))
     log = Path(log_path) if log_path is not None else output_dir / "paper_study_run.records.jsonl"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -711,6 +716,7 @@ def validate_paper_study_plan(
     *,
     root: str | Path | None = None,
     check_env: bool = False,
+    env_commands: Iterable[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     root_path = Path(root) if root is not None else Path.cwd()
     current_fingerprint = plan_fingerprint(plan)
@@ -790,7 +796,12 @@ def validate_paper_study_plan(
         for spec in [_safe_parse_model_spec(label)]
         if spec is not None and spec.provider != "mock"
     })
-    required_env_vars = _required_env_vars(providers)
+    env_provider_names = (
+        _providers_from_commands(env_commands)
+        if env_commands is not None
+        else providers
+    )
+    required_env_vars = _required_env_vars(env_provider_names)
     missing_env_vars = [
         name for name in required_env_vars if not os.environ.get(name)
     ] if check_env else []
@@ -837,6 +848,8 @@ def validate_paper_study_plan(
         "minimum_answer_models": minimum_answer_models,
         "minimum_judge_models": minimum_judge_models,
         "provider_names": providers,
+        "env_provider_scope": "selected_commands" if env_commands is not None else "plan",
+        "required_env_provider_names": env_provider_names,
         "required_env_vars": required_env_vars,
         "env_checked": check_env,
         "missing_env_vars": missing_env_vars,
@@ -906,6 +919,8 @@ def paper_study_validation_markdown(validation: dict[str, Any]) -> str:
     lines.append(f"- Answer models: `{int(validation.get('answer_model_count') or 0)}`")
     lines.append(f"- Judge models: `{int(validation.get('judge_model_count') or 0)}`")
     env_vars = validation.get("required_env_vars") or []
+    if validation.get("env_provider_scope"):
+        lines.append(f"- Env provider scope: `{validation.get('env_provider_scope')}`")
     lines.append(
         "- Required env vars: "
         + (", ".join(f"`{item}`" for item in env_vars) if env_vars else "`none`")
@@ -1652,6 +1667,24 @@ def _required_env_vars(providers: Iterable[str]) -> list[str]:
         for provider in providers
         if provider in mapping
     })
+
+
+def _providers_from_commands(commands: Iterable[dict[str, Any]]) -> list[str]:
+    provider_flags = {
+        "--answer-provider",
+        "--judge-provider",
+        "--state-extractor-provider",
+    }
+    providers: set[str] = set()
+    for command in commands:
+        argv = [str(item) for item in command.get("command") or []]
+        for index, token in enumerate(argv[:-1]):
+            if token not in provider_flags:
+                continue
+            provider = argv[index + 1].strip()
+            if provider and provider != "mock":
+                providers.add(provider)
+    return sorted(providers)
 
 
 def _count_values(values: Iterable[Any]) -> dict[str, int]:

@@ -140,12 +140,14 @@ Outputs:
   `--list-commands` to inspect exact command names, then repeatable
   `--command NAME` to execute a single planned command, for example one
   answer/judge pair before spending API budget on the whole `answer_judge`
-  stage. If a run fails after completing expensive API commands, rerun with
-  `--resume-run` to append to the same run log and skip only prior commands
-  from the same plan fingerprint whose name, stage, shell command,
-  `status=completed`, and declared outputs are all clean. Resume summaries
-  report prior, appended, and final log record counts so partial-run audits can
-  distinguish old records from the current invocation.
+  stage. During filtered runs, `--check-env` checks only providers used by the
+  selected commands while preserving the global plan validation artifact. If a
+  run fails after completing expensive API commands, rerun with `--resume-run`
+  to append to the same run log and skip only prior commands from the same plan
+  fingerprint whose name, stage, shell command, `status=completed`, and
+  declared outputs are all clean. Resume summaries report prior, appended, and
+  final log record counts so partial-run audits can distinguish old records
+  from the current invocation.
 - Saved or manually edited plans can be loaded with
   `--plan path/to/paper_study_plan.json`, then validated or run without
   regenerating the command matrix from CLI defaults.

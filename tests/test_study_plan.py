@@ -317,6 +317,42 @@ def test_validate_paper_study_plan_can_check_missing_env_vars(tmp_path: Path, mo
     assert "provider_credentials_available" in validation["missing_requirements"]
 
 
+def test_run_study_plan_checks_env_only_for_selected_command(tmp_path: Path, monkeypatch) -> None:
+    stale = tmp_path / "stale.jsonl"
+    transfer = tmp_path / "transfer.jsonl"
+    for path in [stale, transfer]:
+        path.write_text("", encoding="utf-8")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=stale,
+        transfer_dataset=transfer,
+        ama_output_source=None,
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+    )
+    target = next(
+        command for command in plan["commands"]
+        if command["name"] == "stale_answer_openai_gpt_a_openai_gpt_j"
+    )
+
+    summary = run_study_plan(
+        plan,
+        command_names=[target["name"]],
+        dry_run=True,
+        check_env=True,
+        log_path=tmp_path / "run.records.jsonl",
+    )
+
+    assert summary["validation"]["env_provider_scope"] == "selected_commands"
+    assert summary["validation"]["required_env_provider_names"] == ["openai"]
+    assert summary["validation"]["required_env_vars"] == ["OPENAI_API_KEY"]
+    assert summary["validation"]["missing_env_vars"] == []
+    assert summary["validation"]["execution_ready"] is True
+
+
 def test_write_paper_study_plan_outputs_json_markdown_and_shell(tmp_path: Path) -> None:
     plan = build_paper_study_plan(
         output_dir=tmp_path / "study",

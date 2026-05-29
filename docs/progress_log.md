@@ -3248,3 +3248,29 @@ to a paper-facing claim and evaluation gate.
   - CLI smoke generation wrote both command index artifacts; the JSON index
     contained 8 commands including `longmemeval_transfer_retrieval`, and the
     Markdown index rendered the command table title.
+
+### 2026-05-30 selected-command env preflight
+
+- Scoped run-time credential checks for filtered study runs.
+- Behavior:
+  - global validation artifacts still describe the whole plan
+  - `--run --command ... --check-env` checks only providers referenced by the
+    selected command(s)
+  - `--run --stage ... --check-env` checks only providers referenced by
+    commands in that selected stage
+  - run-summary validation records `env_provider_scope` and
+    `required_env_provider_names`
+- Purpose:
+  - Allow a single OpenAI answer/judge pilot to run without requiring unrelated
+    Gemini or ModelHub keys for commands not selected.
+  - Keep credential preflight strict for the command actually being executed.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `36 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `64 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `196 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI dry-run selected `stale_answer_openai_gpt_a_openai_gpt_j` with only
+    `OPENAI_API_KEY` set and no `GEMINI_API_KEY`; run-summary validation
+    reported `env_provider_scope=selected_commands`, provider `openai`, and
+    no missing env vars.
