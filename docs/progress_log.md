@@ -57,6 +57,39 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 day-end handoff
+
+- Current committed implementation is at the paper-workflow stage for
+  API-free development:
+  - deterministic state-aware AdaMem prototype with unknown-current state
+    handling for location, schedule, beverage preference, task status,
+    health/dietary constraints, resource status, workflow/runbook rules,
+    runtime/tool status, role, and manager relationship slots
+  - STALE/transfer-style JSONL diagnostics with state readout,
+    premise-correction traces, source-observation labels, and narrower
+    failure-attribution labels
+  - report bundles with claim audits, paper tables, paired comparisons,
+    source-trace metrics, and traceable failure case-study artifacts
+- Latest committed code before this handoff:
+  - `9f83e9c Write failure case study artifacts`
+  - `412a424 Add traceable failure examples`
+  - `1e13eba Refine state failure attribution`
+  - `928aad5 Report state source trace coverage`
+  - `7296aa5 Expose state source labels in benchmark traces`
+- Current claim boundary:
+  - API-free diagnostics are now stronger for debugging causal mechanisms and
+    selecting paper case studies.
+  - The project still should not claim answer-accuracy gains, SOTA, or final
+    STALE performance until API-backed answer/judge runs are completed with
+    documented models, prompts, splits, seeds/settings, and cached raw outputs.
+- Suggested first task for the next session:
+  - Add single-experiment method/ablation coverage artifacts to report bundles
+    so each run states which required mechanism groups are covered and which
+    are missing, not only batch-level summaries.
+- Suggested follow-up after that:
+  - Use the coverage audit to plan the minimum real-evaluation matrix for
+    STALE first, then one transfer benchmark.
+
 ### 2026-05-30 final checkpoint
 
 - Today focused on API-free paper-track scaffolding rather than new API-backed
