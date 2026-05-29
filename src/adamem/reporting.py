@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from adamem.claims import audit_experiment, claim_audit_markdown
 from adamem.compare import paired_comparison_markdown, paired_comparison_summary
+from adamem.error_taxonomy import attribution_counts, attribution_counts_by_baseline
 from adamem.tables import load_benchmark_records, paper_table_markdown, paper_table_summary
 
 
@@ -40,6 +41,7 @@ def write_experiment_bundle(
         "supported_claims": audit["supported_claims"],
         "blocked_claims": audit["blocked_claims"],
         "claim_evidence": audit.get("claim_evidence") or {},
+        "diagnostic_evidence": {},
         "warnings": audit.get("warnings") or [],
         "artifacts": {
             "claim_audit_markdown": str(audit_md),
@@ -49,6 +51,7 @@ def write_experiment_bundle(
 
     try:
         records = load_benchmark_records(experiment)
+        manifest["diagnostic_evidence"] = _diagnostic_evidence(records)
         table_group_fields = group_fields or None
         if table_group_fields:
             table_summary = paper_table_summary(records, group_fields=table_group_fields)
@@ -150,6 +153,8 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         state_evidence = evidence.get("prepared_state_evidence") or {}
         retrieval = evidence.get("retrieval_transfer") or {}
         dataset_scope = manifest.get("dataset_scope") or {}
+        diagnostic = manifest.get("diagnostic_evidence") or {}
+        top_attribution, top_attribution_count = _top_count(diagnostic.get("failure_attributions") or {})
         row = {
             "experiment": manifest.get("experiment"),
             "run_type": manifest.get("run_type"),
@@ -167,6 +172,9 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "state_matching_questions": int(state_evidence.get("with_matching_state_evidence") or 0),
             "state_available_rate": float(state_evidence.get("state_available_rate") or 0.0),
             "paired_no_regression_count": len(retrieval.get("paired_no_regression") or []),
+            "failure_attribution_count": len(diagnostic.get("failure_attributions") or {}),
+            "top_failure_attribution": top_attribution,
+            "top_failure_attribution_count": top_attribution_count,
             "supported_claim_count": len(manifest.get("supported_claims") or []),
             "blocked_claim_count": len(manifest.get("blocked_claims") or {}),
         }
@@ -181,11 +189,11 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | gate | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| experiment | gate | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs | top attribution |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     if not rows:
-        lines.append("| <none> | needs_attention | unknown | <none> | 0 | 0 | 0 | 0/0 | 0.00% | 0 |")
+        lines.append("| <none> | needs_attention | unknown | <none> | 0 | 0 | 0 | 0/0 | 0.00% | 0 | - |")
         return "\n".join(lines) + "\n"
     for row in rows:
         experiment = Path(str(row.get("experiment") or "<missing>")).name
@@ -198,7 +206,8 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
             f"{row['supported_claim_count']} | {row['blocked_claim_count']} | "
             f"{row['warning_count']} | {matching}/{expected} | "
             f"{float(row.get('state_available_rate') or 0.0):.2%} | "
-            f"{row['paired_no_regression_count']} |"
+            f"{row['paired_no_regression_count']} | "
+            f"{_format_top_attribution(row)} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -244,6 +253,69 @@ def _has_diagnostic_claim(supported: set[str]) -> bool:
         or claim.endswith("_transfer")
         for claim in supported
     )
+
+
+def _diagnostic_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:
+    records_with_attributions = [
+        record for record in records if record.get("failure_attributions")
+    ]
+    if not records_with_attributions:
+        return {}
+    return {
+        "failure_attributions": attribution_counts(records_with_attributions),
+        "failure_attributions_by_baseline": attribution_counts_by_baseline(records_with_attributions),
+        "examples_by_failure_attribution": _examples_by_failure_attribution(records_with_attributions),
+    }
+
+
+def _examples_by_failure_attribution(
+    records: list[dict[str, Any]],
+    *,
+    max_examples: int = 2,
+) -> dict[str, list[dict[str, Any]]]:
+    examples: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        for attribution in record.get("failure_attributions") or []:
+            bucket = examples.setdefault(str(attribution), [])
+            if len(bucket) < max_examples:
+                bucket.append({
+                    "baseline": record.get("baseline"),
+                    "case_id": record.get("case_id"),
+                    "query_id": record.get("query_id"),
+                    "failure_modes": list(record.get("failure_modes") or []),
+                    "top_retrieved": _top_retrieved(record),
+                })
+    return examples
+
+
+def _top_retrieved(record: dict[str, Any]) -> str | None:
+    retrieved = record.get("retrieved") or []
+    if retrieved:
+        first = retrieved[0]
+        if isinstance(first, dict):
+            return str(first.get("content") or "")[:180]
+        return str(first)[:180]
+    trace = record.get("trace") or []
+    if trace and isinstance(trace[0], dict):
+        return str(trace[0].get("content") or "")[:180]
+    return None
+
+
+def _top_count(counts: dict[str, Any]) -> tuple[str | None, int]:
+    if not counts:
+        return None, 0
+    key, value = sorted(
+        ((str(key), int(value or 0)) for key, value in counts.items()),
+        key=lambda item: (-item[1], item[0]),
+    )[0]
+    return key, value
+
+
+def _format_top_attribution(row: dict[str, Any]) -> str:
+    attribution = row.get("top_failure_attribution")
+    if not attribution:
+        return "-"
+    return f"{attribution} ({int(row.get('top_failure_attribution_count') or 0)})"
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -2398,3 +2398,26 @@ to a paper-facing claim and evaluation gate.
     `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only state_readout --max-cases 1 --benchmark-report-output /tmp/adamem_attr_examples_report.md --json`
     wrote `Representative Failure Attributions` and
     `state_authority_absent_or_extraction_failure`.
+
+### 2026-05-30 batch diagnostic-evidence matrix
+
+- Extended `adamem.reporting` bundle manifests with `diagnostic_evidence`.
+- The diagnostic evidence extracts case-level `failure_attributions`,
+  `failure_attributions_by_baseline`, and compact representative examples when
+  benchmark records include attribution fields.
+- Extended batch `claim_matrix` rows with:
+  - `failure_attribution_count`
+  - `top_failure_attribution`
+  - `top_failure_attribution_count`
+- Extended `claim_matrix.md` with a `top attribution` column.
+- Purpose:
+  - Let large result directories be screened by the dominant observed failure
+    type without opening every per-run report.
+  - Connect paper-claim readiness and mechanism error analysis in one batch
+    artifact.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `10 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py tests/test_claims.py tests/test_tables.py -q` -> `31 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `151 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

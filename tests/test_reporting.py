@@ -115,6 +115,7 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     assert len(manifest["bundles"]) == 3
     for bundle in manifest["bundles"]:
         assert "claim_evidence" in bundle
+        assert "diagnostic_evidence" in bundle
         assert "warnings" in bundle
         assert "dataset_scope" in bundle
         assert Path(bundle["artifacts"]["paper_tables_markdown"]).exists()
@@ -187,6 +188,9 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "state_matching_questions": 3,
         "state_available_rate": 0.75,
         "paired_no_regression_count": 1,
+        "failure_attribution_count": 0,
+        "top_failure_attribution": None,
+        "top_failure_attribution_count": 0,
         "supported_claim_count": 2,
         "blocked_claim_count": 1,
         "readiness_gate": "diagnostic_ready",
@@ -198,7 +202,7 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
-    assert "| experiment | gate | scope | run type |" in markdown
+    assert "| experiment | gate | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs | top attribution |" in markdown
 
 
 def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
@@ -236,6 +240,36 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
         "no_case_level_or_raw_records",
         "unclassified_experiment",
     ]
+
+
+def test_claim_matrix_flattens_failure_attribution_evidence() -> None:
+    rows = claim_matrix_rows([
+        {
+            "experiment": "errors.experiment.json",
+            "run_type": "jsonl_retrieval_benchmark",
+            "dataset": "benchmarks/example.jsonl",
+            "raw_output_count": 12,
+            "supported_claims": ["retrieval_diagnostics"],
+            "blocked_claims": {"answer_accuracy": ["not generation"]},
+            "warnings": [],
+            "claim_evidence": {},
+            "diagnostic_evidence": {
+                "failure_attributions": {
+                    "retrieval_failure": 2,
+                    "state_readout_failure": 5,
+                },
+                "examples_by_failure_attribution": {
+                    "state_readout_failure": [{"case_id": "c1"}],
+                },
+            },
+        }
+    ])
+    markdown = claim_matrix_markdown(rows)
+
+    assert rows[0]["failure_attribution_count"] == 2
+    assert rows[0]["top_failure_attribution"] == "state_readout_failure"
+    assert rows[0]["top_failure_attribution_count"] == 5
+    assert "state_readout_failure (5)" in markdown
 
 
 def test_claim_matrix_gates_claim_limited_dataset_scope() -> None:
