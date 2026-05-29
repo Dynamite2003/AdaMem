@@ -3129,3 +3129,29 @@ to a paper-facing claim and evaluation gate.
   - `git diff --check` -> no issues
   - CLI smoke run executed the `reporting` stage once, then `--resume-run`
     appended a `skipped_completed` record with `skipped_completed_count=1`.
+
+### 2026-05-30 resume plan-fingerprint guard
+
+- Added plan metadata to each run JSONL command record:
+  - `plan_fingerprint`
+  - `recorded_plan_fingerprint`
+  - `settings_provenance`
+- Tightened resume skip decisions:
+  - `--resume-run` now skips only prior completed records whose
+    `plan_fingerprint` matches the current plan fingerprint
+  - older records without a matching fingerprint are not skipped
+- Purpose:
+  - Prevent accidental reuse of completed commands from a different manually
+    edited plan or settings-generated run that happens to share the same shell
+    command.
+  - Make per-command run records independently traceable to the plan/settings
+    content used for execution.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `30 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `58 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `190 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke resume confirmed all command records include
+    `plan_fingerprint`, share the same fingerprint, and append a
+    `skipped_completed` record only for the matching plan.

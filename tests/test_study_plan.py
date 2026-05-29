@@ -396,6 +396,8 @@ def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> Non
     assert summary["selected_command_count"] == 1
     assert summary["completed_command_count"] == 0
     assert records[0]["status"] == "dry_run"
+    assert records[0]["plan_fingerprint"] == plan["plan_fingerprint"]
+    assert records[0]["recorded_plan_fingerprint"] == plan["plan_fingerprint"]
     assert records[0]["stage"] == "diagnostic"
     assert records[0]["missing_outputs"] == ["experiment", "records", "report"]
 
@@ -481,6 +483,7 @@ def test_run_study_plan_resume_skips_prior_completed_command(tmp_path: Path) -> 
     assert second["completed_command_count"] == 0
     assert second["skipped_completed_count"] == 1
     assert second["records"][0]["status"] == "skipped_completed"
+    assert second["records"][0]["plan_fingerprint"] == first["plan_fingerprint"]
     assert records[-1]["status"] == "skipped_completed"
     assert output_path.read_text(encoding="utf-8") == "1"
 
@@ -520,6 +523,49 @@ def test_run_study_plan_resume_does_not_skip_missing_outputs(tmp_path: Path) -> 
     assert first["records"][0]["missing_outputs"] == ["artifact"]
     assert second["records"][0]["status"] == "completed"
     assert second["skipped_completed_count"] == 0
+
+
+def test_run_study_plan_resume_does_not_skip_different_plan_fingerprint(tmp_path: Path) -> None:
+    output_path = tmp_path / "counter.txt"
+    command = (
+        "from pathlib import Path; "
+        f"path=Path({str(output_path)!r}); "
+        "value=int(path.read_text() or '0') if path.exists() else 0; "
+        "path.write_text(str(value + 1))"
+    )
+    plan = {
+        "output_dir": str(tmp_path / "study"),
+        "datasets": {},
+        "data_sources": {},
+        "model_requirements": {
+            "answer_models": ["mock:a", "mock:b"],
+            "judge_models": ["mock:j1", "mock:j2"],
+            "minimum_answer_models": 2,
+            "minimum_judge_models": 2,
+        },
+        "method_coverage_preview": {"complete": True},
+        "commands": [
+            {
+                "name": "increment",
+                "stage": "unit",
+                "purpose": "test resume fingerprint",
+                "claim_boundary": "none",
+                "command": ["python", "-c", command],
+                "outputs": {"artifact": str(output_path)},
+            }
+        ],
+    }
+    log_path = tmp_path / "run.records.jsonl"
+
+    first = run_study_plan(plan, require_ready=False, log_path=log_path)
+    plan["settings_provenance"] = {"settings_fingerprint": "changed"}
+    plan["plan_fingerprint"] = plan_fingerprint(plan)
+    second = run_study_plan(plan, require_ready=False, resume=True, log_path=log_path)
+
+    assert first["plan_fingerprint"] != second["plan_fingerprint"]
+    assert second["records"][0]["status"] == "completed"
+    assert second["skipped_completed_count"] == 0
+    assert output_path.read_text(encoding="utf-8") == "2"
 
 
 def test_study_plan_cli_writes_artifacts(tmp_path: Path) -> None:

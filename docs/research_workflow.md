@@ -136,8 +136,9 @@ Outputs:
   `--stage` filters the run to stages such as `diagnostic`, `answer_judge`,
   `mechanism_ablation`, `transfer`, or `reporting`. If a run fails after
   completing expensive API commands, rerun with `--resume-run` to append to the
-  same run log and skip only prior commands whose name, stage, shell command,
-  `status=completed`, and declared outputs are all clean.
+  same run log and skip only prior commands from the same plan fingerprint
+  whose name, stage, shell command, `status=completed`, and declared outputs
+  are all clean.
 - Saved or manually edited plans can be loaded with
   `--plan path/to/paper_study_plan.json`, then validated or run without
   regenerating the command matrix from CLI defaults.

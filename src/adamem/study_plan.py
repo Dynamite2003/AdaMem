@@ -572,20 +572,35 @@ def run_study_plan(
     output_dir = Path(str(plan.get("output_dir") or "."))
     log = Path(log_path) if log_path is not None else output_dir / "paper_study_run.records.jsonl"
     log.parent.mkdir(parents=True, exist_ok=True)
-    completed_keys = _completed_resume_keys(log) if resume and log.exists() else set()
+    current_fingerprint = plan_fingerprint(plan)
+    run_metadata = {
+        "plan_fingerprint": current_fingerprint,
+        "recorded_plan_fingerprint": plan.get("plan_fingerprint"),
+        "settings_provenance": dict(plan.get("settings_provenance") or {}),
+    }
+    completed_keys = (
+        _completed_resume_keys(log, plan_fingerprint=current_fingerprint)
+        if resume and log.exists()
+        else set()
+    )
     records: list[dict[str, Any]] = []
     status = "dry_run" if dry_run else "complete"
     log_mode = "a" if resume else "w"
     with log.open(log_mode, encoding="utf-8") as handle:
         for index, command in enumerate(selected, start=1):
             if not dry_run and _command_resume_key(command) in completed_keys:
-                record = _skipped_completed_record(command, index=index)
+                record = _skipped_completed_record(
+                    command,
+                    index=index,
+                    run_metadata=run_metadata,
+                )
             else:
                 record = _run_command_record(
                     command,
                     index=index,
                     dry_run=dry_run,
                     root=root_path,
+                    run_metadata=run_metadata,
                 )
             records.append(record)
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -595,9 +610,7 @@ def run_study_plan(
                 break
     return {
         "schema_version": "adamem.paper_study_run.v1",
-        "plan_fingerprint": plan_fingerprint(plan),
-        "recorded_plan_fingerprint": plan.get("plan_fingerprint"),
-        "settings_provenance": dict(plan.get("settings_provenance") or {}),
+        **run_metadata,
         "status": status,
         "dry_run": dry_run,
         "resume": resume,
@@ -1318,7 +1331,11 @@ def _fingerprint_payload(value: Any) -> Any:
     return value
 
 
-def _completed_resume_keys(log: Path) -> set[tuple[str, str, str]]:
+def _completed_resume_keys(
+    log: Path,
+    *,
+    plan_fingerprint: str,
+) -> set[tuple[str, str, str]]:
     keys: set[tuple[str, str, str]] = set()
     if not log.exists():
         return keys
@@ -1330,6 +1347,8 @@ def _completed_resume_keys(log: Path) -> set[tuple[str, str, str]]:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:
+                continue
+            if record.get("plan_fingerprint") != plan_fingerprint:
                 continue
             if record.get("status") != "completed":
                 continue
@@ -1386,6 +1405,7 @@ def _skipped_completed_record(
     command: dict[str, Any],
     *,
     index: int,
+    run_metadata: dict[str, Any],
 ) -> dict[str, Any]:
     argv = [str(item) for item in command.get("command") or []]
     now = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -1393,6 +1413,7 @@ def _skipped_completed_record(
         "index": index,
         "name": command.get("name"),
         "stage": command.get("stage"),
+        **run_metadata,
         "purpose": command.get("purpose"),
         "claim_boundary": command.get("claim_boundary"),
         "command": argv,
@@ -1415,6 +1436,7 @@ def _run_command_record(
     index: int,
     dry_run: bool,
     root: Path,
+    run_metadata: dict[str, Any],
 ) -> dict[str, Any]:
     argv = [str(item) for item in command.get("command") or []]
     started = dt.datetime.now(dt.timezone.utc)
@@ -1422,6 +1444,7 @@ def _run_command_record(
         "index": index,
         "name": command.get("name"),
         "stage": command.get("stage"),
+        **run_metadata,
         "purpose": command.get("purpose"),
         "claim_boundary": command.get("claim_boundary"),
         "command": argv,
