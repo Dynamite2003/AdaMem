@@ -8,6 +8,8 @@ from adamem.reporting import (
     claim_matrix_rows,
     main,
     paper_next_steps_markdown,
+    study_model_coverage_markdown,
+    study_model_coverage_rows,
     write_experiment_bundle,
     write_experiment_bundle_batch,
 )
@@ -120,6 +122,8 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["claim_matrix_json"]).exists()
     assert Path(manifest["artifacts"]["claim_matrix_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()
+    assert Path(manifest["artifacts"]["study_model_coverage_json"]).exists()
+    assert Path(manifest["artifacts"]["study_model_coverage_markdown"]).exists()
     assert len(manifest["bundles"]) == 3
     for bundle in manifest["bundles"]:
         assert "claim_evidence" in bundle
@@ -155,6 +159,7 @@ def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
     assert manifest["bundles"][0]["record_kind"] == "answer_generation"
     assert Path(manifest["artifacts"]["claim_matrix_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()
+    assert Path(manifest["artifacts"]["study_model_coverage_markdown"]).exists()
 
 
 def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
@@ -186,6 +191,7 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "experiment": "a.experiment.json",
         "run_type": "longmemeval_v2_prepared_answer_support_pilot",
         "dataset": "dataset.jsonl",
+        "split_or_case_limit": None,
         "dataset_scope": "unknown",
         "dataset_claim_limited": False,
         "dataset_scope_reasons": [],
@@ -228,6 +234,40 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "3/4" in markdown
     assert "75.00%" in markdown
     assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | model gaps | repro gaps | no-reg pairs | top attribution |" in markdown
+
+
+def test_study_model_coverage_merges_comparable_experiments() -> None:
+    manifests = [
+        _model_manifest(
+            "stale_gpt.experiment.json",
+            answer_models=["openai:gpt-4o-mini"],
+            judge_models=["gemini:gemini-2.5-pro"],
+        ),
+        _model_manifest(
+            "stale_gpt5.experiment.json",
+            answer_models=["openai:gpt-5-mini"],
+            judge_models=["openai:gpt-5"],
+        ),
+        _model_manifest(
+            "other_split.experiment.json",
+            split_or_case_limit="max_cases=10",
+            answer_models=["openai:gpt-5-mini"],
+            judge_models=["openai:gpt-5"],
+        ),
+    ]
+
+    rows = study_model_coverage_rows(manifests)
+    markdown = study_model_coverage_markdown(rows)
+
+    assert rows[0]["complete"] is True
+    assert rows[0]["experiment_count"] == 2
+    assert rows[0]["answer_models"] == ["openai:gpt-4o-mini", "openai:gpt-5-mini"]
+    assert rows[0]["judge_models"] == ["gemini:gemini-2.5-pro", "openai:gpt-5"]
+    assert rows[0]["missing_requirements"] == []
+    assert rows[1]["complete"] is False
+    assert rows[1]["missing_requirements"] == ["multiple_answer_models", "multiple_judge_models"]
+    assert "stale_llm_judge" in markdown
+    assert "| stale_llm_judge | benchmarks/stale.adamem.jsonl | - | 2 | 2 | 2 | - |" in markdown
 
 
 def test_paper_next_steps_markdown_groups_actions() -> None:
@@ -594,3 +634,25 @@ def _write_lme_v2_prepared_experiment(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return experiment
+
+
+def _model_manifest(
+    experiment: str,
+    *,
+    answer_models: list[str],
+    judge_models: list[str],
+    split_or_case_limit: str | None = None,
+) -> dict:
+    return {
+        "experiment": experiment,
+        "run_type": "stale_llm_judge",
+        "dataset": "benchmarks/stale.adamem.jsonl",
+        "split_or_case_limit": split_or_case_limit,
+        "baselines": ["semantic_only", "a_mem_evolution", "state_readout"],
+        "claim_evidence": {
+            "model_coverage": {
+                "answer_models": answer_models,
+                "judge_models": judge_models,
+            }
+        },
+    }

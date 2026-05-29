@@ -678,7 +678,10 @@ Completed API-free foundations:
   dataset, baseline configs, case-level records, provider/model settings,
   prompt templates, and retrieval context settings where applicable. Missing
   packet fields appear as reproducibility gaps and trigger
-  `complete_reproducibility_packet`.
+  `complete_reproducibility_packet`. Batch report bundles also write
+  `study_model_coverage.json` and `study_model_coverage.md`, which merge
+  comparable answer/judge experiments by run type, dataset, split, and baseline
+  set so one-model-per-run API sweeps can still be audited as one study.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records

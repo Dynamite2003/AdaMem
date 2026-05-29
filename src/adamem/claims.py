@@ -154,6 +154,7 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         "run_name": experiment.get("run_name"),
         "run_type": run_type,
         "dataset": experiment.get("dataset"),
+        "split_or_case_limit": experiment.get("split_or_case_limit"),
         "dataset_scope": dataset_scope,
         "baselines": baselines,
         "providers": providers,

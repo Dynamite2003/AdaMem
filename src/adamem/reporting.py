@@ -6,7 +6,13 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
-from adamem.claims import audit_experiment, claim_audit_markdown
+from adamem.claims import (
+    ANSWER_RUN_TYPES,
+    MIN_ANSWER_MODELS_FOR_ROBUSTNESS,
+    MIN_JUDGE_MODELS_FOR_ROBUSTNESS,
+    audit_experiment,
+    claim_audit_markdown,
+)
 from adamem.compare import paired_comparison_markdown, paired_comparison_summary
 from adamem.error_taxonomy import attribution_counts, attribution_counts_by_baseline
 from adamem.tables import load_benchmark_records, paper_table_markdown, paper_table_summary
@@ -35,6 +41,7 @@ def write_experiment_bundle(
         "experiment": str(experiment),
         "run_type": audit["run_type"],
         "dataset": audit["dataset"],
+        "split_or_case_limit": audit.get("split_or_case_limit"),
         "dataset_scope": audit["dataset_scope"],
         "baselines": audit["baselines"],
         "raw_output_count": audit["raw_output_count"],
@@ -132,16 +139,23 @@ def write_experiment_bundle_batch(
         "bundles": manifests,
     }
     claim_matrix = claim_matrix_rows(manifests)
+    study_model_coverage = study_model_coverage_rows(manifests)
     claim_matrix_json = output / "claim_matrix.json"
     claim_matrix_md = output / "claim_matrix.md"
     next_steps_md = output / "paper_next_steps.md"
+    study_model_json = output / "study_model_coverage.json"
+    study_model_md = output / "study_model_coverage.md"
     claim_matrix_json.write_text(json.dumps(claim_matrix, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     claim_matrix_md.write_text(claim_matrix_markdown(claim_matrix), encoding="utf-8")
     next_steps_md.write_text(paper_next_steps_markdown(claim_matrix), encoding="utf-8")
+    study_model_json.write_text(json.dumps(study_model_coverage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    study_model_md.write_text(study_model_coverage_markdown(study_model_coverage), encoding="utf-8")
     batch_manifest["artifacts"] = {
         "claim_matrix_json": str(claim_matrix_json),
         "claim_matrix_markdown": str(claim_matrix_md),
         "paper_next_steps_markdown": str(next_steps_md),
+        "study_model_coverage_json": str(study_model_json),
+        "study_model_coverage_markdown": str(study_model_md),
     }
     manifest_path = output / "batch_manifest.json"
     batch_manifest["manifest"] = str(manifest_path)
@@ -165,6 +179,7 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "experiment": manifest.get("experiment"),
             "run_type": manifest.get("run_type"),
             "dataset": manifest.get("dataset"),
+            "split_or_case_limit": manifest.get("split_or_case_limit"),
             "dataset_scope": dataset_scope.get("scope") or "unknown",
             "dataset_claim_limited": bool(dataset_scope.get("claim_limited")),
             "dataset_scope_reasons": list(dataset_scope.get("reasons") or []),
@@ -200,6 +215,84 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         row["next_action"] = row["next_actions"][0]
         rows.append(row)
     return rows
+
+
+def study_model_coverage_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str, str, tuple[str, ...]], dict[str, Any]] = {}
+    for manifest in manifests:
+        evidence = manifest.get("claim_evidence") or {}
+        coverage = evidence.get("model_coverage") or {}
+        if not coverage:
+            continue
+        key = _study_model_key(manifest)
+        group = groups.setdefault(
+            key,
+            {
+                "run_type": key[0],
+                "dataset": key[1],
+                "split_or_case_limit": key[2],
+                "baselines": list(key[3]),
+                "experiments": [],
+                "answer_models": set(),
+                "judge_models": set(),
+            },
+        )
+        group["experiments"].append(manifest.get("experiment"))
+        group["answer_models"].update(str(item) for item in coverage.get("answer_models") or [])
+        group["judge_models"].update(str(item) for item in coverage.get("judge_models") or [])
+
+    rows: list[dict[str, Any]] = []
+    for group in groups.values():
+        answer_models = sorted(group["answer_models"])
+        judge_models = sorted(group["judge_models"])
+        missing = _study_model_missing_requirements(str(group["run_type"]), answer_models, judge_models)
+        rows.append({
+            "run_type": group["run_type"],
+            "dataset": group["dataset"],
+            "split_or_case_limit": group["split_or_case_limit"],
+            "baselines": group["baselines"],
+            "experiment_count": len(group["experiments"]),
+            "experiments": sorted(str(item) for item in group["experiments"] if item is not None),
+            "answer_models": answer_models,
+            "answer_model_count": len(answer_models),
+            "judge_models": judge_models,
+            "judge_model_count": len(judge_models),
+            "missing_requirements": missing,
+            "complete": not missing,
+        })
+    return sorted(
+        rows,
+        key=lambda row: (
+            str(row.get("run_type") or ""),
+            str(row.get("dataset") or ""),
+            str(row.get("split_or_case_limit") or ""),
+            ",".join(row.get("baselines") or []),
+        ),
+    )
+
+
+def study_model_coverage_markdown(rows: list[dict[str, Any]]) -> str:
+    lines = [
+        "# AdaMem Study Model Coverage",
+        "",
+        "| run type | dataset | split | experiments | answer models | judge models | missing |",
+        "| --- | --- | --- | ---: | ---: | ---: | --- |",
+    ]
+    if not rows:
+        lines.append("| <none> | <none> | - | 0 | 0 | 0 | no_model_coverage_records |")
+        return "\n".join(lines) + "\n"
+    for row in rows:
+        missing = row.get("missing_requirements") or []
+        lines.append(
+            f"| {row.get('run_type') or '<missing>'} | "
+            f"{row.get('dataset') or '<missing>'} | "
+            f"{row.get('split_or_case_limit') or '-'} | "
+            f"{int(row.get('experiment_count') or 0)} | "
+            f"{int(row.get('answer_model_count') or 0)} | "
+            f"{int(row.get('judge_model_count') or 0)} | "
+            f"{', '.join(str(item) for item in missing) if missing else '-'} |"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
@@ -308,6 +401,33 @@ def _has_diagnostic_claim(supported: set[str]) -> bool:
         or claim.endswith("_transfer")
         for claim in supported
     )
+
+
+def _study_model_key(manifest: dict[str, Any]) -> tuple[str, str, str, tuple[str, ...]]:
+    return (
+        str(manifest.get("run_type") or ""),
+        str(manifest.get("dataset") or ""),
+        str(manifest.get("split_or_case_limit") or ""),
+        tuple(str(item) for item in manifest.get("baselines") or []),
+    )
+
+
+def _study_model_missing_requirements(
+    run_type: str,
+    answer_models: list[str],
+    judge_models: list[str],
+) -> list[str]:
+    missing: list[str] = []
+    if len(answer_models) < MIN_ANSWER_MODELS_FOR_ROBUSTNESS:
+        missing.append("multiple_answer_models")
+    if run_type == "stale_llm_judge" and len(judge_models) < MIN_JUDGE_MODELS_FOR_ROBUSTNESS:
+        missing.append("multiple_judge_models")
+    if run_type in ANSWER_RUN_TYPES:
+        if len(judge_models) == 0:
+            missing.append("semantic_llm_judge")
+        elif len(judge_models) < MIN_JUDGE_MODELS_FOR_ROBUSTNESS:
+            missing.append("multiple_judge_models")
+    return missing
 
 
 def _paper_next_actions(row: dict[str, Any]) -> list[str]:

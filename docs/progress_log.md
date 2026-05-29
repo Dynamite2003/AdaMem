@@ -2564,3 +2564,33 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `156 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 study-level model coverage aggregation
+
+- Extended batch `adamem.reporting` outputs with:
+  - `study_model_coverage.json`
+  - `study_model_coverage.md`
+- Study-level model coverage groups experiments by:
+  - `run_type`
+  - `dataset`
+  - `split_or_case_limit`
+  - baseline set
+- Each grouped row aggregates:
+  - experiment count
+  - answer model ids/count
+  - judge model ids/count
+  - missing robustness requirements
+  - completeness flag
+- `write_experiment_bundle` and claim audits now carry
+  `split_or_case_limit`, so batch grouping can distinguish different subsets.
+- Purpose:
+  - Let one-model-per-run API sweeps be audited as one comparable study rather
+    than forcing every single experiment JSON to contain multiple models.
+  - Make it clear whether a directory of STALE answer/judge runs has enough
+    study-level robustness to support paper claims.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `12 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py tests/test_claims.py -q` -> `25 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `157 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

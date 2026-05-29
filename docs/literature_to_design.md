@@ -78,14 +78,19 @@ Current implementation:
   judge-provider/model ids for answer-generation and STALE judge runs.
 - `model_robustness_audit` is supported only when the run has at least two
   answer models and two judge models where a semantic judge is required.
-- Batch claim matrices expose missing model requirements, and
-  `paper_next_steps.md` adds `add_model_or_judge_robustness_runs` when coverage
-  is incomplete.
+- Batch claim matrices expose missing model requirements, and batch report
+  bundles also write `study_model_coverage.json/md`, which merges comparable
+  experiments by run type, dataset, split, and baseline set. This lets a
+  directory of one-model-per-run experiments show whether the study as a whole
+  has enough answer/judge coverage.
+- `paper_next_steps.md` adds `add_model_or_judge_robustness_runs` when
+  per-experiment coverage is incomplete.
 
 Required next evidence:
 
 - Run the same STALE split with at least two answer models and two judge models
-  once API keys are available.
+  once API keys are available, then confirm `study_model_coverage.md` merges
+  the split into a complete study-level robustness row.
 - Check whether gains hold under judge-model swaps before using answer
   accuracy as a core paper claim.
 
