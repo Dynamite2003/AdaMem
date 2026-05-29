@@ -237,6 +237,11 @@ Required next evidence:
   and `20/60` matched queries on the first five public AMA samples. This
   supports the direction but still needs larger public runs and LLM judge
   validation.
+- A 20-episode public AMA light pilot strengthens the retrieval-generalization
+  evidence: `trajectory_step_readout` reaches `239/239` evidence support versus
+  `34/239` for `semantic_only`, with basis keyword recall `24.34%` versus
+  `15.68%`. The exact-answer string metric remains `0/240`, so this is still a
+  retrieval/answerability claim, not an answer-accuracy claim.
 
 ## Baseline Requirements
 

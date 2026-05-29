@@ -1306,3 +1306,53 @@ to a paper-facing claim and evaluation gate.
   - Result: `72 passed`.
   - `git diff --check`
   - Result: clean.
+
+## 2026-05-30 public AMA pilot workflow
+
+- Added `src/adamem/pilot.py` and the `adamem-pilot` console entry:
+  - `ama-public` downloads or copies a bounded AMA-style JSONL prefix.
+  - It writes raw JSONL, converted answer/evidence AdaMem JSONL, Markdown
+    reports, per-query records JSONL, and compact experiment JSON.
+  - `--answer-only` skips the separate evidence-mode conversion/eval for larger
+    smoke runs, because answer-mode reports already include evidence support
+    and answerability diagnostics.
+  - Experiment JSON now stores compact aggregate results and points to records
+    JSONL instead of embedding all per-query records.
+- Added `tests/test_pilot.py`:
+  - JSONL prefix copying validates objects and obeys limits.
+  - Local AMA pilot runs without network and writes reports/experiments.
+  - `--answer-only` omits evidence-mode outputs and keeps experiment
+    `raw_outputs` empty.
+- Attempted larger public AMA pilots with `full` included:
+  - `limit=20` full answer+evidence and `limit=20` answer-only exceeded the
+    useful smoke-test runtime and were stopped.
+  - `limit=10` answer-only with `full` was also too slow for an interactive
+    smoke run.
+  - Interpretation: graph-heavy `full` needs separate performance work or a
+    smaller reported sample; it should not be part of the default large public
+    AMA smoke command yet.
+- Ran a reproducible public AMA 20-episode light pilot:
+  - Command:
+    `PYTHONPATH=src python -m adamem.pilot ama-public --limit 20 --output-dir results/ama_public_20_light --baselines semantic_only trajectory_step_readout --top-k 8 --answer-only --json`
+  - Dataset: first 20 public AMA-Bench test episodes from Hugging Face,
+    producing 240 QA records.
+  - Exact answer-string support remains `0/240` for both baselines.
+  - Evidence support:
+    - `semantic_only`: `34/239`.
+    - `trajectory_step_readout`: `239/239`.
+  - Answerability diagnostics:
+    - `semantic_only`: keyword matched `12/240`, average recall `15.36%`,
+      basis matched `14/240`, basis average recall `15.68%`.
+    - `trajectory_step_readout`: keyword matched `20/240`, average recall
+      `20.54%`, basis matched `32/240`, basis average recall `24.34%`.
+  - Interpretation: step-authorized retrieval and structured trajectory basis
+    continue to beat semantic retrieval at 20 public episodes, but the result
+    remains a retrieval/answerability claim. Final paper evidence still needs
+    larger runs, answer synthesis, and LLM-judge scoring.
+- Re-ran deterministic validation:
+  - `python -m pytest`
+  - Result: `75 passed`.
+  - `git diff --check`
+  - Result: clean.
+  - `PYTHONPATH=src python -m adamem.pilot ama-public --help`
+  - Result: CLI help renders successfully.

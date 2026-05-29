@@ -44,6 +44,7 @@ PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.j
 PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_full_audit_probe.adamem.jsonl --expected evidence --top-k 8 --state-audit-output results/longmemeval_s_full_state_audit_candidates.jsonl --state-audit-summary-output results/longmemeval_s_full_state_audit_summary.json
 PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_manual_audit.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --state-audit-input results/longmemeval_s_balanced_60_state_audit_reviewed.jsonl
 PYTHONPATH=src python -m adamem.convert ama data/ama_bench.jsonl benchmarks/ama_bench.adamem.jsonl --expected answer --top-k 8
+PYTHONPATH=src python -m adamem.pilot ama-public --limit 20 --output-dir results/ama_public_20_light --baselines semantic_only trajectory_step_readout --top-k 8 --answer-only
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 2 --experiment-output results/stale_mini_state_adjudication_diagnostics.json --diagnostic-cases-output results/stale_mini_state_adjudication_cases.jsonl --diagnostic-report-output results/stale_mini_state_adjudication_report.md
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale.adamem.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication state_readout --stale-types T1 T2 --limit-per-stale-type 10 --experiment-output results/stale_balanced20_state_adjudication_diagnostics.json --diagnostic-cases-output results/stale_balanced20_state_adjudication_cases.jsonl --diagnostic-report-output results/stale_balanced20_state_adjudication_report.md
@@ -496,6 +497,11 @@ Completed API-free foundations:
   no-progress repetitions, inverse action pairs, and repeated observations
   without reading gold answers; answer labels are used only to compute
   keyword-recall diagnostics.
+- `adamem.pilot ama-public`, a reproducible API-free public AMA pilot command
+  that downloads or copies a bounded JSONL prefix, converts it, runs selected
+  baselines, writes Markdown reports, records JSONL, and compact experiment
+  JSON. Use `--answer-only` for larger smoke runs because answer-mode reports
+  already include evidence support and answerability diagnostics.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so
@@ -540,7 +546,7 @@ Next API-free work:
    settings.
 2. Run retrieval-only diagnostics on larger converted STALE data when available
    and extend the failure taxonomy with representative cases.
-3. Scale the public AMA-Bench trajectory pilot beyond the first five samples
+3. Scale the public AMA-Bench trajectory pilot beyond the first 20 episodes
    and add step-level answer synthesis or LLM judge evaluation. The first five
    public samples converted successfully, but `semantic_only` and `full`
    scored `0/60` answer support and `0/60` evidence support.
@@ -549,7 +555,11 @@ Next API-free work:
    trajectory basis improved answer-keyword recall only from `22.73%` to
    `24.81%`, but the structured rule/blocking/no-progress basis reaches
    `32.25%` and matched queries improve from `8/60` to `20/60`. The next
-   method work should test whether this scales beyond five samples and then add
+   API-free 20-episode light pilot confirms evidence support scales:
+   `trajectory_step_readout` reaches `239/239` evidence support versus
+   `34/239` for `semantic_only`, and basis keyword recall `24.34%` versus
+   `15.68%`. The next method work should scale this beyond 20 episodes, handle
+   the graph-heavy `full` baseline performance cost separately, and add
    API-backed judge robustness over correctly recalled trajectory steps.
 4. Build a reliable public state-sensitive transfer subset. The first
    LongMemEval-S inferred-state pilot exposed query-router false positives;

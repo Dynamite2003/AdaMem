@@ -281,6 +281,17 @@ AMA-Bench schema, the converter preserves `turn_idx`, `question_uuid`, and
 `type`, and derives diagnostic evidence labels from `Step N` references in the
 question text when explicit evidence fields are absent.
 
+For reproducible public AMA API-free pilots, use:
+
+```bash
+PYTHONPATH=src python -m adamem.pilot ama-public --limit 20 --output-dir results/ama_public_20_light --baselines semantic_only trajectory_step_readout --top-k 8 --answer-only
+```
+
+The pilot writes a raw JSONL subset, converted AdaMem JSONL, Markdown report,
+case records, and a compact experiment JSON. Use `--answer-only` for larger
+API-free smoke runs because answer-mode reports already include evidence
+support and answerability diagnostics.
+
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes
 retrieval of the matching trajectory steps by metadata instead of relying only
@@ -294,3 +305,6 @@ simple trajectory basis (`22.73%` to `24.81%`, matched queries `8/60` to
 structured basis reaches `32.25%` average keyword recall and `20/60` matched
 queries. This is a useful API-free signal, but stronger summarization and
 API-backed answer/judge scoring are still required.
+On the first 20 public AMA-Bench episodes, the light pilot gives
+`trajectory_step_readout` `239/239` evidence support versus `34/239` for
+`semantic_only`, and basis keyword recall `24.34%` versus `15.68%`.

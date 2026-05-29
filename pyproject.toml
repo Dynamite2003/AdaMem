@@ -19,6 +19,7 @@ dev = ["pytest>=8"]
 adamem = "adamem.cli:main"
 adamem-eval = "adamem.eval:main"
 adamem-convert = "adamem.convert:main"
+adamem-pilot = "adamem.pilot:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
