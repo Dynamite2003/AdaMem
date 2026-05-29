@@ -185,6 +185,26 @@ extraction on those true state cases.
   - Interpretation: mock providers validate the STALE table workflow only;
     real method claims still require real answer/judge models and robustness
     checks.
+- Added `src/adamem/claims.py` and the `adamem-claims` console script:
+  - Reads experiment JSON and reports supported claims, blocked claims,
+    warnings, provider settings, ground-truth runtime-use notes, and evidence
+    record counts.
+  - Follows compact experiment `notes.records_path` sidecars when raw outputs
+    are not embedded.
+  - Blocks answer-accuracy claims for retrieval/answerability runs.
+  - Blocks answer-accuracy claims for mock answer/judge providers and
+    substring-only scoring.
+  - Blocks SOTA claims unless stronger evidence is added later; current audit
+    requires more than a single smoke run and flags missing strong-baseline /
+    robustness evidence.
+- Ran claim-audit smoke commands:
+  - `PYTHONPATH=src python -m adamem.claims results/ama_public_20_full/ama_public_20.experiment.json`
+    reported `retrieval_diagnostics` and `answerability_diagnostics` as
+    supported, blocked `answer_accuracy` and `sota`, and counted `720`
+    sidecar records.
+  - `PYTHONPATH=src python -m adamem.claims /tmp/adamem_stale_mock_judge_experiment.json`
+    reported `stale_judge_plumbing`, blocked `stale_answer_accuracy` because
+    providers were mock, and blocked `sota`.
 
 ## Completed Work
 

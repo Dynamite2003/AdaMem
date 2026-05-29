@@ -22,6 +22,7 @@ adamem-convert = "adamem.convert:main"
 adamem-pilot = "adamem.pilot:main"
 adamem-tables = "adamem.tables:main"
 adamem-answer-eval = "adamem.answer_eval:main"
+adamem-claims = "adamem.claims:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

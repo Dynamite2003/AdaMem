@@ -353,6 +353,16 @@ For STALE judge records, tables report overall accuracy plus `By dim` and
 `By stale_type` breakdowns, with stale-leak rates. Mock providers validate the
 workflow only; real claims require real answer and judge models.
 
+Before turning any experiment into a paper claim, audit the experiment record:
+
+```bash
+PYTHONPATH=src python -m adamem.claims results/ama_public_20_full/ama_public_20.experiment.json
+PYTHONPATH=src python -m adamem.claims /tmp/adamem_stale_mock_judge_experiment.json
+```
+
+The audit reports supported claims, blocked claims, warnings, provider settings,
+ground-truth runtime-use notes, and the number of embedded or sidecar records.
+
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes
 retrieval of the matching trajectory steps by metadata instead of relying only

@@ -524,6 +524,10 @@ Completed API-free foundations:
   scoring, supports deterministic substring smoke tests and LLM-judge scoring,
   records prompts/raw outputs in experiment JSON, and reports grouped answer
   accuracy by metadata fields such as AMA `question_type`.
+- `adamem.claims`, a claim/evidence audit command for experiment JSON files.
+  It reports which paper claims an artifact can support, which claims are
+  blocked, ground-truth runtime-use notes, provider settings, and embedded or
+  sidecar record counts.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so
