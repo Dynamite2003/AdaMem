@@ -709,12 +709,18 @@ Completed API-free foundations:
   evidence, not as answer-accuracy or SOTA evidence.
 - `adamem.reporting`, a report-bundle command that combines `adamem.tables`
   and `adamem.claims` for one experiment JSON and writes paper tables, claim
-  audit files, and a manifest. If the input is a directory, it batches every
+  audit files, method coverage, paper-readiness artifacts, next-step
+  checklists, and a manifest. For a single experiment, the bundle writes
+  `<run>.method_coverage.json/md`, `<run>.paper_readiness.json/md`, and
+  `<run>.paper_next_steps.md`, and embeds the same summaries in the manifest.
+  This makes one expensive STALE/API pilot self-auditing before it is merged
+  into a larger result directory. If the input is a directory, it batches every
   `*experiment.json` file into per-experiment sub-bundles and a top-level
   batch manifest. Bundle manifests include supported claims, blocked claims,
-  claim evidence, diagnostic evidence, and warnings so large experiment
-  directories can be triaged without opening every audit JSON. Batch mode also
-  writes `claim_matrix.json` and `claim_matrix.md`, which flatten
+  claim evidence, diagnostic evidence, method coverage, paper readiness, and
+  warnings so large experiment directories can be triaged without opening
+  every audit JSON. Batch mode also writes `claim_matrix.json` and
+  `claim_matrix.md`, which flatten
   per-experiment claim evidence such as state-evidence coverage, paired
   no-regression counts, and top failure-attribution counts for paper-track
   screening. Each row includes a `readiness_gate` such as `diagnostic_ready`,
@@ -760,7 +766,7 @@ Completed API-free foundations:
   reproduced. Report bundles prefer artifact-level `baseline_provenance` over
   the current registry when computing method coverage, which keeps old runs
   and future official baseline reproductions auditable after code changes.
-  `paper_readiness.json` and `paper_readiness.md` summarize
+  Top-level `paper_readiness.json` and `paper_readiness.md` summarize
   directory-level gate counts, top next actions, complete vs incomplete
   study-level model coverage, benchmark coverage gaps, method coverage gaps,
   and baseline-reproduction gaps.
@@ -779,9 +785,13 @@ Completed API-free foundations:
   prepared by included conversion commands, placeholder models, model
   robustness counts, method coverage, and reporting command presence. Its
   default artifact policy keeps generated full benchmark datasets under
-  `OUTPUT_DIR/data/` rather than tracked fixtures. Its method-coverage preview
-  is a planning check only; final claims must use the generated experiment
-  records and report bundle audits.
+  `OUTPUT_DIR/data/` rather than tracked fixtures. The reporting command
+  declares the key batch outputs it must produce, including `batch_manifest`,
+  `claim_matrix`, `method_coverage`, `benchmark_coverage`, and
+  `paper_readiness` artifacts, so dry runs and resume checks can detect an
+  incomplete reporting stage. Its method-coverage preview is a planning check
+  only; final claims must use the generated experiment records and report
+  bundle audits.
 - `adamem.study_plan --profile smoke`, an API-free local rehearsal profile
   over `benchmarks/stale_mini.jsonl` and
   `benchmarks/dynamic_state_transfer.jsonl` with mock LLM providers. Use it to

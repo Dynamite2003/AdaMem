@@ -91,6 +91,27 @@ extraction on those true state cases.
   - Reduce dependence on batch-only summaries when iterating on one expensive
     run at a time.
 
+### 2026-05-30 reporting output contract hardening
+
+- Strengthened the `adamem.study_plan` reporting command output contract.
+  It now declares key report bundle artifacts instead of only checking that
+  the report output directory exists:
+  - `batch_manifest.json`
+  - `claim_matrix.json/md`
+  - `paper_next_steps.md`
+  - `study_model_coverage.json`
+  - `benchmark_coverage.json`
+  - `method_coverage.json`
+  - `paper_readiness.json/md`
+- Added a reporting-command note that per-experiment sub-bundles must include
+  method coverage and paper-readiness artifacts.
+- Updated `docs/research_workflow.md` to describe single-run method coverage,
+  single-run paper readiness, and the stronger reporting command contract.
+- Purpose:
+  - Make plan resume/dry-run checks catch incomplete reporting stages.
+  - Ensure later API-backed STALE pilots remain self-auditing at both the
+    single-run and batch levels.
+
 ### 2026-05-30 day-end handoff
 
 - Current committed implementation is at the paper-workflow stage for

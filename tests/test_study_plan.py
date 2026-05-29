@@ -73,6 +73,23 @@ def test_build_paper_study_plan_covers_method_and_model_matrix(tmp_path: Path) -
     assert "longmemeval_transfer_retrieval" in command_names
     assert "ama_public_retrieval" in command_names
     assert "paper_report_bundle" in command_names
+    reporting_command = next(
+        command for command in plan["commands"]
+        if command["name"] == "paper_report_bundle"
+    )
+    assert sorted(reporting_command["outputs"]) == [
+        "batch_manifest",
+        "benchmark_coverage_json",
+        "claim_matrix_json",
+        "claim_matrix_markdown",
+        "method_coverage_json",
+        "output_dir",
+        "paper_next_steps_markdown",
+        "paper_readiness_json",
+        "paper_readiness_markdown",
+        "study_model_coverage_json",
+    ]
+    assert any("Per-experiment sub-bundles" in note for note in reporting_command["notes"])
     assert coverage["complete"] is True
     assert coverage["missing_requirements"] == []
     assert coverage["mechanism_flags"]["premise_correction"] is True

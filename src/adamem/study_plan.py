@@ -1384,6 +1384,18 @@ def _ama_retrieval_command(
 
 def _reporting_command(output: Path) -> PlannedCommand:
     report_dir = output / "report_bundle"
+    outputs = {
+        "output_dir": str(report_dir),
+        "batch_manifest": str(report_dir / "batch_manifest.json"),
+        "claim_matrix_json": str(report_dir / "claim_matrix.json"),
+        "claim_matrix_markdown": str(report_dir / "claim_matrix.md"),
+        "paper_next_steps_markdown": str(report_dir / "paper_next_steps.md"),
+        "study_model_coverage_json": str(report_dir / "study_model_coverage.json"),
+        "benchmark_coverage_json": str(report_dir / "benchmark_coverage.json"),
+        "method_coverage_json": str(report_dir / "method_coverage.json"),
+        "paper_readiness_json": str(report_dir / "paper_readiness.json"),
+        "paper_readiness_markdown": str(report_dir / "paper_readiness.md"),
+    }
     command = [
         "python",
         "-m",
@@ -1404,8 +1416,11 @@ def _reporting_command(output: Path) -> PlannedCommand:
         purpose="Generate claim, method, benchmark, model, reproducibility, and readiness audits.",
         claim_boundary="post-run audit only",
         command=command,
-        outputs={"output_dir": str(report_dir)},
-        notes=["Run after experiment commands have produced JSON records."],
+        outputs=outputs,
+        notes=[
+            "Run after experiment commands have produced JSON records.",
+            "Per-experiment sub-bundles must also include method_coverage and paper_readiness artifacts.",
+        ],
     )
 
 
