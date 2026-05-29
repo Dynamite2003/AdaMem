@@ -1708,3 +1708,38 @@ to a paper-facing claim and evaluation gate.
 - Added tests to lock both behaviors:
   - `test_jsonl_benchmark_treats_correction_text_as_resolved_forbidden_support`
   - `test_retrieval_diagnostics_measure_premise_correction_hits`
+
+### 2026-05-30 STALE retrieval diagnostic tables
+
+- Extended `adamem.tables` to support `stale_retrieval_diagnostics`
+  experiment JSON directly:
+  - The loader now prefers full `diagnostics` records for this run type rather
+    than failure-only `raw_outputs`.
+  - Markdown/JSON tables now include current recall, stale exposure, conflict
+    coverage, current-before-stale, premise-old mention, premise-correction
+    opportunity, premise-correction hit, and old-support adjudication.
+  - Default STALE grouping switches to `dim` and `stale_type`, so diagnostic
+    tables line up with STALE paper dimensions and conflict types.
+- Generated a local mini artifact set for the new premise-correction diagnostic
+  path:
+  - `results/stale_mini_premise_correction_diagnostics.json`
+  - `results/stale_mini_premise_correction_cases.jsonl`
+  - `results/stale_mini_premise_correction_report.md`
+  - `results/stale_mini_premise_correction_tables.md`
+  - `results/stale_mini_premise_correction_tables.json`
+- Updated report bundles for this record kind:
+  - `adamem.reporting` now writes paper tables and claim audits for
+    `stale_retrieval_diagnostics` without trying to run paired comparison on
+    aggregate diagnostic records.
+  - The manifest records `paired_comparison_skipped` and points users to
+    diagnostic tables or case-level records for paired analysis.
+- Mini result interpretation:
+  - `semantic_state_adjudication` and
+    `semantic_state_premise_correction` both reached `100%` current recall and
+    `0%` stale exposure on the one-case mini run.
+  - The correction baseline changed the key paper-facing diagnostic:
+    premise-correction hit increased from `0%` to `100%` on detected
+    opportunities.
+  - This is still mini-fixture evidence only. Full STALE data is not currently
+    present in the workspace, so this should be treated as workflow validation
+    and mechanism debugging, not as a paper result.

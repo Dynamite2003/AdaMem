@@ -234,6 +234,59 @@ def test_write_paper_table_json_supports_stale_experiment_raw_outputs(tmp_path: 
     assert payload["overall"][0]["correct"] == "1/1"
 
 
+def test_paper_table_summary_supports_stale_retrieval_diagnostics() -> None:
+    records = [
+        _stale_diagnostic_record(
+            name="semantic_state_adjudication",
+            correction_hits=[False, False],
+        ),
+        _stale_diagnostic_record(
+            name="semantic_state_premise_correction",
+            correction_hits=[True, False],
+        ),
+    ]
+
+    summary = paper_table_summary(records)
+
+    assert summary["kind"] == "stale_retrieval_diagnostics"
+    by_baseline = {row["baseline"]: row for row in summary["overall"]}
+    assert by_baseline["semantic_state_adjudication"]["queries"] == 2
+    assert by_baseline["semantic_state_adjudication"]["premise_correction_hit_rate"] == 0.0
+    assert by_baseline["semantic_state_premise_correction"]["premise_correction_hit_rate"] == 0.5
+    dim_rows = {
+        (row["value"], row["baseline"]): row
+        for row in summary["by_group"]["dim"]
+    }
+    assert dim_rows[("1", "semantic_state_premise_correction")]["premise_correction_hit_rate"] == 1.0
+
+
+def test_paper_table_markdown_supports_stale_retrieval_diagnostic_experiment(tmp_path: Path) -> None:
+    experiment_path = tmp_path / "stale_diagnostics.experiment.json"
+    experiment_path.write_text(
+        json.dumps({
+            "run_type": "stale_retrieval_diagnostics",
+            "diagnostics": [
+                _stale_diagnostic_record(
+                    name="semantic_state_premise_correction",
+                    correction_hits=[True, False],
+                ),
+            ],
+            "raw_outputs": [
+                {"baseline": "semantic_state_premise_correction", "failure_modes": []}
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    markdown = paper_table_markdown(load_benchmark_records(experiment_path), title="STALE Retrieval Tables")
+
+    assert markdown.startswith("# STALE Retrieval Tables\n")
+    assert "premise correction hit" in markdown
+    assert "| semantic_state_premise_correction | 2 | 100.00% | 0.00% |" in markdown
+    assert "## By dim" in markdown
+    assert "| 1 | semantic_state_premise_correction | 1 | 100.00% | 0.00% | 100.00% | 100.00% |" in markdown
+
+
 def _record(
     *,
     baseline: str,
@@ -328,4 +381,45 @@ def _stale_record(
         "judge_correct": correct,
         "stale_leak": stale_leak,
         "retrieved": [],
+    }
+
+
+def _stale_diagnostic_record(*, name: str, correction_hits: list[bool]) -> dict[str, object]:
+    queries = [
+        {
+            "case_id": "stale-case",
+            "query_id": f"dim{index + 1}",
+            "dim": index + 1,
+            "stale_type": "T1",
+            "query_mentions_old": True,
+            "query_mentions_new": False,
+            "current_evidence_recalled": True,
+            "stale_evidence_exposed": False,
+            "conflict_pair_covered": False,
+            "premise_correction_opportunity": True,
+            "premise_correction_hit": hit,
+            "premise_correction_best_rank": 1 if hit else None,
+            "current_before_stale": None,
+            "current_best_rank": 1,
+            "stale_best_rank": None,
+            "retrieved_count": 4,
+            "adjudicated_old_supports": 1,
+            "old_supports": 2,
+            "max_old_support_staleness": 0.0,
+            "trace": [],
+        }
+        for index, hit in enumerate(correction_hits)
+    ]
+    return {
+        "name": name,
+        "total": len(queries),
+        "current_recall_rate": 1.0,
+        "stale_exposure_rate": 0.0,
+        "conflict_pair_coverage_rate": 0.0,
+        "current_before_stale_rate": 0.0,
+        "premise_old_mention_rate": 1.0,
+        "premise_correction_opportunity_rate": 1.0,
+        "premise_correction_hit_rate": sum(correction_hits) / len(correction_hits),
+        "old_support_adjudication_rate": 0.5,
+        "queries": queries,
     }

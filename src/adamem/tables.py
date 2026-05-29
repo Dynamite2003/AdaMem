@@ -30,12 +30,14 @@ def load_benchmark_records(path: str | Path) -> list[dict[str, Any]]:
     if not isinstance(parsed, dict):
         raise ValueError(f"{source} must contain JSON records or an experiment object")
 
-    raw_outputs = parsed.get("raw_outputs")
-    if raw_outputs:
-        return [dict(record) for record in raw_outputs]
+    if parsed.get("run_type") == "stale_retrieval_diagnostics" and parsed.get("diagnostics"):
+        return [dict(record) for record in parsed["diagnostics"]]
 
     notes = parsed.get("notes") or {}
     records_path = notes.get("records_path")
+    raw_outputs = parsed.get("raw_outputs")
+    if raw_outputs:
+        return [dict(record) for record in raw_outputs]
     if not records_path:
         raise ValueError(
             f"{source} does not embed raw_outputs and notes.records_path is missing"
@@ -57,6 +59,17 @@ def paper_table_summary(
 
     group_fields = tuple(group_fields)
     kind = _record_kind(records)
+    if kind == "stale_retrieval_diagnostics":
+        fields = tuple(group_fields)
+        if fields == DEFAULT_GROUP_FIELDS:
+            fields = DEFAULT_STALE_GROUP_FIELDS
+        summary = _stale_retrieval_diagnostic_summary(records, group_fields=fields)
+        return {
+            "kind": kind,
+            "total_records": summary["total_records"],
+            "overall": _stale_retrieval_overall_rows(summary),
+            "by_group": _stale_retrieval_group_rows(summary),
+        }
     if kind == "stale_judge":
         fields = tuple(group_fields)
         if fields == DEFAULT_GROUP_FIELDS:
@@ -98,7 +111,26 @@ def paper_table_markdown(
     lines.append("")
 
     lines.append("## Overall")
-    if tables["kind"] in {"answer_generation", "stale_judge"}:
+    if tables["kind"] == "stale_retrieval_diagnostics":
+        lines.append(
+            "| baseline | queries | current recall | stale exposure | conflict coverage | "
+            "current before stale | premise old mention | premise correction opportunity | "
+            "premise correction hit | old support adjudication |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for row in tables["overall"]:
+            lines.append(
+                f"| {row['baseline']} | {row['queries']} | "
+                f"{_format_rate(row['current_recall_rate'])} | "
+                f"{_format_rate(row['stale_exposure_rate'])} | "
+                f"{_format_rate(row['conflict_pair_coverage_rate'])} | "
+                f"{_format_rate(row['current_before_stale_rate'])} | "
+                f"{_format_rate(row['premise_old_mention_rate'])} | "
+                f"{_format_rate(row['premise_correction_opportunity_rate'])} | "
+                f"{_format_rate(row['premise_correction_hit_rate'])} | "
+                f"{_format_rate(row['old_support_adjudication_rate'])} |"
+            )
+    elif tables["kind"] in {"answer_generation", "stale_judge"}:
         extra = " | stale leak |" if tables["kind"] == "stale_judge" else " |"
         lines.append(f"| baseline | correct | accuracy{extra}")
         lines.append("| --- | ---: | ---: | ---: |" if tables["kind"] == "stale_judge" else "| --- | ---: | ---: |")
@@ -128,7 +160,21 @@ def paper_table_markdown(
         if not rows:
             continue
         lines.append(f"## By {field_name}")
-        if tables["kind"] == "answer_generation":
+        if tables["kind"] == "stale_retrieval_diagnostics":
+            lines.append(
+                "| value | baseline | queries | current recall | stale exposure | "
+                "premise correction opportunity | premise correction hit |"
+            )
+            lines.append("| --- | --- | ---: | ---: | ---: | ---: | ---: |")
+            for row in rows:
+                lines.append(
+                    f"| {row['value']} | {row['baseline']} | {row['queries']} | "
+                    f"{_format_rate(row['current_recall_rate'])} | "
+                    f"{_format_rate(row['stale_exposure_rate'])} | "
+                    f"{_format_rate(row['premise_correction_opportunity_rate'])} | "
+                    f"{_format_rate(row['premise_correction_hit_rate'])} |"
+                )
+        elif tables["kind"] == "answer_generation":
             lines.append("| value | baseline | correct | accuracy |")
             lines.append("| --- | --- | ---: | ---: |")
             for row in rows:
@@ -211,6 +257,8 @@ def _resolve_records_path(experiment_path: Path, records_path: str) -> Path:
 
 
 def _record_kind(records: list[dict[str, Any]]) -> str:
+    if records and all("current_recall_rate" in record and "queries" in record for record in records):
+        return "stale_retrieval_diagnostics"
     if records and all("judge_correct" in record for record in records):
         return "stale_judge"
     if records and all("correct" in record for record in records):
@@ -279,6 +327,88 @@ def _stale_group_value(record: dict[str, Any], field_name: str) -> str:
     return str(value)
 
 
+def _stale_retrieval_diagnostic_summary(
+    records: list[dict[str, Any]],
+    *,
+    group_fields: Iterable[str],
+) -> dict[str, Any]:
+    baseline_order = list(dict.fromkeys(str(record["name"]) for record in records))
+    summary: dict[str, Any] = {
+        "total_records": sum(int(record.get("total") or len(record.get("queries") or [])) for record in records),
+        "by_baseline": {},
+        "by_metadata": {},
+    }
+    for record in records:
+        summary["by_baseline"][str(record["name"])] = _stale_retrieval_record_metrics(record)
+
+    query_rows: list[dict[str, Any]] = []
+    for record in records:
+        baseline = str(record["name"])
+        for query in record.get("queries") or []:
+            if isinstance(query, dict):
+                query_rows.append({"baseline": baseline, **query})
+
+    for field_name in group_fields:
+        values = sorted({_stale_group_value(query, field_name) for query in query_rows})
+        if values == ["<missing>"]:
+            continue
+        field_summary: dict[str, Any] = {}
+        for value in values:
+            value_subset = [
+                query for query in query_rows
+                if _stale_group_value(query, field_name) == value
+            ]
+            field_summary[value] = {
+                baseline: _aggregate_stale_retrieval_queries([
+                    query for query in value_subset if query["baseline"] == baseline
+                ])
+                for baseline in baseline_order
+                if any(query["baseline"] == baseline for query in value_subset)
+            }
+        summary["by_metadata"][field_name] = field_summary
+    return summary
+
+
+def _stale_retrieval_record_metrics(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "queries": int(record.get("total") or len(record.get("queries") or [])),
+        "current_recall_rate": float(record.get("current_recall_rate") or 0.0),
+        "stale_exposure_rate": float(record.get("stale_exposure_rate") or 0.0),
+        "conflict_pair_coverage_rate": float(record.get("conflict_pair_coverage_rate") or 0.0),
+        "current_before_stale_rate": float(record.get("current_before_stale_rate") or 0.0),
+        "premise_old_mention_rate": float(record.get("premise_old_mention_rate") or 0.0),
+        "premise_correction_opportunity_rate": float(
+            record.get("premise_correction_opportunity_rate") or 0.0
+        ),
+        "premise_correction_hit_rate": float(record.get("premise_correction_hit_rate") or 0.0),
+        "old_support_adjudication_rate": float(record.get("old_support_adjudication_rate") or 0.0),
+    }
+
+
+def _aggregate_stale_retrieval_queries(queries: list[dict[str, Any]]) -> dict[str, Any]:
+    ordered_pairs = [query for query in queries if query.get("current_before_stale") is not None]
+    opportunities = [query for query in queries if query.get("premise_correction_opportunity")]
+    old_support_total = sum(int(query.get("old_supports") or 0) for query in queries)
+    adjudicated_old = sum(int(query.get("adjudicated_old_supports") or 0) for query in queries)
+    return {
+        "queries": len(queries),
+        "current_recall_rate": _bool_rate(query.get("current_evidence_recalled") for query in queries),
+        "stale_exposure_rate": _bool_rate(query.get("stale_evidence_exposed") for query in queries),
+        "conflict_pair_coverage_rate": _bool_rate(query.get("conflict_pair_covered") for query in queries),
+        "current_before_stale_rate": _bool_rate(query.get("current_before_stale") for query in ordered_pairs),
+        "premise_old_mention_rate": _bool_rate(query.get("query_mentions_old") for query in queries),
+        "premise_correction_opportunity_rate": _bool_rate(
+            query.get("premise_correction_opportunity") for query in queries
+        ),
+        "premise_correction_hit_rate": _bool_rate(
+            query.get("premise_correction_hit") for query in opportunities
+        ),
+        "old_support_adjudication_rate": (
+            adjudicated_old / old_support_total if old_support_total else 0.0
+        ),
+    }
+
+
 def _overall_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for baseline, support in summary["by_baseline"].items():
@@ -334,6 +464,13 @@ def _stale_overall_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
             "stale_leak": _fraction(aggregate["stale_leaks"], aggregate["total"]),
             "stale_leak_rate": aggregate["stale_leak_rate"],
         })
+    return rows
+
+
+def _stale_retrieval_overall_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for baseline, aggregate in summary["by_baseline"].items():
+        rows.append({"baseline": baseline, **aggregate})
     return rows
 
 
@@ -400,6 +537,17 @@ def _stale_group_rows(summary: dict[str, Any]) -> dict[str, list[dict[str, Any]]
     return grouped
 
 
+def _stale_retrieval_group_rows(summary: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for field_name, by_value in summary["by_metadata"].items():
+        rows: list[dict[str, Any]] = []
+        for value, by_baseline in by_value.items():
+            for baseline, aggregate in by_baseline.items():
+                rows.append({"value": value, "baseline": baseline, **aggregate})
+        grouped[field_name] = rows
+    return grouped
+
+
 def _answer_group_rows(summary: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for field_name, by_value in summary["by_metadata"].items():
@@ -426,6 +574,13 @@ def _ratio(numerator: int, denominator: int) -> float | None:
     if denominator == 0:
         return None
     return numerator / denominator
+
+
+def _bool_rate(values: Iterable[Any]) -> float:
+    items = [bool(value) for value in values]
+    if not items:
+        return 0.0
+    return sum(1 for value in items if value) / len(items)
 
 
 def _format_rate(value: float | None) -> str:

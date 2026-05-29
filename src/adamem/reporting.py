@@ -61,25 +61,32 @@ def write_experiment_bundle(
         table_json = output / f"{stem}.paper_tables.json"
         table_md.write_text(table_text, encoding="utf-8")
         table_json.write_text(json.dumps(table_summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        manifest["record_kind"] = table_summary.get("kind")
+        record_kind = str(table_summary.get("kind") or "")
+        manifest["record_kind"] = record_kind
         manifest["artifacts"]["paper_tables_markdown"] = str(table_md)
         manifest["artifacts"]["paper_tables_json"] = str(table_json)
-        comparison_summary = paired_comparison_summary(
-            records,
-            group_fields=table_group_fields,
-        )
-        comparison_md = output / f"{stem}.paired_comparison.md"
-        comparison_json = output / f"{stem}.paired_comparison.json"
-        comparison_md.write_text(
-            paired_comparison_markdown(
-                comparison_summary,
-                title=f"{stem} Paired Comparison",
-            ),
-            encoding="utf-8",
-        )
-        comparison_json.write_text(json.dumps(comparison_summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        manifest["artifacts"]["paired_comparison_markdown"] = str(comparison_md)
-        manifest["artifacts"]["paired_comparison_json"] = str(comparison_json)
+        if record_kind == "stale_retrieval_diagnostics":
+            manifest["paired_comparison_skipped"] = (
+                "stale_retrieval_diagnostics records are aggregate diagnostics; "
+                "use diagnostic tables or case-level records for paired analysis"
+            )
+        else:
+            comparison_summary = paired_comparison_summary(
+                records,
+                group_fields=table_group_fields,
+            )
+            comparison_md = output / f"{stem}.paired_comparison.md"
+            comparison_json = output / f"{stem}.paired_comparison.json"
+            comparison_md.write_text(
+                paired_comparison_markdown(
+                    comparison_summary,
+                    title=f"{stem} Paired Comparison",
+                ),
+                encoding="utf-8",
+            )
+            comparison_json.write_text(json.dumps(comparison_summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            manifest["artifacts"]["paired_comparison_markdown"] = str(comparison_md)
+            manifest["artifacts"]["paired_comparison_json"] = str(comparison_json)
     except Exception as exc:  # pragma: no cover - exercised by CLI workflows.
         manifest["table_error"] = f"{type(exc).__name__}: {exc}"
 
