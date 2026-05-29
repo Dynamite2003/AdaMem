@@ -33,18 +33,14 @@ Claim boundary:
 Useful commands:
 
 ```bash
-PYTHONPATH=src python -m adamem.eval \
-  --stale-diagnostics benchmarks/stale_mini.jsonl \
+PYTHONPATH=src python -m adamem.stale_pipeline \
+  benchmarks/stale_mini.jsonl \
+  --input-format adamem-jsonl \
+  --output-dir /tmp/adamem_stale_pipeline_smoke \
+  --run-name stale_mini_pipeline \
   --baselines semantic_state_adjudication semantic_state_premise_correction \
   --max-cases 1 \
-  --experiment-output results/stale_mini_premise_correction_diagnostics.json \
-  --diagnostic-cases-output results/stale_mini_premise_correction_cases.jsonl \
-  --diagnostic-report-output results/stale_mini_premise_correction_report.md
-
-PYTHONPATH=src python -m adamem.tables \
-  results/stale_mini_premise_correction_diagnostics.json \
-  --title "STALE Mini Premise Correction Tables" \
-  --output results/stale_mini_premise_correction_tables.md
+  --json
 ```
 
 ## LongMemEval-S
@@ -118,6 +114,8 @@ Claim boundary:
 
 - Acquire or generate the full STALE input and convert it to
   `benchmarks/stale.adamem.jsonl`.
+- Once a raw STALE JSON array is available, run:
+  `PYTHONPATH=src python -m adamem.stale_pipeline data/T1_T2_400_FULL.json --output-dir results/stale_full_premise_correction --run-name stale_full_premise_correction --baselines semantic_only semantic_state_adjudication semantic_state_premise_correction --stale-types T1 T2 --limit-per-stale-type 10 --json`
 - Run a T1/T2-balanced STALE diagnostic with:
   `semantic_state_adjudication`,
   `semantic_state_premise_correction`, and a mainstream approximation baseline.

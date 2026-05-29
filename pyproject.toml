@@ -25,6 +25,7 @@ adamem-answer-eval = "adamem.answer_eval:main"
 adamem-claims = "adamem.claims:main"
 adamem-report = "adamem.reporting:main"
 adamem-compare = "adamem.compare:main"
+adamem-stale-pipeline = "adamem.stale_pipeline:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1774,3 +1774,26 @@ to a paper-facing claim and evaluation gate.
   - `results/longmemeval_s_balanced_60_premise_correction.json`
   - `results/longmemeval_s_balanced_60_premise_correction_tables.md`
   - `results/longmemeval_s_balanced_60_premise_correction_compare.md`
+
+### 2026-05-30 STALE pipeline entrypoint
+
+- Added `src/adamem/stale_pipeline.py` and console script
+  `adamem-stale-pipeline`.
+- The pipeline turns raw STALE JSON into a reproducible API-free diagnostic
+  run directory:
+  - Converts raw STALE JSON to AdaMem JSONL.
+  - Runs selected retrieval-diagnostic baselines.
+  - Writes diagnostic case JSONL, failure report, experiment JSON, paper
+    tables, report bundle, claim audit, and manifest.
+  - Supports T1/T2 filters and `--limit-per-stale-type` for balanced pilots.
+- The pipeline also supports already converted AdaMem JSONL through
+  `--input-format adamem-jsonl`, which lets the current `benchmarks/stale_mini.jsonl`
+  fixture exercise the same artifact path.
+- CLI smoke:
+  `PYTHONPATH=src python -m adamem.stale_pipeline benchmarks/stale_mini.jsonl --output-dir /tmp/adamem_stale_pipeline_smoke --run-name stale_mini_pipeline --input-format adamem-jsonl --baselines semantic_state_adjudication semantic_state_premise_correction --top-k 8 --max-cases 1 --json`
+  - Result: wrote converted dataset, experiment JSON, diagnostic case records,
+    diagnostic report, Markdown/JSON paper tables, report bundle, and manifest.
+- Added tests:
+  - `test_stale_diagnostic_pipeline_writes_reproducible_artifacts`
+  - `test_stale_pipeline_cli_writes_manifest_json`
+  - `test_stale_pipeline_accepts_converted_jsonl_input`
