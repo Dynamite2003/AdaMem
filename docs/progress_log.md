@@ -2975,3 +2975,28 @@ to a paper-facing claim and evaluation gate.
   - `git diff --check` -> no issues
   - CLI smoke generated a saved plan, loaded it with `--plan`, dry-ran
     `diagnostic`, and confirmed validation/run summary fingerprints match.
+
+### 2026-05-30 end-of-day handoff
+
+- Current git state before this handoff:
+  - latest implementation commit: `1491a28 Fingerprint study plans`
+  - working tree was clean before adding this note
+- Today completed an API-free paper-study workflow backbone:
+  - generated paper and smoke study plans
+  - validated model/provider placeholders, data-prep inputs, output locations,
+    optional environment variables, and reporting targets
+  - kept generated full-dataset conversions under the output directory
+  - added an API-free smoke profile for local plumbing checks
+  - added a staged runner with dry-run support and JSONL command records
+  - audited declared outputs after command execution
+  - allowed saved plan JSONs to become the execution source of truth
+  - added stable plan fingerprints to make future API runs traceable
+- Important current boundary:
+  - no API-backed STALE/transfer result has been run yet
+  - smoke runs validate workflow plumbing only, not paper claims
+  - fingerprint mismatch is currently reported by validation but does not yet
+    block execution
+- Recommended next step:
+  - make recorded fingerprint mismatch an execution-readiness gate
+  - add an explicit `--refresh-fingerprint` path for intentional manual edits
+  - keep this as the first task tomorrow before running longer experiments
