@@ -52,6 +52,28 @@ extraction on those true state cases.
 - STALE ground-truth fields must not be used inside proposed runtime memory.
 - Breaking API changes are allowed when useful, but must be documented.
 
+## Resume Checkpoint
+
+### 2026-05-30 end-of-day
+
+- Current committed code has a reproducible public AMA pilot, bounded full
+  baseline runtime, trajectory-step readout, structured answerability
+  diagnostics, and grouped per-`question_type` diagnostics.
+- The strongest API-free result so far is retrieval-side: on the first 20
+  public AMA episodes, `trajectory_step_readout` recovers labeled step evidence
+  across A/B/C/D question types, while generic semantic and full scoring do not.
+- Current evidence does not support an answer-accuracy or SOTA claim. Exact
+  answer-string support is still zero in the deterministic pilot, so the next
+  paper-facing work should separate evidence recall, answerability, and final
+  answer scoring rather than treating retrieval diagnostics as task accuracy.
+- Suggested first task when resuming: add a compact paper-table summary utility
+  that reads experiment JSON or records JSONL and emits reproducible Markdown /
+  JSON tables for overall and grouped diagnostics. This will make future public
+  pilots and API-backed runs easier to compare without manual report parsing.
+- Suggested second task: design the first mockable AMA answer-generation /
+  judge path so API keys can be plugged in later without changing the benchmark
+  record format.
+
 ## Completed Work
 
 ### 2026-05-29
