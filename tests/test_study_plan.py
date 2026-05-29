@@ -4,15 +4,19 @@ import json
 from pathlib import Path
 
 from adamem.study_plan import (
+    STUDY_SETTINGS_SCHEMA_VERSION,
     build_paper_study_plan,
+    build_study_plan_from_settings,
     build_smoke_study_plan,
     load_paper_study_plan,
+    load_study_settings,
     main,
     parse_model_spec,
     plan_fingerprint,
     run_study_plan,
     validate_paper_study_plan,
     write_paper_study_plan,
+    write_study_settings_template,
 )
 
 
@@ -99,6 +103,64 @@ def test_build_smoke_study_plan_is_api_free_and_execution_ready() -> None:
     assert validation["required_env_vars"] == []
     assert validation["placeholder_models"] == []
     assert validation["command_count"] == 8
+
+
+def test_write_study_settings_template_is_key_free(tmp_path: Path) -> None:
+    template_path = tmp_path / "api_pilot_settings.json"
+
+    artifacts = write_study_settings_template(
+        template_path,
+        output_dir=tmp_path / "api-study",
+    )
+
+    settings = load_study_settings(artifacts["settings"])
+    raw = template_path.read_text(encoding="utf-8")
+    assert settings["schema_version"] == STUDY_SETTINGS_SCHEMA_VERSION
+    assert settings["output_dir"] == str(tmp_path / "api-study")
+    assert settings["required_env_vars"] == ["OPENAI_API_KEY", "GEMINI_API_KEY"]
+    assert "\"api_key\"" not in raw.lower()
+    assert "OPENAI_API_KEY" in raw
+
+
+def test_build_study_plan_from_settings_uses_api_pilot_models(tmp_path: Path) -> None:
+    settings = {
+        "schema_version": STUDY_SETTINGS_SCHEMA_VERSION,
+        "profile": "paper",
+        "output_dir": str(tmp_path / "api-study"),
+        "include_data_prep": False,
+        "include_ama": False,
+        "stale_dataset": "benchmarks/stale_mini.jsonl",
+        "transfer_dataset": "benchmarks/dynamic_state_transfer.jsonl",
+        "stale_types": ["T1"],
+        "limit_per_stale_type": 2,
+        "transfer_max_cases": 3,
+        "answer_models": ["openai:gpt-a", "gemini:gemini-a"],
+        "judge_models": ["openai:gpt-j", "gemini:gemini-j"],
+        "state_extractor_model": "openai:gpt-extractor",
+        "top_k": 4,
+        "max_context_chars": 1200,
+    }
+
+    plan = build_study_plan_from_settings(settings)
+    validation = validate_paper_study_plan(plan)
+    answer_commands = [
+        command for command in plan["commands"] if command["stage"] == "answer_judge"
+    ]
+
+    assert plan["output_dir"] == str(tmp_path / "api-study")
+    assert plan["data_sources"] == {
+        "primary_stale": None,
+        "transfer_long_memory": None,
+    }
+    assert plan["split"]["limit_per_stale_type"] == 2
+    assert plan["split"]["transfer_max_cases"] == 3
+    assert plan["model_requirements"]["answer_models"] == [
+        "openai:gpt-a",
+        "gemini:gemini-a",
+    ]
+    assert len(answer_commands) == 4
+    assert validation["execution_ready"] is True
+    assert validation["required_env_vars"] == ["GEMINI_API_KEY", "OPENAI_API_KEY"]
 
 
 def test_validate_paper_study_plan_reports_placeholders_and_missing_paths(tmp_path: Path) -> None:
@@ -372,6 +434,55 @@ def test_study_plan_cli_writes_smoke_profile(tmp_path: Path) -> None:
     data = json.loads((output_dir / "paper_study_plan.json").read_text(encoding="utf-8"))
     validation = json.loads((output_dir / "paper_study_validation.json").read_text(encoding="utf-8"))
     assert data["profile"] == "smoke"
+    assert validation["execution_ready"] is True
+
+
+def test_study_plan_cli_writes_settings_template(tmp_path: Path) -> None:
+    settings_path = tmp_path / "api_pilot_settings.json"
+
+    main([
+        "--write-settings-template",
+        str(settings_path),
+        "--output-dir",
+        str(tmp_path / "api-study"),
+        "--json",
+    ])
+
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings["schema_version"] == STUDY_SETTINGS_SCHEMA_VERSION
+    assert settings["output_dir"] == str(tmp_path / "api-study")
+    assert settings["limit_per_stale_type"] == 5
+    assert settings["include_ama"] is False
+
+
+def test_study_plan_cli_generates_from_settings(tmp_path: Path) -> None:
+    settings_path = tmp_path / "settings.json"
+    settings = {
+        "schema_version": STUDY_SETTINGS_SCHEMA_VERSION,
+        "profile": "paper",
+        "output_dir": str(tmp_path / "settings-study"),
+        "include_data_prep": False,
+        "include_ama": False,
+        "stale_dataset": "benchmarks/stale_mini.jsonl",
+        "transfer_dataset": "benchmarks/dynamic_state_transfer.jsonl",
+        "answer_models": ["openai:gpt-a", "gemini:gemini-a"],
+        "judge_models": ["openai:gpt-j", "gemini:gemini-j"],
+        "state_extractor_model": "openai:gpt-extractor",
+        "limit_per_stale_type": 1,
+        "transfer_max_cases": 2,
+    }
+    settings_path.write_text(json.dumps(settings, ensure_ascii=False), encoding="utf-8")
+
+    main([
+        "--settings",
+        str(settings_path),
+        "--json",
+    ])
+
+    plan = json.loads((tmp_path / "settings-study" / "paper_study_plan.json").read_text(encoding="utf-8"))
+    validation = json.loads((tmp_path / "settings-study" / "paper_study_validation.json").read_text(encoding="utf-8"))
+    assert plan["model_requirements"]["answer_models"] == ["openai:gpt-a", "gemini:gemini-a"]
+    assert plan["split"]["limit_per_stale_type"] == 1
     assert validation["execution_ready"] is True
 
 

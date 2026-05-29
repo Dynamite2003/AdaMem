@@ -119,6 +119,13 @@ Outputs:
   providers only. It validates conversion-free STALE diagnostics, mock
   answer/judge plumbing, LLM-extractor plumbing, transfer retrieval, and batch
   reporting, but it is explicitly not paper evidence.
+- API pilot settings can be generated before keys are available:
+  `PYTHONPATH=src python -m adamem.study_plan --write-settings-template results/api_pilot_settings.json --output-dir results/api_pilot_study --json`.
+  Edit only provider/model labels, limits, dataset paths, and inclusion flags
+  in that JSON. Keep credentials in environment variables such as
+  `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `MODELHUB_API_KEY`, never inside the
+  settings JSON. Then generate the concrete plan with
+  `PYTHONPATH=src python -m adamem.study_plan --settings results/api_pilot_settings.json --check-env --json`.
 - Study plans can also be executed through the same CLI with `--run`.
   `--dry-run` writes command records without executing them, and repeatable
   `--stage` filters the run to stages such as `diagnostic`, `answer_judge`,

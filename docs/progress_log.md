@@ -3027,3 +3027,32 @@ to a paper-facing claim and evaluation gate.
   - CLI smoke generated a saved plan, confirmed a manual edit blocks
     `--run`, refreshed the fingerprint, then dry-ran the `diagnostic` stage
     successfully.
+
+### 2026-05-30 API pilot settings workflow
+
+- Added a settings-driven study-plan entry point for later API-backed pilots.
+- New commands:
+  - `--write-settings-template PATH` writes an editable
+    `adamem.study_settings.v1` JSON template
+  - `--settings PATH` generates the concrete paper/smoke study plan from that
+    settings JSON
+- Template policy:
+  - includes provider/model labels, pilot limits, dataset paths, data-prep
+    flags, AMA inclusion flag, and required environment variable names
+  - does not include credential fields; keys must stay in shell environment
+    variables such as `OPENAI_API_KEY`, `GEMINI_API_KEY`, or
+    `MODELHUB_API_KEY`
+- Purpose:
+  - Make the first real STALE pilot mostly a matter of editing
+    provider/model labels and exporting keys.
+  - Reduce command-line drift between pilot generation, validation, and later
+    reruns.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `23 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `51 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `183 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI generated an API-pilot settings template, edited it to a mock
+    conversion-free pilot, regenerated a paper study plan from `--settings`,
+    and validation reported `execution_ready=True`.

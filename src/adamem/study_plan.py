@@ -65,6 +65,7 @@ SMOKE_JUDGE_MODELS = ["mock:judge-a", "mock:judge-b"]
 SMOKE_STATE_EXTRACTOR_MODEL = "mock:state-extractor"
 DEFAULT_STALE_SOURCE = "data/T1_T2_400_FULL.json"
 DEFAULT_TRANSFER_SOURCE = "data/longmemeval_s_cleaned.json"
+STUDY_SETTINGS_SCHEMA_VERSION = "adamem.study_settings.v1"
 
 
 @dataclass(slots=True, frozen=True)
@@ -297,6 +298,124 @@ def build_smoke_study_plan(
     ]
     plan["plan_fingerprint"] = plan_fingerprint(plan)
     return plan
+
+
+def build_api_pilot_settings_template(
+    *,
+    output_dir: str | Path = "results/api_pilot_study",
+) -> dict[str, Any]:
+    return {
+        "schema_version": STUDY_SETTINGS_SCHEMA_VERSION,
+        "profile": "paper",
+        "output_dir": str(output_dir),
+        "claim_boundary": (
+            "API pilot settings only. Edit provider:model labels and set provider "
+            "keys in the shell environment; do not store credentials in this JSON."
+        ),
+        "include_data_prep": True,
+        "stale_source": DEFAULT_STALE_SOURCE,
+        "transfer_source": DEFAULT_TRANSFER_SOURCE,
+        "stale_dataset": None,
+        "transfer_dataset": None,
+        "include_ama": False,
+        "ama_output_source": None,
+        "stale_types": ["T1", "T2"],
+        "limit_per_stale_type": 5,
+        "transfer_max_cases": 20,
+        "ama_limit": 0,
+        "answer_models": [
+            "openai:gpt-4o-mini",
+            "gemini:gemini-1.5-flash",
+        ],
+        "judge_models": [
+            "openai:gpt-4o-mini",
+            "gemini:gemini-1.5-flash",
+        ],
+        "state_extractor_model": "openai:gpt-4o-mini",
+        "top_k": 8,
+        "max_context_chars": 4000,
+        "required_env_vars": [
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+        ],
+        "run_hint": (
+            "PYTHONPATH=src python -m adamem.study_plan --settings "
+            "path/to/api_pilot_settings.json --check-env --json"
+        ),
+    }
+
+
+def load_study_settings(path: str | Path) -> dict[str, Any]:
+    settings_path = Path(path)
+    with settings_path.open("r", encoding="utf-8") as handle:
+        settings = json.load(handle)
+    if not isinstance(settings, dict):
+        raise ValueError(f"study settings JSON must contain an object: {settings_path}")
+    schema = settings.get("schema_version")
+    if schema not in {None, STUDY_SETTINGS_SCHEMA_VERSION}:
+        raise ValueError(
+            f"unsupported study settings schema {schema!r}; expected {STUDY_SETTINGS_SCHEMA_VERSION}"
+        )
+    return settings
+
+
+def write_study_settings_template(
+    path: str | Path,
+    *,
+    output_dir: str | Path = "results/api_pilot_study",
+) -> dict[str, str]:
+    settings_path = Path(path)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings = build_api_pilot_settings_template(output_dir=output_dir)
+    settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"settings": str(settings_path)}
+
+
+def build_study_plan_from_settings(
+    settings: dict[str, Any],
+    *,
+    output_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    output = output_dir or settings.get("output_dir")
+    if output in {None, ""}:
+        raise ValueError("study settings must include output_dir, or pass --output-dir")
+    profile = str(settings.get("profile") or "paper")
+    stale_types = list(settings.get("stale_types") or ["T1", "T2"])
+    if profile == "smoke":
+        return build_smoke_study_plan(
+            output_dir=output,
+            stale_dataset=settings.get("stale_dataset") or "benchmarks/stale_mini.jsonl",
+            transfer_dataset=settings.get("transfer_dataset") or "benchmarks/dynamic_state_transfer.jsonl",
+            stale_types=stale_types,
+            limit_per_stale_type=int(settings.get("limit_per_stale_type") or 1),
+            transfer_max_cases=int(settings.get("transfer_max_cases") or 2),
+            answer_models=settings.get("answer_models") or SMOKE_ANSWER_MODELS,
+            judge_models=settings.get("judge_models") or SMOKE_JUDGE_MODELS,
+            state_extractor_model=settings.get("state_extractor_model") or SMOKE_STATE_EXTRACTOR_MODEL,
+            top_k=int(settings.get("top_k") or 4),
+            max_context_chars=int(settings.get("max_context_chars") or 2000),
+        )
+    if profile != "paper":
+        raise ValueError(f"unsupported study settings profile: {profile}")
+    include_data_prep = bool(settings.get("include_data_prep", True))
+    include_ama = bool(settings.get("include_ama", False))
+    return build_paper_study_plan(
+        output_dir=output,
+        stale_dataset=settings.get("stale_dataset"),
+        transfer_dataset=settings.get("transfer_dataset"),
+        stale_source=settings.get("stale_source", DEFAULT_STALE_SOURCE) if include_data_prep else None,
+        transfer_source=settings.get("transfer_source", DEFAULT_TRANSFER_SOURCE) if include_data_prep else None,
+        ama_output_source=settings.get("ama_output_source") if include_ama else None,
+        stale_types=stale_types,
+        limit_per_stale_type=int(settings.get("limit_per_stale_type") or 50),
+        transfer_max_cases=int(settings.get("transfer_max_cases") or 60),
+        ama_limit=int(settings.get("ama_limit") or 0),
+        answer_models=settings.get("answer_models") or DEFAULT_ANSWER_MODELS,
+        judge_models=settings.get("judge_models") or DEFAULT_JUDGE_MODELS,
+        state_extractor_model=settings.get("state_extractor_model") or "<state_extractor_provider>:<state_extractor_model>",
+        top_k=int(settings.get("top_k") or 8),
+        max_context_chars=int(settings.get("max_context_chars") or 4000),
+    )
 
 
 def write_paper_study_plan(plan: dict[str, Any], output_dir: str | Path) -> dict[str, str]:
@@ -1268,6 +1387,12 @@ def main(argv: list[str] | None = None) -> None:
         description="Generate, validate, or run AdaMem paper-track study plans."
     )
     parser.add_argument("--plan", type=Path, help="Load an existing paper_study_plan.json instead of generating a new one.")
+    parser.add_argument("--settings", type=Path, help="Generate a study plan from an editable API-pilot settings JSON.")
+    parser.add_argument(
+        "--write-settings-template",
+        type=Path,
+        help="Write an editable API-pilot settings JSON template and exit.",
+    )
     parser.add_argument(
         "--refresh-fingerprint",
         action="store_true",
@@ -1308,6 +1433,20 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     try:
+        if args.plan and args.settings:
+            parser.error("--settings cannot be used with --plan")
+        if args.write_settings_template:
+            output_dir = args.output_dir or "results/api_pilot_study"
+            artifacts = write_study_settings_template(
+                args.write_settings_template,
+                output_dir=output_dir,
+            )
+            result = {"artifacts": artifacts, "settings": load_study_settings(args.write_settings_template)}
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                print(f"wrote API pilot settings template to {args.write_settings_template}")
+            return
         if args.plan:
             if args.refresh_fingerprint:
                 plan = refresh_saved_plan_fingerprint(args.plan)
@@ -1320,6 +1459,13 @@ def main(argv: list[str] | None = None) -> None:
                 output_dir=output_dir,
                 check_env=args.check_env,
             )
+        elif args.settings:
+            if args.refresh_fingerprint:
+                parser.error("--refresh-fingerprint requires --plan")
+            settings = load_study_settings(args.settings)
+            output_dir = args.output_dir or settings.get("output_dir")
+            plan = build_study_plan_from_settings(settings, output_dir=output_dir)
+            artifacts = write_paper_study_plan(plan, output_dir)
         else:
             if args.refresh_fingerprint:
                 parser.error("--refresh-fingerprint requires --plan")
@@ -1393,7 +1539,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        print(f"wrote paper study plan to {args.output_dir}")
+        print(f"wrote paper study plan to {output_dir}")
         for name, path in artifacts.items():
             print(f"{name}: {path}")
 
