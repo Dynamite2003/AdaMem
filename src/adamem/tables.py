@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
+from adamem.answer_eval import answer_failure_summary
 from adamem.bench import benchmark_failure_summary
 
 
@@ -54,8 +55,19 @@ def paper_table_summary(
     """
 
     group_fields = tuple(group_fields)
+    kind = _record_kind(records)
+    if kind == "answer_generation":
+        summary = answer_failure_summary(records, group_fields=group_fields)
+        return {
+            "kind": kind,
+            "total_records": summary["total_records"],
+            "overall": _answer_overall_rows(summary),
+            "by_group": _answer_group_rows(summary),
+        }
+
     summary = benchmark_failure_summary(records, group_fields=group_fields)
     return {
+        "kind": kind,
         "total_records": summary["total_records"],
         "overall": _overall_rows(summary),
         "by_group": _group_rows(summary),
@@ -74,40 +86,58 @@ def paper_table_markdown(
     lines.append("")
 
     lines.append("## Overall")
-    lines.append(
-        "| baseline | support | support acc | evidence support | answer recall | "
-        "basis recall | basis matched |"
-    )
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
-    for row in tables["overall"]:
-        lines.append(
-            f"| {row['baseline']} | {row['support']} | "
-            f"{_format_rate(row['support_accuracy'])} | "
-            f"{row['evidence_support']} | "
-            f"{_format_optional_rate(row['answer_keyword_recall_avg'])} | "
-            f"{_format_optional_rate(row['basis_answer_keyword_recall_avg'])} | "
-            f"{row['basis_matched']} |"
-        )
-    lines.append("")
-
-    for field_name, rows in tables["by_group"].items():
-        if not rows:
-            continue
-        lines.append(f"## By {field_name}")
-        lines.append(
-            "| value | baseline | support | support acc | evidence support | "
-            "answer recall | basis recall | basis matched |"
-        )
-        lines.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |")
-        for row in rows:
+    if tables["kind"] == "answer_generation":
+        lines.append("| baseline | correct | accuracy |")
+        lines.append("| --- | ---: | ---: |")
+        for row in tables["overall"]:
             lines.append(
-                f"| {row['value']} | {row['baseline']} | {row['support']} | "
+                f"| {row['baseline']} | {row['correct']} | "
+                f"{_format_rate(row['accuracy'])} |"
+            )
+    else:
+        lines.append(
+            "| baseline | support | support acc | evidence support | answer recall | "
+            "basis recall | basis matched |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for row in tables["overall"]:
+            lines.append(
+                f"| {row['baseline']} | {row['support']} | "
                 f"{_format_rate(row['support_accuracy'])} | "
                 f"{row['evidence_support']} | "
                 f"{_format_optional_rate(row['answer_keyword_recall_avg'])} | "
                 f"{_format_optional_rate(row['basis_answer_keyword_recall_avg'])} | "
                 f"{row['basis_matched']} |"
             )
+    lines.append("")
+
+    for field_name, rows in tables["by_group"].items():
+        if not rows:
+            continue
+        lines.append(f"## By {field_name}")
+        if tables["kind"] == "answer_generation":
+            lines.append("| value | baseline | correct | accuracy |")
+            lines.append("| --- | --- | ---: | ---: |")
+            for row in rows:
+                lines.append(
+                    f"| {row['value']} | {row['baseline']} | {row['correct']} | "
+                    f"{_format_rate(row['accuracy'])} |"
+                )
+        else:
+            lines.append(
+                "| value | baseline | support | support acc | evidence support | "
+                "answer recall | basis recall | basis matched |"
+            )
+            lines.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+            for row in rows:
+                lines.append(
+                    f"| {row['value']} | {row['baseline']} | {row['support']} | "
+                    f"{_format_rate(row['support_accuracy'])} | "
+                    f"{row['evidence_support']} | "
+                    f"{_format_optional_rate(row['answer_keyword_recall_avg'])} | "
+                    f"{_format_optional_rate(row['basis_answer_keyword_recall_avg'])} | "
+                    f"{row['basis_matched']} |"
+                )
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
@@ -158,6 +188,12 @@ def _resolve_records_path(experiment_path: Path, records_path: str) -> Path:
     raise FileNotFoundError(f"records_path does not exist: {records_path}")
 
 
+def _record_kind(records: list[dict[str, Any]]) -> str:
+    if records and all("correct" in record for record in records):
+        return "answer_generation"
+    return "retrieval"
+
+
 def _overall_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for baseline, support in summary["by_baseline"].items():
@@ -188,6 +224,17 @@ def _overall_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
                 answerability["basis_answer_keyword_recall_avg"]
             ),
             "answer_basis_records": answerability["answer_basis_records"],
+        })
+    return rows
+
+
+def _answer_overall_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for baseline, aggregate in summary["by_baseline"].items():
+        rows.append({
+            "baseline": baseline,
+            "correct": _fraction(aggregate["correct"], aggregate["total"]),
+            "accuracy": aggregate["accuracy"],
         })
     return rows
 
@@ -232,6 +279,22 @@ def _group_rows(summary: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
                         metrics["basis_answer_keyword_recall_avg"]
                     ),
                     "answer_basis_records": metrics["answer_basis_records"],
+                })
+        grouped[field_name] = rows
+    return grouped
+
+
+def _answer_group_rows(summary: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for field_name, by_value in summary["by_metadata"].items():
+        rows: list[dict[str, Any]] = []
+        for value, by_baseline in by_value.items():
+            for baseline, aggregate in by_baseline.items():
+                rows.append({
+                    "value": value,
+                    "baseline": baseline,
+                    "correct": _fraction(aggregate["correct"], aggregate["total"]),
+                    "accuracy": aggregate["accuracy"],
                 })
         grouped[field_name] = rows
     return grouped

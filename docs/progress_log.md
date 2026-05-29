@@ -158,6 +158,18 @@ extraction on those true state cases.
     rows.
   - Because the answer provider was a fixed mock insufficiency answer, grouped
     accuracy was `0/12`; this validates reporting only, not method quality.
+- Extended `adamem.tables` to auto-detect answer-generation records:
+  - Retrieval records still produce support/evidence/answerability tables.
+  - Generation records now produce end-to-end `correct` / `accuracy` paper
+    tables, including grouped metadata tables such as AMA `question_type`.
+  - Experiment JSON inputs still work through `notes.records_path`.
+- Ran a generation-table CLI smoke:
+  `PYTHONPATH=src python -m adamem.tables /tmp/adamem_ama_answer_generation_smoke/ama_public_1.generation.records.jsonl --group-fields question_type --title "AMA Generation Answer Tables" --output /tmp/adamem_ama_answer_generation_smoke/ama_public_1.generation.paper_tables.md`
+  - Result: Markdown table reported `trajectory_step_readout` correct `0/12`
+    overall and A/B/C/D grouped rows.
+  - Interpretation: when real answer/judge providers are available, the same
+    table command can produce paper-ready end-to-end answer accuracy tables
+    from `.generation.records.jsonl` or `.generation.experiment.json`.
 
 ## Completed Work
 

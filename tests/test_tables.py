@@ -113,6 +113,64 @@ def test_write_paper_table_json(tmp_path: Path) -> None:
     assert payload["overall"][0]["evidence_support"] == "1/1"
 
 
+def test_paper_table_summary_supports_answer_generation_records() -> None:
+    records = [
+        _answer_record(baseline="semantic_only", question_type="A", correct=False),
+        _answer_record(baseline="semantic_only", question_type="B", correct=True),
+        _answer_record(baseline="trajectory_step_readout", question_type="A", correct=True),
+        _answer_record(baseline="trajectory_step_readout", question_type="B", correct=True),
+    ]
+
+    summary = paper_table_summary(records, group_fields=["question_type"])
+
+    assert summary["kind"] == "answer_generation"
+    by_baseline = {row["baseline"]: row for row in summary["overall"]}
+    assert by_baseline["semantic_only"]["correct"] == "1/2"
+    assert by_baseline["trajectory_step_readout"]["correct"] == "2/2"
+    grouped = {
+        (row["value"], row["baseline"]): row
+        for row in summary["by_group"]["question_type"]
+    }
+    assert grouped[("A", "semantic_only")]["correct"] == "0/1"
+    assert grouped[("A", "trajectory_step_readout")]["accuracy"] == 1.0
+
+
+def test_paper_table_markdown_supports_answer_generation_records() -> None:
+    markdown = paper_table_markdown(
+        [
+            _answer_record(baseline="trajectory_step_readout", question_type="A", correct=True),
+            _answer_record(baseline="trajectory_step_readout", question_type="B", correct=False),
+        ],
+        group_fields=["question_type"],
+        title="AMA Answer Tables",
+    )
+
+    assert markdown.startswith("# AMA Answer Tables\n")
+    assert "| trajectory_step_readout | 1/2 | 50.00% |" in markdown
+    assert "## By question_type" in markdown
+    assert "| A | trajectory_step_readout | 1/1 | 100.00% |" in markdown
+
+
+def test_write_paper_table_json_supports_answer_experiment(tmp_path: Path) -> None:
+    records_path = tmp_path / "generation.records.jsonl"
+    output_path = tmp_path / "generation.table.json"
+    records_path.write_text(
+        json.dumps(_answer_record(baseline="trajectory_step_readout", correct=True)) + "\n",
+        encoding="utf-8",
+    )
+    experiment_path = tmp_path / "generation.experiment.json"
+    experiment_path.write_text(
+        json.dumps({"raw_outputs": [], "notes": {"records_path": "generation.records.jsonl"}}),
+        encoding="utf-8",
+    )
+
+    write_paper_table(experiment_path, output_path, output_format="json")
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert payload["kind"] == "answer_generation"
+    assert payload["overall"][0]["correct"] == "1/1"
+
+
 def _record(
     *,
     baseline: str,
@@ -162,4 +220,26 @@ def _record(
         "state_sensitive": False,
         "state_available": False,
         "state_readout_expected": False,
+    }
+
+
+def _answer_record(
+    *,
+    baseline: str,
+    question_type: str = "A",
+    correct: bool = False,
+) -> dict[str, object]:
+    return {
+        "baseline": baseline,
+        "case_id": "case-1",
+        "query_id": f"answer-{question_type}",
+        "query": "What happened at Step 1?",
+        "correct": correct,
+        "answer": "The agent moved left.",
+        "score_raw": "CORRECT" if correct else "INCORRECT",
+        "retrieved": ["[step001.action] action: left"],
+        "trace": [],
+        "expected_substrings": ["left"],
+        "forbidden_substrings": [],
+        "metadata": {"question_type": question_type, "benchmark": "ama"},
     }

@@ -332,6 +332,15 @@ Stage outputs use explicit names such as `ama_public_1.answer.records.jsonl`,
 scoring cannot overwrite one another. The generation report includes grouped
 answer accuracy tables such as `By question_type`.
 
+The same table utility can summarize generation records:
+
+```bash
+PYTHONPATH=src python -m adamem.tables /tmp/adamem_ama_answer_generation_smoke/ama_public_1.generation.records.jsonl --group-fields question_type --title "AMA Generation Answer Tables" --output /tmp/adamem_ama_answer_generation_smoke/ama_public_1.generation.paper_tables.md
+```
+
+For generation records, the table columns switch to `correct` and `accuracy`
+instead of retrieval-support diagnostics.
+
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes
 retrieval of the matching trajectory steps by metadata instead of relying only

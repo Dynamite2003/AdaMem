@@ -514,7 +514,9 @@ Completed API-free foundations:
 - `adamem.tables`, a compact paper-table summarizer for benchmark records or
   experiment JSON files. It follows `notes.records_path` when raw outputs are
   not embedded, and emits Markdown or JSON tables with overall and grouped
-  support, evidence, answerability, and structured-basis diagnostics.
+  support, evidence, answerability, and structured-basis diagnostics. It also
+  auto-detects answer-generation records and switches to end-to-end `correct`
+  / `accuracy` tables for generation reports.
 - `adamem.answer_eval`, a mockable answer-generation evaluation path for
   AdaMem JSONL cases. It separates runtime answer generation from evaluation
   scoring, supports deterministic substring smoke tests and LLM-judge scoring,
