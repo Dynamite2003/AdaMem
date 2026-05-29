@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -315,6 +317,82 @@ def write_paper_study_plan(plan: dict[str, Any], output_dir: str | Path) -> dict
         "validation_json": str(validation_path),
         "validation_markdown": str(validation_md_path),
     }
+
+
+def run_study_plan(
+    plan: dict[str, Any],
+    *,
+    stages: Iterable[str] | None = None,
+    dry_run: bool = False,
+    require_ready: bool = True,
+    check_env: bool = False,
+    root: str | Path | None = None,
+    log_path: str | Path | None = None,
+) -> dict[str, Any]:
+    root_path = Path(root) if root is not None else Path.cwd()
+    validation = validate_paper_study_plan(plan, root=root_path, check_env=check_env)
+    if require_ready and not validation["execution_ready"]:
+        missing = ", ".join(validation["missing_requirements"])
+        raise ValueError(f"study plan is not execution-ready: {missing}")
+    allowed_stages = set(str(stage) for stage in stages or [])
+    selected = [
+        command for command in plan.get("commands") or []
+        if not allowed_stages or str(command.get("stage")) in allowed_stages
+    ]
+    output_dir = Path(str(plan.get("output_dir") or "."))
+    log = Path(log_path) if log_path is not None else output_dir / "paper_study_run.records.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    records: list[dict[str, Any]] = []
+    status = "dry_run" if dry_run else "complete"
+    with log.open("w", encoding="utf-8") as handle:
+        for index, command in enumerate(selected, start=1):
+            record = _run_command_record(
+                command,
+                index=index,
+                dry_run=dry_run,
+                root=root_path,
+            )
+            records.append(record)
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            handle.flush()
+            if record["status"] == "failed":
+                status = "failed"
+                break
+    return {
+        "schema_version": "adamem.paper_study_run.v1",
+        "status": status,
+        "dry_run": dry_run,
+        "log_path": str(log),
+        "selected_stage_filter": sorted(allowed_stages),
+        "selected_command_count": len(selected),
+        "completed_command_count": sum(1 for record in records if record["status"] == "completed"),
+        "failed_command_count": sum(1 for record in records if record["status"] == "failed"),
+        "skipped_by_failure_count": max(0, len(selected) - len(records)),
+        "validation": validation,
+        "records": records,
+    }
+
+
+def study_run_summary_markdown(summary: dict[str, Any]) -> str:
+    lines = ["# AdaMem Study Run Summary", ""]
+    lines.append(f"Status: `{summary.get('status')}`")
+    lines.append(f"Dry run: `{bool(summary.get('dry_run'))}`")
+    lines.append(f"Selected commands: `{int(summary.get('selected_command_count') or 0)}`")
+    lines.append(f"Completed commands: `{int(summary.get('completed_command_count') or 0)}`")
+    lines.append(f"Failed commands: `{int(summary.get('failed_command_count') or 0)}`")
+    lines.append(f"Log: `{summary.get('log_path')}`")
+    lines.append("")
+    lines.append("| # | status | stage | name | seconds |")
+    lines.append("| ---: | --- | --- | --- | ---: |")
+    for record in summary.get("records") or []:
+        lines.append(
+            f"| {int(record.get('index') or 0)} | "
+            f"`{record.get('status')}` | "
+            f"`{record.get('stage')}` | "
+            f"`{record.get('name')}` | "
+            f"{float(record.get('elapsed_seconds') or 0.0):.3f} |"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def validate_paper_study_plan(
@@ -934,6 +1012,73 @@ def _prep_sources_by_dataset(plan: dict[str, Any]) -> dict[str, str]:
     return sources
 
 
+def _run_command_record(
+    command: dict[str, Any],
+    *,
+    index: int,
+    dry_run: bool,
+    root: Path,
+) -> dict[str, Any]:
+    argv = [str(item) for item in command.get("command") or []]
+    started = dt.datetime.now(dt.timezone.utc)
+    record: dict[str, Any] = {
+        "index": index,
+        "name": command.get("name"),
+        "stage": command.get("stage"),
+        "purpose": command.get("purpose"),
+        "claim_boundary": command.get("claim_boundary"),
+        "command": argv,
+        "shell": shlex.join(argv),
+        "started_at": started.isoformat(),
+    }
+    if dry_run:
+        finished = dt.datetime.now(dt.timezone.utc)
+        record.update({
+            "status": "dry_run",
+            "returncode": None,
+            "elapsed_seconds": (finished - started).total_seconds(),
+            "finished_at": finished.isoformat(),
+        })
+        return record
+    env = _subprocess_env(root)
+    result = subprocess.run(
+        argv,
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    finished = dt.datetime.now(dt.timezone.utc)
+    record.update({
+        "status": "completed" if result.returncode == 0 else "failed",
+        "returncode": result.returncode,
+        "elapsed_seconds": (finished - started).total_seconds(),
+        "finished_at": finished.isoformat(),
+        "stdout_tail": _tail_text(result.stdout),
+        "stderr_tail": _tail_text(result.stderr),
+    })
+    return record
+
+
+def _subprocess_env(root: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    src = str(root / "src")
+    existing = env.get("PYTHONPATH")
+    if existing:
+        paths = existing.split(os.pathsep)
+        if src not in paths:
+            env["PYTHONPATH"] = os.pathsep.join([src, existing])
+    else:
+        env["PYTHONPATH"] = src
+    return env
+
+
+def _tail_text(text: str, *, max_chars: int = 4000) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
+
+
 def _safe_label(value: str) -> str:
     label = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_").lower()
     return label or "model"
@@ -1001,6 +1146,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Also check whether required provider credential environment variables are set.",
     )
+    parser.add_argument("--run", action="store_true", help="Execute the generated plan after writing artifacts.")
+    parser.add_argument("--dry-run", action="store_true", help="With --run, log commands without executing them.")
+    parser.add_argument("--stage", action="append", dest="run_stages", help="With --run, execute only this stage. Repeatable.")
+    parser.add_argument("--allow-not-ready", action="store_true", help="With --run, allow execution even if validation has gaps.")
+    parser.add_argument("--run-log", type=Path, help="With --run, write JSONL execution records to this path.")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -1052,7 +1202,23 @@ def main(argv: list[str] | None = None) -> None:
         )
     else:
         validation = json.loads(Path(artifacts["validation_json"]).read_text(encoding="utf-8"))
-    result = {"artifacts": artifacts, "plan": plan, "validation": validation}
+    run_summary = None
+    if args.run:
+        run_summary = run_study_plan(
+            plan,
+            stages=args.run_stages,
+            dry_run=args.dry_run,
+            require_ready=not args.allow_not_ready,
+            check_env=args.check_env,
+            log_path=args.run_log,
+        )
+        run_summary_path = Path(args.output_dir) / "paper_study_run.summary.json"
+        run_summary_md_path = Path(args.output_dir) / "paper_study_run.summary.md"
+        run_summary_path.write_text(json.dumps(run_summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        run_summary_md_path.write_text(study_run_summary_markdown(run_summary), encoding="utf-8")
+        artifacts["run_summary_json"] = str(run_summary_path)
+        artifacts["run_summary_markdown"] = str(run_summary_md_path)
+    result = {"artifacts": artifacts, "plan": plan, "validation": validation, "run_summary": run_summary}
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:

@@ -65,6 +65,7 @@ PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.j
 PYTHONPATH=src python -m adamem.stale_pipeline benchmarks/stale_mini.jsonl --input-format adamem-jsonl --output-dir /tmp/adamem_stale_pipeline_smoke --run-name stale_mini_pipeline --baselines semantic_state_adjudication semantic_state_premise_correction --max-cases 1 --json
 PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output results/stale_pilot_mock.json
 PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke --json
+PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke_run --run --dry-run --stage diagnostic --json
 PYTHONPATH=src python -m adamem.study_plan --output-dir results/paper_study_plan --json
 ```
 
@@ -117,6 +118,10 @@ Outputs:
   providers only. It validates conversion-free STALE diagnostics, mock
   answer/judge plumbing, LLM-extractor plumbing, transfer retrieval, and batch
   reporting, but it is explicitly not paper evidence.
+- Study plans can also be executed through the same CLI with `--run`.
+  `--dry-run` writes command records without executing them, and repeatable
+  `--stage` filters the run to stages such as `diagnostic`, `answer_judge`,
+  `mechanism_ablation`, `transfer`, or `reporting`.
 - Notes on any regression before new work begins.
 
 Done when:
@@ -737,6 +742,9 @@ Completed API-free foundations:
   `benchmarks/dynamic_state_transfer.jsonl` with mock LLM providers. Use it to
   verify the generated runbook, experiment writers, and batch reporting before
   spending API budget. Treat all smoke outputs as plumbing evidence only.
+- `adamem.study_plan --run`, a plan runner that validates the generated plan,
+  executes selected stages, and writes JSONL command records plus Markdown/JSON
+  run summaries. Use `--dry-run` and `--stage ...` before real API execution.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

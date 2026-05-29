@@ -8,6 +8,7 @@ from adamem.study_plan import (
     build_smoke_study_plan,
     main,
     parse_model_spec,
+    run_study_plan,
     validate_paper_study_plan,
     write_paper_study_plan,
 )
@@ -215,6 +216,62 @@ def test_write_paper_study_plan_outputs_json_markdown_and_shell(tmp_path: Path) 
     assert "AdaMem Paper Study Validation" in validation_md
 
 
+def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> None:
+    plan = build_smoke_study_plan(output_dir=tmp_path / "study")
+    log_path = tmp_path / "study" / "run.records.jsonl"
+
+    summary = run_study_plan(
+        plan,
+        stages=["diagnostic"],
+        dry_run=True,
+        log_path=log_path,
+    )
+
+    records = [
+        json.loads(line)
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert summary["status"] == "dry_run"
+    assert summary["selected_command_count"] == 1
+    assert summary["completed_command_count"] == 0
+    assert records[0]["status"] == "dry_run"
+    assert records[0]["stage"] == "diagnostic"
+
+
+def test_run_study_plan_executes_simple_command(tmp_path: Path) -> None:
+    plan = {
+        "output_dir": str(tmp_path / "study"),
+        "datasets": {},
+        "data_sources": {},
+        "model_requirements": {
+            "answer_models": ["mock:a", "mock:b"],
+            "judge_models": ["mock:j1", "mock:j2"],
+            "minimum_answer_models": 2,
+            "minimum_judge_models": 2,
+        },
+        "method_coverage_preview": {"complete": True},
+        "commands": [
+            {
+                "name": "ok",
+                "stage": "unit",
+                "purpose": "test command",
+                "claim_boundary": "none",
+                "command": ["python", "-c", "print('ok')"],
+            }
+        ],
+    }
+
+    summary = run_study_plan(
+        plan,
+        require_ready=False,
+        log_path=tmp_path / "run.jsonl",
+    )
+
+    assert summary["status"] == "complete"
+    assert summary["completed_command_count"] == 1
+    assert summary["records"][0]["stdout_tail"].strip() == "ok"
+
+
 def test_study_plan_cli_writes_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "cli-study"
 
@@ -257,3 +314,24 @@ def test_study_plan_cli_writes_smoke_profile(tmp_path: Path) -> None:
     validation = json.loads((output_dir / "paper_study_validation.json").read_text(encoding="utf-8"))
     assert data["profile"] == "smoke"
     assert validation["execution_ready"] is True
+
+
+def test_study_plan_cli_can_dry_run_smoke_profile(tmp_path: Path) -> None:
+    output_dir = tmp_path / "cli-smoke-run"
+
+    main([
+        "--profile",
+        "smoke",
+        "--output-dir",
+        str(output_dir),
+        "--run",
+        "--dry-run",
+        "--stage",
+        "diagnostic",
+        "--json",
+    ])
+
+    summary = json.loads((output_dir / "paper_study_run.summary.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "dry_run"
+    assert summary["selected_command_count"] == 1
+    assert (output_dir / "paper_study_run.summary.md").exists()
