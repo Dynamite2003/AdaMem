@@ -2532,3 +2532,35 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `155 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 reproducibility packet audit
+
+- Added claim-audit reproducibility evidence.
+- Common reproducibility fields include:
+  - `schema_version`
+  - `commit`
+  - `command`
+  - `dataset`
+  - `baseline_names`
+  - `baseline_configs`
+  - `ground_truth_runtime_use`
+  - `case_level_records`
+- Answer-generation and STALE judge runs additionally check provider/model
+  settings, `top_k`, `max_context_chars`, and answer/judge prompt templates
+  where applicable.
+- `reproducibility_audit` is only supported when all expected fields for the
+  run type are present.
+- Batch claim-matrix rows now include:
+  - `reproducibility_complete`
+  - `missing_reproducibility_items`
+- `claim_matrix.md` now shows `repro gaps`, and `paper_next_steps.md` emits
+  `complete_reproducibility_packet` when fields are missing.
+- Purpose:
+  - Prevent API-enabled results from becoming non-rerunnable paper evidence.
+  - Make prompt/config/raw-output completeness visible in the same audit path
+    as baseline, model, and dataset gates.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py -q` -> `24 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `156 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

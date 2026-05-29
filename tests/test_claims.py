@@ -457,6 +457,60 @@ def test_claim_audit_records_model_robustness_coverage(tmp_path: Path) -> None:
     assert "Model Coverage" in markdown
 
 
+def test_claim_audit_records_reproducibility_coverage(tmp_path: Path) -> None:
+    experiment = tmp_path / "complete_stale.experiment.json"
+    experiment.write_text(
+        json.dumps({
+            "schema_version": "adamem.experiment.v1",
+            "run_name": "complete_stale",
+            "run_type": "stale_llm_judge",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "baseline_names": ["semantic_only", "a_mem_evolution", "state_readout"],
+            "baseline_configs": {
+                "semantic_only": {"use_state_memory": False},
+                "a_mem_evolution": {"use_memory_evolution": True},
+                "state_readout": {"use_state_memory": True, "use_state_readout": True},
+            },
+            "raw_outputs": [
+                {
+                    "baseline": "state_readout",
+                    "case_id": "c1",
+                    "query_id": "q1",
+                    "judge_correct": True,
+                }
+            ],
+            "notes": {
+                "ground_truth_runtime_use": "forbidden",
+                "ground_truth_judge_use": "allowed",
+                "answer_provider": "openai",
+                "answer_model": "gpt-4o-mini",
+                "judge_provider": "gemini",
+                "judge_model": "gemini-2.5-pro",
+                "top_k": 8,
+                "max_context_chars": 4000,
+            },
+            "prompts": {
+                "answer_system": "answer system",
+                "answer_template": "answer {context}",
+                "judge_system": "judge system",
+                "judge_template": "judge {answer}",
+            },
+            "command": ["python", "-m", "adamem.eval", "--stale", "benchmarks/stale.adamem.jsonl"],
+            "commit": "abc123",
+        }),
+        encoding="utf-8",
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+    reproducibility = audit["claim_evidence"]["reproducibility"]
+
+    assert "reproducibility_audit" in audit["supported_claims"]
+    assert reproducibility["complete"] is True
+    assert reproducibility["missing"] == []
+    assert "Reproducibility" in markdown
+
+
 def test_claim_audit_markdown_and_cli_json(tmp_path: Path) -> None:
     experiment = _write_experiment(
         tmp_path,

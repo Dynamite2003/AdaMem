@@ -24,6 +24,13 @@ BASELINE_COVERAGE_GROUPS: dict[str, set[str]] = {
 }
 MIN_ANSWER_MODELS_FOR_ROBUSTNESS = 2
 MIN_JUDGE_MODELS_FOR_ROBUSTNESS = 2
+ANSWER_RUN_TYPES = {"jsonl_answer_generation_benchmark", "ama_public_answer_generation_pilot"}
+RETRIEVAL_RUN_TYPES = {
+    "jsonl_retrieval_benchmark",
+    "ama_public_answerability_pilot",
+    "ama_public_evidence_pilot",
+    "longmemeval_v2_prepared_answer_support_pilot",
+}
 
 
 def audit_experiment(path: str | Path) -> dict[str, Any]:
@@ -61,13 +68,7 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
     if runtime_use != "forbidden":
         warnings.append("ground_truth_runtime_use is not explicitly forbidden")
 
-    retrieval_run_types = {
-        "jsonl_retrieval_benchmark",
-        "ama_public_answerability_pilot",
-        "ama_public_evidence_pilot",
-        "longmemeval_v2_prepared_answer_support_pilot",
-    }
-    if run_type in retrieval_run_types:
+    if run_type in RETRIEVAL_RUN_TYPES:
         supported.append("retrieval_diagnostics")
         if run_type == "longmemeval_v2_prepared_answer_support_pilot":
             supported.append("longmemeval_v2_prepared_split_readiness")
@@ -88,7 +89,7 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
             supported.extend(retrieval_evidence["supported_claims"])
         blocked["answer_accuracy"].append("run_type is retrieval/answerability, not answer generation")
         blocked["sota"].append("no final answer model and judge model evaluation")
-    elif run_type in {"jsonl_answer_generation_benchmark", "ama_public_answer_generation_pilot"}:
+    elif run_type in ANSWER_RUN_TYPES:
         if _uses_mock_provider(providers):
             supported.append("harness_plumbing")
             blocked["answer_accuracy"].append("mock answer or judge provider")
@@ -133,6 +134,15 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         claim_evidence["model_coverage"] = model_coverage
         if model_coverage["complete"]:
             supported.append("model_robustness_audit")
+    reproducibility = _reproducibility_evidence(
+        experiment,
+        run_type=run_type,
+        raw_output_count=raw_output_count,
+    )
+    if reproducibility:
+        claim_evidence["reproducibility"] = reproducibility
+        if reproducibility["complete"]:
+            supported.append("reproducibility_audit")
     attribution_evidence = _failure_attribution_claim_evidence(claim_records)
     if attribution_evidence:
         claim_evidence["failure_attributions"] = attribution_evidence
@@ -195,6 +205,7 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
     state_evidence = claim_evidence.get("prepared_state_evidence")
     baseline_coverage = claim_evidence.get("baseline_coverage")
     model_coverage = claim_evidence.get("model_coverage")
+    reproducibility = claim_evidence.get("reproducibility")
     if baseline_coverage:
         lines.append("")
         lines.append("## Baseline Coverage")
@@ -233,6 +244,16 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
             lines.append(
                 "- Missing requirements: "
                 + ", ".join(f"`{name}`" for name in model_coverage["missing_requirements"])
+            )
+    if reproducibility:
+        lines.append("")
+        lines.append("## Reproducibility")
+        lines.append(f"- Complete for paper audit: `{reproducibility['complete']}`")
+        lines.append(f"- Present fields: `{len(reproducibility['present'])}`")
+        if reproducibility.get("missing"):
+            lines.append(
+                "- Missing fields: "
+                + ", ".join(f"`{name}`" for name in reproducibility["missing"])
             )
     if state_evidence:
         lines.append("")
@@ -516,11 +537,7 @@ def _model_coverage_evidence(
     providers: dict[str, str | None],
     records: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    if run_type not in {
-        "jsonl_answer_generation_benchmark",
-        "ama_public_answer_generation_pilot",
-        "stale_llm_judge",
-    }:
+    if run_type not in ANSWER_RUN_TYPES | {"stale_llm_judge"}:
         return {}
 
     answer_models = _model_ids(
@@ -540,7 +557,7 @@ def _model_coverage_evidence(
         missing.append("multiple_answer_models")
     if run_type == "stale_llm_judge" and len(judge_models) < MIN_JUDGE_MODELS_FOR_ROBUSTNESS:
         missing.append("multiple_judge_models")
-    if run_type in {"jsonl_answer_generation_benchmark", "ama_public_answer_generation_pilot"}:
+    if run_type in ANSWER_RUN_TYPES:
         scorer = providers.get("scorer")
         if scorer in {"llm", "llm_judge"} and len(judge_models) < MIN_JUDGE_MODELS_FOR_ROBUSTNESS:
             missing.append("multiple_judge_models")
@@ -580,6 +597,101 @@ def _add_model_id(ids: set[str], provider: Any, model: Any) -> None:
         return
     model_text = str(model) if model is not None else "<unspecified>"
     ids.add(f"{provider_text}:{model_text}")
+
+
+def _reproducibility_evidence(
+    experiment: dict[str, Any],
+    *,
+    run_type: str,
+    raw_output_count: int,
+) -> dict[str, Any]:
+    expected: list[str] = [
+        "schema_version",
+        "commit",
+        "command",
+        "dataset",
+        "baseline_names",
+        "baseline_configs",
+        "ground_truth_runtime_use",
+        "case_level_records",
+    ]
+    if run_type in RETRIEVAL_RUN_TYPES | {"stale_retrieval_diagnostics"}:
+        expected.append("metric_boundary_or_diagnostic_kind")
+    if run_type in ANSWER_RUN_TYPES | {"stale_llm_judge"}:
+        expected.extend([
+            "answer_provider",
+            "answer_model",
+            "top_k",
+            "max_context_chars",
+            "answer_prompt",
+        ])
+    if run_type == "stale_llm_judge":
+        expected.extend(["judge_provider", "judge_model", "judge_prompt"])
+    if run_type in ANSWER_RUN_TYPES:
+        expected.append("answer_scorer")
+        notes = experiment.get("notes") if isinstance(experiment.get("notes"), dict) else {}
+        scorer = _providers(notes).get("scorer")
+        if scorer in {"llm", "llm_judge"}:
+            expected.extend(["judge_provider", "judge_model", "judge_prompt"])
+
+    present: list[str] = []
+    for item in expected:
+        if _has_reproducibility_item(experiment, item, raw_output_count=raw_output_count):
+            present.append(item)
+    missing = [item for item in expected if item not in present]
+    return {
+        "expected": expected,
+        "present": present,
+        "missing": missing,
+        "complete": not missing,
+    }
+
+
+def _has_reproducibility_item(
+    experiment: dict[str, Any],
+    item: str,
+    *,
+    raw_output_count: int,
+) -> bool:
+    notes = experiment.get("notes") if isinstance(experiment.get("notes"), dict) else {}
+    prompts = experiment.get("prompts") if isinstance(experiment.get("prompts"), dict) else {}
+    if item == "schema_version":
+        return bool(experiment.get("schema_version"))
+    if item == "commit":
+        return bool(experiment.get("commit"))
+    if item == "command":
+        return bool(experiment.get("command"))
+    if item == "dataset":
+        return bool(experiment.get("dataset"))
+    if item == "baseline_names":
+        return bool(experiment.get("baseline_names"))
+    if item == "baseline_configs":
+        return bool(experiment.get("baseline_configs"))
+    if item == "ground_truth_runtime_use":
+        return notes.get("ground_truth_runtime_use") == "forbidden"
+    if item == "case_level_records":
+        return raw_output_count > 0 or bool(notes.get("records_path"))
+    if item == "metric_boundary_or_diagnostic_kind":
+        return bool(notes.get("metric_boundary") or notes.get("benchmark_kind") or experiment.get("diagnostics"))
+    if item == "answer_provider":
+        return bool(notes.get("answer_provider"))
+    if item == "answer_model":
+        return bool(notes.get("answer_model"))
+    if item == "judge_provider":
+        return bool(notes.get("judge_provider"))
+    if item == "judge_model":
+        return bool(notes.get("judge_model"))
+    if item == "top_k":
+        return notes.get("top_k") is not None
+    if item == "max_context_chars":
+        return notes.get("max_context_chars") is not None
+    if item == "answer_scorer":
+        return bool(notes.get("scorer") or notes.get("answer_scorer"))
+    if item == "answer_prompt":
+        return bool(prompts.get("answer_system") and prompts.get("answer_template"))
+    if item == "judge_prompt":
+        return bool(prompts.get("judge_system") and prompts.get("judge_template"))
+    return False
 
 
 def _failure_attribution_claim_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:

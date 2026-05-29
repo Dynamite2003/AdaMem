@@ -206,6 +206,8 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "answer_model_count": 0,
         "judge_model_count": 0,
         "missing_model_requirements": [],
+        "reproducibility_complete": False,
+        "missing_reproducibility_items": [],
         "failure_attribution_count": 0,
         "top_failure_attribution": None,
         "top_failure_attribution_count": 0,
@@ -225,7 +227,7 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
-    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | model gaps | no-reg pairs | top attribution |" in markdown
+    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | model gaps | repro gaps | no-reg pairs | top attribution |" in markdown
 
 
 def test_paper_next_steps_markdown_groups_actions() -> None:
@@ -303,6 +305,21 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
                 },
             },
         },
+        {
+            "experiment": "repro_gap.experiment.json",
+            "run_type": "stale_llm_judge",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "raw_output_count": 3,
+            "supported_claims": ["stale_answer_accuracy_candidate"],
+            "blocked_claims": {"sota": ["no robustness"]},
+            "warnings": [],
+            "claim_evidence": {
+                "reproducibility": {
+                    "complete": False,
+                    "missing": ["command", "answer_prompt"],
+                },
+            },
+        },
     ])
 
     by_name = {Path(row["experiment"]).name: row for row in rows}
@@ -330,6 +347,9 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
     assert by_name["failure_analysis.experiment.json"]["readiness_gate"] == "diagnostic_ready"
     assert "add_missing_baseline_categories" in (
         by_name["failure_analysis.experiment.json"]["next_actions"]
+    )
+    assert "complete_reproducibility_packet" in (
+        by_name["repro_gap.experiment.json"]["next_actions"]
     )
 
 

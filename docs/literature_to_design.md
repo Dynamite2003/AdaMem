@@ -89,6 +89,33 @@ Required next evidence:
 - Check whether gains hold under judge-model swaps before using answer
   accuracy as a core paper claim.
 
+### 0c. Reproducibility Packet Gate
+
+Hypothesis:
+
+An accuracy number is not paper-grade evidence unless the exact experiment can
+be rerun from its artifact. Missing commands, configs, prompts, or case-level
+records make later ablations and reviewer checks unreliable.
+
+Current implementation:
+
+- Claim audits now record a reproducibility packet for each experiment.
+- The audit checks common fields such as schema version, commit, command,
+  dataset, baseline names/configs, ground-truth runtime-use note, and
+  case-level records.
+- Answer-generation and STALE judge runs additionally require provider/model
+  settings, `top_k`, `max_context_chars`, and answer/judge prompts where
+  applicable.
+- Batch claim matrices expose missing reproducibility fields, and
+  `paper_next_steps.md` adds `complete_reproducibility_packet` when the packet
+  is incomplete.
+
+Required next evidence:
+
+- Run all API-enabled pilots through experiment writers that include command,
+  prompt, config, raw-output, and records-path artifacts.
+- Treat incomplete reproducibility packets as non-paper evidence until fixed.
+
 ### 1. Current-State Authority Layer
 
 Hypothesis:

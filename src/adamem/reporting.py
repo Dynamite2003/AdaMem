@@ -157,6 +157,7 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         retrieval = evidence.get("retrieval_transfer") or {}
         baseline_coverage = evidence.get("baseline_coverage") or {}
         model_coverage = evidence.get("model_coverage") or {}
+        reproducibility = evidence.get("reproducibility") or {}
         dataset_scope = manifest.get("dataset_scope") or {}
         diagnostic = manifest.get("diagnostic_evidence") or {}
         top_attribution, top_attribution_count = _top_count(diagnostic.get("failure_attributions") or {})
@@ -184,6 +185,8 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "answer_model_count": int(model_coverage.get("answer_model_count") or 0),
             "judge_model_count": int(model_coverage.get("judge_model_count") or 0),
             "missing_model_requirements": list(model_coverage.get("missing_requirements") or []),
+            "reproducibility_complete": bool(reproducibility.get("complete")),
+            "missing_reproducibility_items": list(reproducibility.get("missing") or []),
             "failure_attribution_count": len(diagnostic.get("failure_attributions") or {}),
             "top_failure_attribution": top_attribution,
             "top_failure_attribution_count": top_attribution_count,
@@ -203,13 +206,13 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | model gaps | no-reg pairs | top attribution |",
-        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | --- |",
+        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | model gaps | repro gaps | no-reg pairs | top attribution |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- |",
     ]
     if not rows:
         lines.append(
             "| <none> | needs_attention | add_experiment_records | unknown | <none> | "
-            "0 | 0 | 0 | 0/0 | 0.00% | - | - | 0 | - |"
+            "0 | 0 | 0 | 0/0 | 0.00% | - | - | - | 0 | - |"
         )
         return "\n".join(lines) + "\n"
     for row in rows:
@@ -226,6 +229,7 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
             f"{float(row.get('state_available_rate') or 0.0):.2%} | "
             f"{_format_missing_baseline_groups(row)} | "
             f"{_format_missing_model_requirements(row)} | "
+            f"{_format_missing_reproducibility_items(row)} | "
             f"{row['paired_no_regression_count']} | "
             f"{_format_top_attribution(row)} |"
         )
@@ -329,6 +333,8 @@ def _paper_next_actions(row: dict[str, Any]) -> list[str]:
         actions.append("add_missing_baseline_categories")
     if row.get("missing_model_requirements"):
         actions.append("add_model_or_judge_robustness_runs")
+    if row.get("missing_reproducibility_items"):
+        actions.append("complete_reproducibility_packet")
 
     if _has_diagnostic_claim(supported) and (
         "answer_accuracy" in blocked or "stale_answer_accuracy" in blocked
@@ -421,6 +427,15 @@ def _format_missing_model_requirements(row: dict[str, Any]) -> str:
     if not missing:
         return "-"
     return ", ".join(missing)
+
+
+def _format_missing_reproducibility_items(row: dict[str, Any]) -> str:
+    missing = [str(item) for item in row.get("missing_reproducibility_items") or []]
+    if not missing:
+        return "-"
+    if len(missing) <= 3:
+        return ", ".join(missing)
+    return ", ".join(missing[:3]) + f", +{len(missing) - 3}"
 
 
 def main(argv: list[str] | None = None) -> None:
