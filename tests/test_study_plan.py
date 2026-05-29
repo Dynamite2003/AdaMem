@@ -15,6 +15,8 @@ from adamem.study_plan import (
     plan_fingerprint,
     run_study_plan,
     settings_fingerprint,
+    study_plan_command_listing,
+    study_plan_command_listing_markdown,
     validate_paper_study_plan,
     write_paper_study_plan,
     write_study_settings_template,
@@ -104,6 +106,19 @@ def test_build_smoke_study_plan_is_api_free_and_execution_ready() -> None:
     assert validation["required_env_vars"] == []
     assert validation["placeholder_models"] == []
     assert validation["command_count"] == 8
+
+
+def test_study_plan_command_listing_exposes_command_names() -> None:
+    plan = build_smoke_study_plan(output_dir="results/smoke")
+
+    listing = study_plan_command_listing(plan)
+    markdown = study_plan_command_listing_markdown(plan)
+
+    assert len(listing) == 8
+    assert listing[0]["name"] == plan["commands"][0]["name"]
+    assert listing[0]["shell"] == plan["commands"][0]["shell"]
+    assert "AdaMem Study Plan Commands" in markdown
+    assert "--command NAME" in markdown
 
 
 def test_write_study_settings_template_is_key_free(tmp_path: Path) -> None:
@@ -812,6 +827,31 @@ def test_study_plan_cli_can_filter_by_command_name(tmp_path: Path) -> None:
     assert summary["selected_command_filter"] == [target["name"]]
     assert summary["selected_command_count"] == 1
     assert "Command filter" in summary_md
+
+
+def test_study_plan_cli_can_list_saved_plan_commands(tmp_path: Path, capsys) -> None:
+    output_dir = tmp_path / "cli-list-commands"
+    main([
+        "--profile",
+        "smoke",
+        "--output-dir",
+        str(output_dir),
+        "--json",
+    ])
+    capsys.readouterr()
+
+    main([
+        "--plan",
+        str(output_dir / "paper_study_plan.json"),
+        "--list-commands",
+        "--json",
+    ])
+
+    printed = json.loads(capsys.readouterr().out)
+    names = [command["name"] for command in printed["command_listing"]]
+    assert "longmemeval_transfer_retrieval" in names
+    assert printed["command_listing"][0]["stage"]
+    assert printed["command_listing"][0]["claim_boundary"]
 
 
 def test_study_plan_cli_can_dry_run_smoke_profile(tmp_path: Path) -> None:

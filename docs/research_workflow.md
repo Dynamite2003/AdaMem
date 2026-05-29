@@ -135,6 +135,7 @@ Outputs:
   `--dry-run` writes command records without executing them, and repeatable
   `--stage` filters the run to stages such as `diagnostic`, `answer_judge`,
   `mechanism_ablation`, `transfer`, or `reporting`. Use repeatable
+  `--list-commands` to inspect exact command names, then repeatable
   `--command NAME` to execute a single planned command, for example one
   answer/judge pair before spending API budget on the whole `answer_judge`
   stage. If a run fails after completing expensive API commands, rerun with

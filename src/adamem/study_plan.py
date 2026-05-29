@@ -997,6 +997,37 @@ def paper_study_plan_shell(plan: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def study_plan_command_listing(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    listing: list[dict[str, Any]] = []
+    for command in plan.get("commands") or []:
+        outputs = command.get("outputs") or {}
+        listing.append({
+            "name": command.get("name"),
+            "stage": command.get("stage"),
+            "purpose": command.get("purpose"),
+            "claim_boundary": command.get("claim_boundary"),
+            "outputs": dict(outputs),
+            "output_keys": sorted(str(key) for key in outputs.keys()),
+            "shell": command.get("shell") or shlex.join(str(item) for item in command.get("command") or []),
+        })
+    return listing
+
+
+def study_plan_command_listing_markdown(plan: dict[str, Any]) -> str:
+    lines = ["# AdaMem Study Plan Commands", ""]
+    lines.append("| name | stage | purpose | outputs |")
+    lines.append("| --- | --- | --- | --- |")
+    for command in study_plan_command_listing(plan):
+        outputs = ", ".join(f"`{key}`" for key in command["output_keys"]) or "-"
+        lines.append(
+            f"| `{command['name']}` | `{command['stage']}` | "
+            f"{command.get('purpose') or ''} | {outputs} |"
+        )
+    lines.append("")
+    lines.append("Use `--command NAME` with one of the names above to run a single planned command.")
+    return "\n".join(lines) + "\n"
+
+
 def parse_model_spec(value: str) -> ModelSpec:
     if ":" not in value:
         raise ValueError(f"model spec must be provider:model, got {value!r}")
@@ -1660,6 +1691,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Also check whether required provider credential environment variables are set.",
     )
     parser.add_argument("--run", action="store_true", help="Execute the generated plan after writing artifacts.")
+    parser.add_argument("--list-commands", action="store_true", help="List planned command names for use with --command.")
     parser.add_argument("--dry-run", action="store_true", help="With --run, log commands without executing them.")
     parser.add_argument(
         "--resume-run",
@@ -1764,6 +1796,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     else:
         validation = json.loads(Path(artifacts["validation_json"]).read_text(encoding="utf-8"))
+    command_listing = study_plan_command_listing(plan) if args.list_commands else None
     run_summary = None
     if args.run:
         run_summary = run_study_plan(
@@ -1782,13 +1815,22 @@ def main(argv: list[str] | None = None) -> None:
         run_summary_md_path.write_text(study_run_summary_markdown(run_summary), encoding="utf-8")
         artifacts["run_summary_json"] = str(run_summary_path)
         artifacts["run_summary_markdown"] = str(run_summary_md_path)
-    result = {"artifacts": artifacts, "plan": plan, "validation": validation, "run_summary": run_summary}
+    result = {
+        "artifacts": artifacts,
+        "plan": plan,
+        "validation": validation,
+        "command_listing": command_listing,
+        "run_summary": run_summary,
+    }
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(f"wrote paper study plan to {output_dir}")
         for name, path in artifacts.items():
             print(f"{name}: {path}")
+        if command_listing is not None:
+            print()
+            print(study_plan_command_listing_markdown(plan), end="")
 
 
 if __name__ == "__main__":

@@ -3199,3 +3199,31 @@ to a paper-facing claim and evaluation gate.
   - CLI smoke dry-run with `--command longmemeval_transfer_retrieval`
     selected exactly one command and recorded the command filter in JSON and
     Markdown summaries.
+
+### 2026-05-30 study command listing
+
+- Added command listing utilities:
+  - `study_plan_command_listing`
+  - `study_plan_command_listing_markdown`
+  - CLI `--list-commands`
+- Listing fields:
+  - command `name`
+  - `stage`
+  - `purpose`
+  - `claim_boundary`
+  - output keys and paths
+  - shell command
+- Purpose:
+  - Let API pilots discover exact `--command NAME` values without opening the
+    full plan JSON manually.
+  - Make single-command dry-runs and small answer/judge pilots easier to
+    launch safely.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `35 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `63 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `195 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke `--list-commands --json` returned 8 commands including
+    `longmemeval_transfer_retrieval` and exposed name, stage, purpose,
+    claim boundary, and shell fields.
