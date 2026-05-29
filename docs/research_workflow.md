@@ -682,9 +682,12 @@ Completed API-free foundations:
   `study_model_coverage.json` and `study_model_coverage.md`, which merge
   comparable answer/judge experiments by run type, dataset, split, and baseline
   set so one-model-per-run API sweeps can still be audited as one study. Batch
-  mode also writes `paper_readiness.json` and `paper_readiness.md`, which
-  summarize directory-level gate counts, top next actions, and complete vs
-  incomplete study-level model coverage.
+  mode also writes `benchmark_coverage.json` and `benchmark_coverage.md`,
+  which check whether a result directory covers the primary STALE benchmark,
+  at least one transfer benchmark, and at least one public/full-scope
+  experiment. `paper_readiness.json` and `paper_readiness.md` summarize
+  directory-level gate counts, top next actions, complete vs incomplete
+  study-level model coverage, and benchmark coverage gaps.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records

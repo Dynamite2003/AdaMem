@@ -86,6 +86,9 @@ Current implementation:
 - Batch report bundles also write `paper_readiness.json/md`, which summarizes
   gate counts, top next actions, and complete vs incomplete study-level model
   groups for a result directory.
+- Batch report bundles write `benchmark_coverage.json/md`, which checks
+  whether a result directory includes STALE plus at least one transfer
+  benchmark under a public/full-scope setting.
 - `paper_next_steps.md` adds `add_model_or_judge_robustness_runs` when
   per-experiment coverage is incomplete.
 

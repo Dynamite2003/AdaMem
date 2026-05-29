@@ -140,12 +140,19 @@ def write_experiment_bundle_batch(
     }
     claim_matrix = claim_matrix_rows(manifests)
     study_model_coverage = study_model_coverage_rows(manifests)
-    paper_readiness = paper_readiness_summary(claim_matrix, study_model_coverage)
+    benchmark_coverage = benchmark_coverage_summary(manifests)
+    paper_readiness = paper_readiness_summary(
+        claim_matrix,
+        study_model_coverage,
+        benchmark_coverage=benchmark_coverage,
+    )
     claim_matrix_json = output / "claim_matrix.json"
     claim_matrix_md = output / "claim_matrix.md"
     next_steps_md = output / "paper_next_steps.md"
     study_model_json = output / "study_model_coverage.json"
     study_model_md = output / "study_model_coverage.md"
+    benchmark_json = output / "benchmark_coverage.json"
+    benchmark_md = output / "benchmark_coverage.md"
     readiness_json = output / "paper_readiness.json"
     readiness_md = output / "paper_readiness.md"
     claim_matrix_json.write_text(json.dumps(claim_matrix, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -153,6 +160,8 @@ def write_experiment_bundle_batch(
     next_steps_md.write_text(paper_next_steps_markdown(claim_matrix), encoding="utf-8")
     study_model_json.write_text(json.dumps(study_model_coverage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     study_model_md.write_text(study_model_coverage_markdown(study_model_coverage), encoding="utf-8")
+    benchmark_json.write_text(json.dumps(benchmark_coverage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    benchmark_md.write_text(benchmark_coverage_markdown(benchmark_coverage), encoding="utf-8")
     readiness_json.write_text(json.dumps(paper_readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     readiness_md.write_text(paper_readiness_markdown(paper_readiness), encoding="utf-8")
     batch_manifest["artifacts"] = {
@@ -161,6 +170,8 @@ def write_experiment_bundle_batch(
         "paper_next_steps_markdown": str(next_steps_md),
         "study_model_coverage_json": str(study_model_json),
         "study_model_coverage_markdown": str(study_model_md),
+        "benchmark_coverage_json": str(benchmark_json),
+        "benchmark_coverage_markdown": str(benchmark_md),
         "paper_readiness_json": str(readiness_json),
         "paper_readiness_markdown": str(readiness_md),
     }
@@ -302,10 +313,77 @@ def study_model_coverage_markdown(rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def benchmark_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    family_counts: dict[str, int] = {}
+    public_or_full = 0
+    primary_stale = 0
+    transfer = 0
+    for manifest in manifests:
+        family = _benchmark_family(manifest)
+        family_counts[family] = family_counts.get(family, 0) + 1
+        scope = manifest.get("dataset_scope") or {}
+        claim_limited = bool(scope.get("claim_limited"))
+        if not claim_limited:
+            public_or_full += 1
+        if family == "stale":
+            primary_stale += 1
+        elif family in {"longmemeval", "ama", "locomo", "state_bench"}:
+            transfer += 1
+        rows.append({
+            "experiment": manifest.get("experiment"),
+            "run_type": manifest.get("run_type"),
+            "dataset": manifest.get("dataset"),
+            "dataset_scope": scope.get("scope") or "unknown",
+            "dataset_claim_limited": claim_limited,
+            "benchmark_family": family,
+        })
+
+    missing: list[str] = []
+    if primary_stale == 0:
+        missing.append("primary_stale_benchmark")
+    if transfer == 0:
+        missing.append("transfer_benchmark")
+    if public_or_full == 0:
+        missing.append("public_or_full_benchmark_scope")
+    return {
+        "experiment_count": len(rows),
+        "benchmark_families": dict(sorted(family_counts.items())),
+        "primary_stale_experiment_count": primary_stale,
+        "transfer_experiment_count": transfer,
+        "public_or_full_experiment_count": public_or_full,
+        "missing_requirements": missing,
+        "complete": not missing,
+        "experiments": rows,
+    }
+
+
+def benchmark_coverage_markdown(summary: dict[str, Any]) -> str:
+    lines = ["# AdaMem Benchmark Coverage", ""]
+    lines.append(f"Complete: `{bool(summary.get('complete'))}`")
+    lines.append(f"Experiments: `{int(summary.get('experiment_count') or 0)}`")
+    lines.append(f"Primary STALE experiments: `{int(summary.get('primary_stale_experiment_count') or 0)}`")
+    lines.append(f"Transfer benchmark experiments: `{int(summary.get('transfer_experiment_count') or 0)}`")
+    lines.append(f"Public/full-scope experiments: `{int(summary.get('public_or_full_experiment_count') or 0)}`")
+    missing = summary.get("missing_requirements") or []
+    lines.append(
+        "Missing requirements: "
+        + (", ".join(f"`{item}`" for item in missing) if missing else "`none`")
+    )
+    lines.append("")
+    lines.append("## Families")
+    for family, count in (summary.get("benchmark_families") or {}).items():
+        lines.append(f"- `{family}`: `{count}`")
+    return "\n".join(lines) + "\n"
+
+
 def paper_readiness_summary(
     claim_rows: list[dict[str, Any]],
     study_model_rows: list[dict[str, Any]],
+    *,
+    benchmark_coverage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    benchmark_coverage = benchmark_coverage or {}
     gate_counts = _count_values(row.get("readiness_gate") for row in claim_rows)
     action_counts = _next_action_counts(claim_rows)
     complete_studies = [row for row in study_model_rows if row.get("complete")]
@@ -326,6 +404,9 @@ def paper_readiness_summary(
         "incomplete_study_model_groups": [
             _compact_study_group(row) for row in incomplete_studies
         ],
+        "benchmark_coverage_complete": bool(benchmark_coverage.get("complete")),
+        "benchmark_missing_requirements": list(benchmark_coverage.get("missing_requirements") or []),
+        "benchmark_families": dict(benchmark_coverage.get("benchmark_families") or {}),
     }
 
 
@@ -338,6 +419,7 @@ def paper_readiness_markdown(summary: dict[str, Any]) -> str:
         f"`{int(summary.get('complete_study_model_group_count') or 0)}` complete / "
         f"`{int(summary.get('study_model_group_count') or 0)}` total"
     )
+    lines.append(f"Benchmark coverage complete: `{bool(summary.get('benchmark_coverage_complete'))}`")
     lines.append("")
     lines.append("## Gates")
     for gate, count in (summary.get("gate_counts") or {}).items():
@@ -360,6 +442,12 @@ def paper_readiness_markdown(summary: dict[str, Any]) -> str:
                 f"split `{item['split_or_case_limit'] or '-'}`, "
                 f"missing `{', '.join(item['missing_requirements'])}`"
             )
+    missing_benchmarks = summary.get("benchmark_missing_requirements") or []
+    if missing_benchmarks:
+        lines.append("")
+        lines.append("## Benchmark Coverage Gaps")
+        for item in missing_benchmarks:
+            lines.append(f"- `{item}`")
     return "\n".join(lines) + "\n"
 
 
@@ -492,6 +580,24 @@ def _study_model_missing_requirements(
         elif len(judge_models) < MIN_JUDGE_MODELS_FOR_ROBUSTNESS:
             missing.append("multiple_judge_models")
     return missing
+
+
+def _benchmark_family(manifest: dict[str, Any]) -> str:
+    text = " ".join(
+        str(manifest.get(key) or "")
+        for key in ("run_type", "dataset", "experiment", "split_or_case_limit")
+    ).lower()
+    if "stale" in text:
+        return "stale"
+    if "longmemeval" in text or "lme_v2" in text or "lme-v2" in text:
+        return "longmemeval"
+    if "ama" in text:
+        return "ama"
+    if "locomo" in text:
+        return "locomo"
+    if "state-bench" in text or "state_bench" in text:
+        return "state_bench"
+    return "other"
 
 
 def _paper_readiness_status(

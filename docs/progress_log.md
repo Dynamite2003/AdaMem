@@ -2625,3 +2625,36 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `158 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 benchmark coverage audit
+
+- Extended batch `adamem.reporting` outputs with:
+  - `benchmark_coverage.json`
+  - `benchmark_coverage.md`
+- Benchmark coverage summarizes:
+  - benchmark family counts
+  - primary STALE experiment count
+  - transfer benchmark experiment count
+  - public/full-scope experiment count
+  - missing benchmark coverage requirements
+- Benchmark families currently include:
+  - `stale`
+  - `longmemeval`
+  - `ama`
+  - `locomo`
+  - `state_bench`
+  - `other`
+- `paper_readiness.json/md` now includes benchmark coverage completeness,
+  missing benchmark requirements, and benchmark family counts.
+- Purpose:
+  - Make the generalization requirement explicit: a paper-track result
+    directory should include the primary STALE target plus at least one
+    transfer benchmark, not only a single benchmark slice.
+  - Keep mini/local-only result directories from being mistaken for
+    generalizable evidence.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `14 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py tests/test_claims.py -q` -> `27 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `159 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

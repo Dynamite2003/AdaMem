@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 from adamem.reporting import (
+    benchmark_coverage_markdown,
+    benchmark_coverage_summary,
     claim_matrix_markdown,
     claim_matrix_rows,
     main,
@@ -126,6 +128,8 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()
     assert Path(manifest["artifacts"]["study_model_coverage_json"]).exists()
     assert Path(manifest["artifacts"]["study_model_coverage_markdown"]).exists()
+    assert Path(manifest["artifacts"]["benchmark_coverage_json"]).exists()
+    assert Path(manifest["artifacts"]["benchmark_coverage_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_readiness_json"]).exists()
     assert Path(manifest["artifacts"]["paper_readiness_markdown"]).exists()
     assert len(manifest["bundles"]) == 3
@@ -164,6 +168,7 @@ def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["claim_matrix_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()
     assert Path(manifest["artifacts"]["study_model_coverage_markdown"]).exists()
+    assert Path(manifest["artifacts"]["benchmark_coverage_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_readiness_markdown"]).exists()
 
 
@@ -275,6 +280,32 @@ def test_study_model_coverage_merges_comparable_experiments() -> None:
     assert "| stale_llm_judge | benchmarks/stale.adamem.jsonl | - | 2 | 2 | 2 | - |" in markdown
 
 
+def test_benchmark_coverage_summary_tracks_stale_and_transfer_scope() -> None:
+    summary = benchmark_coverage_summary([
+        {
+            "experiment": "stale.experiment.json",
+            "run_type": "stale_llm_judge",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "dataset_scope": {"scope": "benchmark_like", "claim_limited": False},
+        },
+        {
+            "experiment": "ama.experiment.json",
+            "run_type": "ama_public_answerability_pilot",
+            "dataset": "benchmarks/ama_bench.adamem.jsonl",
+            "dataset_scope": {"scope": "benchmark_like", "claim_limited": False},
+        },
+    ])
+    markdown = benchmark_coverage_markdown(summary)
+
+    assert summary["complete"] is True
+    assert summary["benchmark_families"] == {"ama": 1, "stale": 1}
+    assert summary["primary_stale_experiment_count"] == 1
+    assert summary["transfer_experiment_count"] == 1
+    assert summary["public_or_full_experiment_count"] == 2
+    assert summary["missing_requirements"] == []
+    assert "Complete: `True`" in markdown
+
+
 def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() -> None:
     claim_rows = claim_matrix_rows([
         {
@@ -301,12 +332,32 @@ def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() ->
         ),
     ])
 
-    summary = paper_readiness_summary(claim_rows, study_rows)
+    benchmark_coverage = benchmark_coverage_summary([
+        {
+            "experiment": "stale.experiment.json",
+            "run_type": "stale_llm_judge",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "dataset_scope": {"scope": "benchmark_like", "claim_limited": False},
+        },
+        {
+            "experiment": "ama.experiment.json",
+            "run_type": "ama_public_answerability_pilot",
+            "dataset": "benchmarks/ama_bench.adamem.jsonl",
+            "dataset_scope": {"scope": "benchmark_like", "claim_limited": False},
+        },
+    ])
+
+    summary = paper_readiness_summary(
+        claim_rows,
+        study_rows,
+        benchmark_coverage=benchmark_coverage,
+    )
     markdown = paper_readiness_markdown(summary)
 
     assert summary["status"] == "answer_candidate_with_model_coverage"
     assert summary["gate_counts"] == {"answer_candidate": 1}
     assert summary["complete_study_model_group_count"] == 1
+    assert summary["benchmark_coverage_complete"] is True
     assert summary["top_next_actions"][0] == {
         "action": "add_strong_baselines_and_judge_robustness",
         "count": 1,
