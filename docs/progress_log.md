@@ -2037,3 +2037,24 @@ to a paper-facing claim and evaluation gate.
   `results/longmemeval_v2_trajectory_manifest/`.
 - Validation:
   - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `7 passed`
+
+### 2026-05-30 LongMemEval-V2 selected trajectory extraction
+
+- Added `adamem.lme_v2 extract-trajectories`:
+  - Streams a full LongMemEval-V2 `trajectories.jsonl` source from a local path
+    or URL.
+  - Stops early once all requested trajectory ids are matched.
+  - Writes a sanitized selected-trajectory JSONL, missing-id JSONL, manifest
+    JSON, and Markdown report.
+  - Keeps only official runtime trajectory fields (`id`, `domain`,
+    `environment`, `goal`, `outcome`, `start_url`, `states`) and strips
+    accidental `answer`, `eval_function`, or `question` fields before later
+    conversion.
+- Updated the LongMemEval-V2 workflow so the 60-question text-transfer split
+  can be converted from a 200-trajectory selected file rather than repeatedly
+  scanning or loading the full trajectory source.
+- Local smoke command:
+  `PYTHONPATH=src python -m adamem.lme_v2 extract-trajectories --trajectory-ids $tmpdir/ids.jsonl --trajectories $tmpdir/traj.jsonl --output-dir $tmpdir/out --json`
+  - Requested `2`, matched `2`, scanned `3`, completed all requested.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `9 passed`

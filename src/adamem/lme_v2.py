@@ -140,6 +140,80 @@ def write_longmemeval_v2_trajectory_manifest(
     }
 
 
+def write_longmemeval_v2_extracted_trajectories(
+    trajectory_ids_source: str | Path,
+    trajectories_source: str | Path,
+    output_dir: str | Path,
+    *,
+    max_records: int | None = None,
+) -> dict[str, Any]:
+    """Extract selected LongMemEval-V2 trajectories from a JSONL trajectory source."""
+
+    requested_ids = _load_id_set(trajectory_ids_source)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    selected_path = output / "longmemeval_v2_selected_trajectories.jsonl"
+    missing_path = output / "longmemeval_v2_missing_trajectory_ids.jsonl"
+    manifest_path = output / "longmemeval_v2_extract_manifest.json"
+    report_path = output / "longmemeval_v2_extract_report.md"
+
+    seen_ids: set[str] = set()
+    records_scanned = 0
+    tmp = selected_path.with_suffix(selected_path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        for record in _iter_jsonl_objects(trajectories_source):
+            records_scanned += 1
+            trajectory_id = _record_id(record)
+            if trajectory_id in requested_ids and trajectory_id not in seen_ids:
+                handle.write(json.dumps(_sanitize_trajectory_record(record), ensure_ascii=False, sort_keys=True))
+                handle.write("\n")
+                seen_ids.add(trajectory_id)
+                if len(seen_ids) == len(requested_ids):
+                    break
+            if max_records is not None and records_scanned >= max_records:
+                break
+    tmp.replace(selected_path)
+
+    missing_ids = sorted(requested_ids - seen_ids)
+    _write_jsonl(missing_path, [{"id": trajectory_id} for trajectory_id in missing_ids])
+    summary = {
+        "trajectory_ids_source": str(trajectory_ids_source),
+        "trajectories_source": str(trajectories_source),
+        "selected_trajectories_path": str(selected_path),
+        "missing_trajectory_ids_path": str(missing_path),
+        "requested_trajectories": len(requested_ids),
+        "matched_trajectories": len(seen_ids),
+        "missing_trajectories": len(missing_ids),
+        "records_scanned": records_scanned,
+        "max_records": max_records,
+        "completed_all_requested": len(seen_ids) == len(requested_ids),
+        "label_use": "trajectory runtime fields only; answer/eval/question fields stripped",
+    }
+    _write_json(manifest_path, summary)
+    report_path.write_text(longmemeval_v2_extract_report(summary), encoding="utf-8")
+    return {
+        "selected_trajectories_path": str(selected_path),
+        "missing_trajectory_ids_path": str(missing_path),
+        "manifest_path": str(manifest_path),
+        "report_path": str(report_path),
+        "summary": summary,
+    }
+
+
+def longmemeval_v2_extract_report(summary: Mapping[str, Any]) -> str:
+    return "\n".join([
+        "# LongMemEval-V2 Trajectory Extraction",
+        "",
+        f"Requested trajectories: {summary['requested_trajectories']}",
+        f"Matched trajectories: {summary['matched_trajectories']}",
+        f"Missing trajectories: {summary['missing_trajectories']}",
+        f"Records scanned: {summary['records_scanned']}",
+        f"Completed all requested: {summary['completed_all_requested']}",
+        f"Selected output: `{summary['selected_trajectories_path']}`",
+        f"Missing-id output: `{summary['missing_trajectory_ids_path']}`",
+    ]) + "\n"
+
+
 def longmemeval_v2_split_trajectory_records(
     split_records: Iterable[Mapping[str, Any]],
     *,
@@ -615,6 +689,28 @@ def _load_jsonl_objects(source: str | Path, *, limit: int | None = None) -> list
     return records
 
 
+def _iter_jsonl_objects(source: str | Path) -> Iterable[dict[str, Any]]:
+    for line_number, line in enumerate(_iter_source_lines(source), start=1):
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if not isinstance(record, dict):
+            raise ValueError(f"JSONL record {line_number} must be an object")
+        yield record
+
+
+def _iter_source_lines(source: str | Path) -> Iterable[str]:
+    source_text = str(source)
+    if source_text.startswith("http://") or source_text.startswith("https://"):
+        with urllib.request.urlopen(source_text, timeout=60) as response:
+            for raw_line in response:
+                yield raw_line.decode("utf-8")
+        return
+    with Path(source).open("r", encoding="utf-8") as handle:
+        for line in handle:
+            yield line
+
+
 def _load_haystack_json(source: str | Path) -> dict[str, list[str]]:
     raw = json.loads(_read_source_text(source))
     if not isinstance(raw, Mapping):
@@ -628,6 +724,32 @@ def _read_source_text(source: str | Path) -> str:
         with urllib.request.urlopen(source_text, timeout=60) as response:
             return response.read().decode("utf-8")
     return Path(source).read_text(encoding="utf-8")
+
+
+def _load_id_set(source: str | Path) -> set[str]:
+    ids: set[str] = set()
+    for index, record in enumerate(_load_jsonl_objects(source), start=1):
+        record_id = _record_id(record)
+        if not record_id:
+            raise ValueError(f"ID record {index} needs id or trajectory_id")
+        ids.add(record_id)
+    return ids
+
+
+def _record_id(record: Mapping[str, Any]) -> str:
+    return str(record.get("id") or record.get("trajectory_id") or "")
+
+
+def _sanitize_trajectory_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    sanitized = {
+        key: record[key]
+        for key in ("id", "trajectory_id", "domain", "environment", "goal", "outcome", "start_url", "states")
+        if key in record
+    }
+    if "id" not in sanitized and "trajectory_id" in sanitized:
+        sanitized["id"] = sanitized["trajectory_id"]
+    sanitized.pop("trajectory_id", None)
+    return sanitized
 
 
 def _question_id(question: Mapping[str, Any]) -> str:
@@ -771,6 +893,16 @@ def main(argv: list[str] | None = None) -> None:
     trajectories.add_argument("--output-dir", type=Path, required=True)
     trajectories.add_argument("--json", action="store_true")
 
+    extract = sub.add_parser(
+        "extract-trajectories",
+        help="Stream selected LongMemEval-V2 trajectories from a full trajectories JSONL source",
+    )
+    extract.add_argument("--trajectory-ids", type=Path, required=True)
+    extract.add_argument("--trajectories", required=True)
+    extract.add_argument("--output-dir", type=Path, required=True)
+    extract.add_argument("--max-records", type=int)
+    extract.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "question-audit":
         result = write_longmemeval_v2_question_audit(
@@ -808,6 +940,18 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             print(f"wrote LongMemEval-V2 trajectory manifest to {args.output_dir}")
+            print(f"report: {result['report_path']}")
+    elif args.command == "extract-trajectories":
+        result = write_longmemeval_v2_extracted_trajectories(
+            args.trajectory_ids,
+            args.trajectories,
+            args.output_dir,
+            max_records=args.max_records,
+        )
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"wrote selected LongMemEval-V2 trajectories to {args.output_dir}")
             print(f"report: {result['report_path']}")
 
 

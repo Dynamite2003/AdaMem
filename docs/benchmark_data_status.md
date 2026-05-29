@@ -143,6 +143,12 @@ PYTHONPATH=src python -m adamem.lme_v2 trajectory-manifest \
   --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl \
   --output-dir results/longmemeval_v2_trajectory_manifest \
   --json
+
+PYTHONPATH=src python -m adamem.lme_v2 extract-trajectories \
+  --trajectory-ids results/longmemeval_v2_trajectory_manifest/longmemeval_v2_split_trajectory_ids.jsonl \
+  --trajectories data/longmemeval-v2/trajectories.jsonl \
+  --output-dir data/longmemeval-v2/text_transfer_60 \
+  --json
 ```
 
 Latest question-side audit:
@@ -174,13 +180,17 @@ Latest text-only transfer split:
 - Trajectory manifest for the split:
   `6,000` trajectory references collapse to `200` unique trajectory ids, with
   `0` missing haystack questions.
+- Selected trajectory extraction is implemented as a streaming JSONL pass over
+  the full `trajectories.jsonl`. It writes sanitized trajectory runtime fields
+  only and strips accidental `answer`, `eval_function`, or `question` fields
+  before conversion.
 - The split records can drive exact conversion after the trajectory file is
   available:
 
 ```bash
 PYTHONPATH=src python -m adamem.convert longmemeval-v2 \
   data/longmemeval-v2/questions.jsonl \
-  data/longmemeval-v2/trajectories.jsonl \
+  data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl \
   data/longmemeval-v2/haystacks/lme_v2_small.json \
   /tmp/longmemeval_v2_text_transfer_60.adamem.jsonl \
   --question-ids-file results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl \

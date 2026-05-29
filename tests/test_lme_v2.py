@@ -10,6 +10,7 @@ from adamem.lme_v2 import (
     summarize_longmemeval_v2_question_audit,
     summarize_longmemeval_v2_trajectory_manifest,
     summarize_longmemeval_v2_transfer_split,
+    write_longmemeval_v2_extracted_trajectories,
     write_longmemeval_v2_question_audit,
     write_longmemeval_v2_trajectory_manifest,
     write_longmemeval_v2_transfer_split,
@@ -336,6 +337,97 @@ def test_write_longmemeval_v2_trajectory_manifest_outputs_artifacts(tmp_path: Pa
     assert manifest["unique_trajectories"] == 3
     assert manifest["by_split"]["transfer"]["trajectory_references"] == 2
     assert "LongMemEval-V2 Trajectory Manifest" in report
+
+
+def test_extract_longmemeval_v2_trajectories_streams_selected_records(tmp_path: Path) -> None:
+    trajectory_ids = tmp_path / "trajectory_ids.jsonl"
+    trajectory_ids.write_text(
+        "\n".join([
+            json.dumps({"id": "traj-c"}),
+            json.dumps({"id": "traj-a"}),
+            json.dumps({"id": "traj-missing"}),
+        ]),
+        encoding="utf-8",
+    )
+    trajectories = tmp_path / "trajectories.jsonl"
+    trajectories.write_text(
+        "\n".join([
+            json.dumps({
+                "id": "traj-a",
+                "domain": "enterprise",
+                "environment": "workarena",
+                "goal": "Find state.",
+                "answer": "must not leak",
+                "eval_function": "must_not_leak",
+                "states": [{"state_index": 0, "accessibility_tree": "A"}],
+            }),
+            json.dumps({
+                "id": "traj-b",
+                "domain": "web",
+                "states": [{"state_index": 0, "accessibility_tree": "B"}],
+            }),
+            json.dumps({
+                "id": "traj-c",
+                "domain": "web",
+                "question": "must not leak",
+                "states": [{"state_index": 0, "accessibility_tree": "C"}],
+            }),
+        ]),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "extract"
+
+    result = write_longmemeval_v2_extracted_trajectories(
+        trajectory_ids,
+        trajectories,
+        output_dir,
+    )
+    selected = [
+        json.loads(line)
+        for line in Path(result["selected_trajectories_path"]).read_text(encoding="utf-8").splitlines()
+    ]
+    missing = [
+        json.loads(line)["id"]
+        for line in Path(result["missing_trajectory_ids_path"]).read_text(encoding="utf-8").splitlines()
+    ]
+    manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
+
+    assert [record["id"] for record in selected] == ["traj-a", "traj-c"]
+    assert all("answer" not in record and "eval_function" not in record and "question" not in record for record in selected)
+    assert missing == ["traj-missing"]
+    assert manifest["requested_trajectories"] == 3
+    assert manifest["matched_trajectories"] == 2
+    assert manifest["missing_trajectories"] == 1
+    assert manifest["records_scanned"] == 3
+    assert manifest["completed_all_requested"] is False
+
+
+def test_extract_longmemeval_v2_trajectories_stops_after_all_requested(tmp_path: Path) -> None:
+    trajectory_ids = tmp_path / "trajectory_ids.jsonl"
+    trajectory_ids.write_text(
+        "\n".join([json.dumps({"id": "traj-a"}), json.dumps({"id": "traj-b"})]),
+        encoding="utf-8",
+    )
+    trajectories = tmp_path / "trajectories.jsonl"
+    trajectories.write_text(
+        "\n".join([
+            json.dumps({"id": "traj-a", "states": []}),
+            json.dumps({"id": "traj-b", "states": []}),
+            json.dumps({"id": "traj-c", "states": []}),
+        ]),
+        encoding="utf-8",
+    )
+
+    result = write_longmemeval_v2_extracted_trajectories(
+        trajectory_ids,
+        trajectories,
+        tmp_path / "extract",
+    )
+    manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
+
+    assert manifest["records_scanned"] == 2
+    assert manifest["completed_all_requested"] is True
+    assert manifest["missing_trajectories"] == 0
 
 
 def _audit_record(
