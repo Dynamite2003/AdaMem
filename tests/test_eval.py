@@ -24,7 +24,7 @@ from adamem.convert import (
     load_state_audit_labels,
     summarize_longmemeval_state_audit_records,
 )
-from adamem.eval import run_synthetic_benchmark
+from adamem.eval import _state_extractor_runtime, run_synthetic_benchmark
 from adamem.experiments import experiment_record, write_experiment_record
 
 
@@ -842,7 +842,11 @@ rule `stop` 1 step to the left
 
 def test_jsonl_benchmark_experiment_record_shape(tmp_path: Path) -> None:
     cases = load_jsonl_cases(Path("benchmarks/dynamic_state_transfer.jsonl"))[:1]
-    specs = baseline_registry()
+    specs = {
+        name: spec
+        for name, spec in baseline_registry().items()
+        if spec.config.state_extractor_name != "llm_json"
+    }
     results = run_benchmark(cases, {name: spec.config for name, spec in specs.items()})
     record = experiment_record(
         run_name="dynamic-state-smoke",
@@ -867,6 +871,51 @@ def test_jsonl_benchmark_experiment_record_shape(tmp_path: Path) -> None:
     assert data["baseline_names"] == list(specs)
     assert data["raw_outputs"]
     assert data["notes"]["benchmark_kind"] == "retrieval_support"
+
+
+def test_jsonl_benchmark_can_run_llm_state_extractor_ablation() -> None:
+    case = MemoryQACase(
+        id="llm-extractor",
+        observations=[
+            ObservationSpec(
+                content="Structured telemetry update id 7.",
+                label="telemetry",
+            )
+        ],
+        queries=[
+            QuerySpec(
+                id="runtime-status",
+                query="Is the staging runner online?",
+                expected_substrings=["online"],
+                top_k=2,
+                metadata={"state_slot": "runtime.staging_runner.status"},
+            )
+        ],
+    )
+    configs = {
+        "semantic_llm_state_adjudication": (
+            baseline_registry()["semantic_llm_state_adjudication"].config
+        )
+    }
+    state_extractors, notes, prompts = _state_extractor_runtime(
+        configs,
+        provider="mock",
+        model="unused",
+        mock_response=(
+            '{"patches":[{"slot":"runtime.staging_runner.status",'
+            '"value":"online","status":"active"}]}'
+        ),
+        max_tokens=128,
+        temperature=0.0,
+    )
+
+    results = run_benchmark([case], configs, state_extractors=state_extractors)
+
+    assert results[0].passed == 1
+    assert results[0].queries[0].passed is True
+    assert notes["state_extractor_provider"] == "mock"
+    assert notes["state_extractor_baselines"] == ["semantic_llm_state_adjudication"]
+    assert "state_extractor_system" in prompts
 
 
 def test_jsonl_query_metadata_is_available_for_breakdowns() -> None:

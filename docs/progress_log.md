@@ -2265,3 +2265,40 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `149 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 LLM extractor experiment wiring
+
+- Added explicit LLM-extractor baseline names:
+  - `semantic_llm_state_adjudication`
+  - `semantic_llm_state_premise_correction`
+- These baselines use `state_extractor_name=llm_json` and are excluded from
+  default API-free baseline sets. They must be selected explicitly and paired
+  with `--state-extractor-provider`.
+- Threaded per-baseline injected state extractors through:
+  - JSONL retrieval benchmarks.
+  - STALE retrieval diagnostics.
+  - STALE LLM-judge evaluation.
+- Extended `adamem.eval` with extractor runtime flags:
+  - `--state-extractor-provider none|openai|gemini|modelhub|mock`
+  - `--state-extractor-model`
+  - `--state-extractor-mock-response`
+  - `--state-extractor-max-tokens`
+  - `--state-extractor-temperature`
+- Experiment JSON now records extractor provider, model, affected baselines,
+  max tokens, temperature, runtime-use boundary, and the state-extractor prompt
+  when an LLM extractor baseline is selected.
+- Purpose:
+  - Make API-enabled extractor ablations runnable without changing core memory
+    code later.
+  - Keep deterministic rule extraction and LLM extraction separable in paper
+    tables and error analysis.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_experiments.py tests/test_eval.py::test_jsonl_benchmark_can_run_llm_state_extractor_ablation tests/test_eval.py::test_jsonl_benchmark_experiment_record_shape tests/test_eval.py::test_jsonl_query_metadata_is_available_for_breakdowns -q` -> `7 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_experiments.py tests/test_eval.py tests/test_stale.py tests/test_stale_pipeline.py -q` -> `49 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `150 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke:
+    `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_llm_state_adjudication --state-extractor-provider mock --state-extractor-mock-response '{"patches":[{"slot":"location","value":"Boston","status":"active"}]}' --max-cases 1 --experiment-output $tmpdir/llm_extractor.experiment.json --json`
+    wrote `state_extractor_provider=mock`, `state_extractor_name=llm_json`,
+    and `state_extractor_system` prompt metadata.

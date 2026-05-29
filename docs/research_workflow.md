@@ -292,6 +292,13 @@ Current API-free state-aware baselines:
   ephemeral read-time correction when a query explicitly mentions a stale value
   for a routed current-state slot. This isolates Premise Resistance behavior
   from ordinary current-state readout.
+- `semantic_llm_state_adjudication`: same state-authority/adjudication path as
+  `semantic_state_adjudication`, but with `state_extractor_name=llm_json`.
+  This baseline is not part of default API-free runs; explicitly select it and
+  provide `--state-extractor-provider`.
+- `semantic_llm_state_premise_correction`: LLM JSON extraction plus the
+  premise-correction readout path. Use this to separate extractor quality from
+  the read-time stale-premise correction mechanism.
 - `use_state_unknown_current`: state extraction can produce an active
   `unknown_current` slot when new evidence invalidates an old value without
   providing a replacement. This prevents the memory layer from continuing to
@@ -325,6 +332,23 @@ domain-specific extractors only as separately named baselines. The default
 exists only for deterministic CI fixtures, while real LLM extraction should
 inject `LLMStateExtractor(client)` so the answer/judge providers remain
 separate from the memory write path.
+
+`adamem.eval` can run LLM-extractor baselines through:
+
+```bash
+PYTHONPATH=src python -m adamem.eval \
+  --dataset benchmarks/dynamic_state_transfer.jsonl \
+  --baselines semantic_llm_state_adjudication \
+  --state-extractor-provider mock \
+  --state-extractor-mock-response '{"patches":[]}' \
+  --experiment-output /tmp/llm_extractor_smoke.experiment.json
+```
+
+For real runs, replace `mock` with `openai`, `gemini`, or `modelhub`, set
+`--state-extractor-model`, and keep the resulting experiment JSON because it
+records extractor provider, model, prompt template, max tokens, temperature,
+and affected baselines. STALE diagnostic and STALE LLM-judge paths use the
+same flags.
 
 Derived `state` memories are hidden from ordinary direct retrieval by default
 when `use_state_readout_authorization=True`. They can still enter context
@@ -711,9 +735,9 @@ Next API-free work:
    availability, and task status.
 7. Add faithful local baselines for mainstream memory systems after reviewing
    their code and licenses.
-8. Wire the documented LLM extractor adapter into API-enabled pilot commands
-   as a separately named extractor ablation with provider/model/prompt
-   settings recorded in experiment JSON.
+8. Run the LLM extractor ablations with real provider keys on STALE and at
+   least one transfer benchmark, then compare against deterministic extraction
+   to separate extraction failures from memory-management failures.
 9. Keep `docs/progress_log.md` updated after each meaningful design decision,
    experiment, implementation change, or scope change.
 

@@ -29,6 +29,12 @@ from adamem.experiments import experiment_record, write_experiment_record
 from adamem.llm import LLMClient, build_client
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem
+from adamem.state import (
+    LLMStateExtractor,
+    STATE_EXTRACTOR_SYSTEM,
+    STATE_EXTRACTOR_TEMPLATE,
+    StateExtractor,
+)
 
 
 @dataclass(slots=True)
@@ -359,6 +365,7 @@ def run_stale_benchmark(
     limit_per_stale_type: int | None = None,
     request_delay: float = 0.0,
     raw_outputs: list[dict[str, Any]] | None = None,
+    state_extractors: dict[str, StateExtractor] | None = None,
 ) -> list[StaleAblationResult]:
     """Score AdaMem on the STALE benchmark using LLM-judge methodology.
 
@@ -375,12 +382,14 @@ def run_stale_benchmark(
         max_cases=max_cases,
     )
     configs = configs or default_ablation_configs()
+    state_extractors = state_extractors or {}
 
     results: list[StaleAblationResult] = []
     for name, config in configs.items():
         per_query: list[StaleQueryResult] = []
+        state_extractor = state_extractors.get(name)
         for case in cases:
-            mem = AdaMem(config=config)
+            mem = AdaMem(config=config, state_extractor=state_extractor)
             for observation in case.observations:
                 mem.observe(
                     observation.content,
@@ -640,6 +649,53 @@ def _case_stale_type(case: Any) -> str:
     return "<missing>"
 
 
+def _state_extractor_runtime(
+    configs: dict[str, AdaMemConfig],
+    *,
+    provider: str,
+    model: str,
+    mock_response: str,
+    max_tokens: int,
+    temperature: float,
+) -> tuple[dict[str, StateExtractor], dict[str, Any], dict[str, str]]:
+    llm_baselines = [
+        name
+        for name, config in configs.items()
+        if config.state_extractor_name in {"llm_json", "llm"}
+    ]
+    if not llm_baselines:
+        return {}, {}, {}
+    if provider == "none":
+        raise ValueError(
+            "selected baselines require state_extractor_name=llm_json; "
+            "set --state-extractor-provider mock/openai/gemini/modelhub"
+        )
+    kwargs: dict[str, Any]
+    if provider == "mock":
+        kwargs = {"responses": mock_response}
+    else:
+        kwargs = {"model": model}
+    client = build_client(provider, **kwargs)
+    extractor = LLMStateExtractor(
+        client,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    notes = {
+        "state_extractor_provider": provider,
+        "state_extractor_model": None if provider == "mock" else model,
+        "state_extractor_baselines": llm_baselines,
+        "state_extractor_max_tokens": max_tokens,
+        "state_extractor_temperature": temperature,
+        "state_extractor_runtime_use": "observation_text_only",
+    }
+    prompts = {
+        "state_extractor_system": STATE_EXTRACTOR_SYSTEM,
+        "state_extractor_template": STATE_EXTRACTOR_TEMPLATE,
+    }
+    return {name: extractor for name in llm_baselines}, notes, prompts
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run AdaMem's deterministic synthetic ablations.")
     parser.add_argument("--dataset", type=Path, help="JSONL QA benchmark in AdaMem thin format")
@@ -656,6 +712,20 @@ def main() -> None:
     parser.add_argument("--answer-model", default="gpt-4o-mini")
     parser.add_argument("--judge-provider", default="gemini", help="LLM provider for judge")
     parser.add_argument("--judge-model", default="gemini-1.5-flash")
+    parser.add_argument(
+        "--state-extractor-provider",
+        default="none",
+        choices=["none", "openai", "gemini", "modelhub", "mock"],
+        help="Provider for baselines whose state_extractor_name is llm_json",
+    )
+    parser.add_argument("--state-extractor-model", default="gpt-4o-mini")
+    parser.add_argument(
+        "--state-extractor-mock-response",
+        default='{"patches":[]}',
+        help="Fixed mock JSON response for --state-extractor-provider mock",
+    )
+    parser.add_argument("--state-extractor-max-tokens", type=int, default=512)
+    parser.add_argument("--state-extractor-temperature", type=float, default=0.0)
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--max-context-chars", type=int, default=4000)
     parser.add_argument("--max-cases", type=int, help="Limit number of STALE cases evaluated")
@@ -677,6 +747,19 @@ def main() -> None:
             print(baseline_report(specs))
         return
 
+    configs = {name: spec.config for name, spec in specs.items()}
+    try:
+        state_extractors, state_extractor_notes, state_extractor_prompts = _state_extractor_runtime(
+            configs,
+            provider=args.state_extractor_provider,
+            model=args.state_extractor_model,
+            mock_response=args.state_extractor_mock_response,
+            max_tokens=args.state_extractor_max_tokens,
+            temperature=args.state_extractor_temperature,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+
     if args.stale_diagnostics:
         cases = load_jsonl_cases(args.stale_diagnostics)
         cases = _select_stale_cases(
@@ -687,7 +770,8 @@ def main() -> None:
         )
         diagnostic_results = run_stale_retrieval_diagnostics(
             cases,
-            {name: spec.config for name, spec in specs.items()},
+            configs,
+            state_extractors=state_extractors,
         )
         case_records = diagnostic_case_records(diagnostic_results)
         if args.diagnostic_cases_output:
@@ -710,7 +794,9 @@ def main() -> None:
                     "judge_model_required": False,
                     "ground_truth_runtime_use": "forbidden",
                     "diagnostic_case_records": len(case_records),
+                    **state_extractor_notes,
                 },
+                prompts=state_extractor_prompts,
             )
             write_experiment_record(args.experiment_output, record)
         if args.json:
@@ -727,7 +813,8 @@ def main() -> None:
             args.stale,
             answer_client=answer_client,
             judge_client=judge_client,
-            configs={name: spec.config for name, spec in specs.items()},
+            configs=configs,
+            state_extractors=state_extractors,
             top_k=args.top_k,
             max_context_chars=args.max_context_chars,
             max_cases=args.max_cases,
@@ -749,6 +836,7 @@ def main() -> None:
                     "answer_template": STALE_ANSWER_TEMPLATE,
                     "judge_system": STALE_JUDGE_SYSTEM,
                     "judge_template": STALE_JUDGE_TEMPLATE,
+                    **state_extractor_prompts,
                 },
                 raw_outputs=raw_outputs,
                 notes={
@@ -763,6 +851,7 @@ def main() -> None:
                     "request_delay": args.request_delay,
                     "ground_truth_runtime_use": "forbidden",
                     "ground_truth_judge_use": "allowed",
+                    **state_extractor_notes,
                 },
             )
             write_experiment_record(args.experiment_output, record)
@@ -776,7 +865,7 @@ def main() -> None:
         cases = load_jsonl_cases(args.dataset)
         if args.max_cases is not None:
             cases = cases[:args.max_cases]
-        benchmark_results = run_benchmark(cases, {name: spec.config for name, spec in specs.items()})
+        benchmark_results = run_benchmark(cases, configs, state_extractors=state_extractors)
         benchmark_records = benchmark_case_records(benchmark_results)
         benchmark_summary = benchmark_failure_summary(benchmark_records)
         if args.benchmark_cases_output:
@@ -800,7 +889,9 @@ def main() -> None:
                     "benchmark_case_records": len(benchmark_records),
                     "ground_truth_runtime_use": "forbidden",
                     "ground_truth_evaluation_use": "expected_substrings_only",
+                    **state_extractor_notes,
                 },
+                prompts=state_extractor_prompts,
             )
             write_experiment_record(args.experiment_output, record)
         if args.json:

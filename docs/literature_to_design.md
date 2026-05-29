@@ -320,6 +320,9 @@ Paper tables should eventually include at least:
 - State-aware AdaMem ablations.
 - LLM state-extractor ablation using the same state-authority/readout layer,
   so extraction quality can be separated from the memory-management mechanism.
+  The local baseline names are `semantic_llm_state_adjudication` and
+  `semantic_llm_state_premise_correction`; they require an explicit
+  `--state-extractor-provider` and are excluded from default API-free runs.
 - Oracle/debug state extractor upper bound, clearly labeled as non-runtime.
 
 Official implementations should be preferred when licensing and runtime cost are

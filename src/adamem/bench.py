@@ -10,7 +10,7 @@ from adamem.baselines import default_ablation_configs
 from adamem.config import AdaMemConfig
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem
-from adamem.state import state_slot_matches_query
+from adamem.state import StateExtractor, state_slot_matches_query
 
 
 @dataclass(slots=True)
@@ -80,14 +80,17 @@ def load_jsonl_cases(path: str | Path) -> list[MemoryQACase]:
 def run_benchmark(
     cases: Iterable[MemoryQACase],
     configs: dict[str, AdaMemConfig] | None = None,
+    state_extractors: dict[str, StateExtractor] | None = None,
 ) -> list[BenchmarkResult]:
     configs = configs or default_ablation_configs()
+    state_extractors = state_extractors or {}
     case_list = list(cases)
     results: list[BenchmarkResult] = []
     for name, config in configs.items():
         query_results: list[QueryEvalResult] = []
+        state_extractor = state_extractors.get(name)
         for case in case_list:
-            query_results.extend(_run_case(case, config))
+            query_results.extend(_run_case(case, config, state_extractor=state_extractor))
         passed = sum(1 for result in query_results if result.passed)
         total = len(query_results)
         results.append(
@@ -417,8 +420,13 @@ def benchmark_failure_report(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _run_case(case: MemoryQACase, config: AdaMemConfig) -> list[QueryEvalResult]:
-    mem = AdaMem(config=config)
+def _run_case(
+    case: MemoryQACase,
+    config: AdaMemConfig,
+    *,
+    state_extractor: StateExtractor | None = None,
+) -> list[QueryEvalResult]:
+    mem = AdaMem(config=config, state_extractor=state_extractor)
     labels: dict[str, MemoryItem] = {}
     for index, observation in enumerate(case.observations):
         cause_ids = [labels[label].id for label in observation.cause_labels]

@@ -32,11 +32,17 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
         "semantic_state_propagation",
         "semantic_state_adjudication",
         "semantic_state_premise_correction",
+        "semantic_llm_state_adjudication",
+        "semantic_llm_state_premise_correction",
         "semantic_state_propagation_adjudication",
         "state_readout",
         "state_propagation",
     ]
-    assert list(configs) == list(specs)
+    assert list(configs) == [
+        name
+        for name, spec in specs.items()
+        if spec.config.state_extractor_name != "llm_json"
+    ]
     assert configs["semantic_only"].use_graph is False
     assert configs["a_mem_evolution"].use_memory_evolution is True
     assert configs["zep_temporal_kg"].use_temporal_kg_memory is True
@@ -47,6 +53,8 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
     assert configs["semantic_state_readout"].use_state_readout is True
     assert configs["semantic_state_adjudication"].use_state_source_adjudication is True
     assert configs["semantic_state_premise_correction"].use_state_premise_correction is True
+    assert specs["semantic_llm_state_adjudication"].config.state_extractor_name == "llm_json"
+    assert specs["semantic_llm_state_premise_correction"].config.use_state_premise_correction is True
     assert configs["state_readout"].use_state_memory is True
     assert configs["state_readout"].use_state_readout is True
     assert configs["state_readout"].state_extractor_name == "deterministic"

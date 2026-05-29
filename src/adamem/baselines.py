@@ -220,6 +220,37 @@ def baseline_registry() -> dict[str, BaselineSpec]:
             }),
         ),
         BaselineSpec(
+            name="semantic_llm_state_adjudication",
+            category="state_extractor_ablation",
+            description=(
+                "Semantic state adjudication using an injected LLM JSON state extractor "
+                "instead of the deterministic rule extractor."
+            ),
+            config=AdaMemConfig(**{
+                **semantic_only,
+                "use_state_memory": True,
+                "use_state_readout": True,
+                "use_state_source_adjudication": True,
+                "state_extractor_name": "llm_json",
+            }),
+        ),
+        BaselineSpec(
+            name="semantic_llm_state_premise_correction",
+            category="state_extractor_ablation",
+            description=(
+                "LLM JSON state extraction plus semantic state adjudication and "
+                "explicit stale-premise correction."
+            ),
+            config=AdaMemConfig(**{
+                **semantic_only,
+                "use_state_memory": True,
+                "use_state_readout": True,
+                "use_state_source_adjudication": True,
+                "use_state_premise_correction": True,
+                "state_extractor_name": "llm_json",
+            }),
+        ),
+        BaselineSpec(
             name="semantic_state_propagation_adjudication",
             category="state_aware_ablation",
             description=(
@@ -255,7 +286,11 @@ def baseline_registry() -> dict[str, BaselineSpec]:
 
 
 def default_ablation_configs() -> dict[str, AdaMemConfig]:
-    return {name: spec.config for name, spec in baseline_registry().items()}
+    return {
+        name: spec.config
+        for name, spec in baseline_registry().items()
+        if spec.config.state_extractor_name != "llm_json"
+    }
 
 
 def select_baselines(
@@ -270,7 +305,11 @@ def select_baselines(
 
     specs = specs or baseline_registry()
     if not names:
-        return specs
+        return {
+            name: spec
+            for name, spec in specs.items()
+            if spec.config.state_extractor_name != "llm_json"
+        }
     selected: dict[str, BaselineSpec] = {}
     unknown: list[str] = []
     for name in names:

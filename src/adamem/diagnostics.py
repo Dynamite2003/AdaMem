@@ -7,6 +7,7 @@ from adamem.bench import MemoryQACase, QuerySpec
 from adamem.config import AdaMemConfig
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem, MemoryResult
+from adamem.state import StateExtractor
 from adamem.text import tokenize
 
 
@@ -124,15 +125,18 @@ class StaleDiagnosticResult:
 def run_stale_retrieval_diagnostics(
     cases: Iterable[MemoryQACase],
     configs: dict[str, AdaMemConfig],
+    state_extractors: dict[str, StateExtractor] | None = None,
 ) -> list[StaleDiagnosticResult]:
     """Run API-free retrieval diagnostics for STALE-style JSONL cases."""
 
     case_list = list(cases)
+    state_extractors = state_extractors or {}
     results: list[StaleDiagnosticResult] = []
     for name, config in configs.items():
         query_records: list[StaleQueryDiagnostic] = []
+        state_extractor = state_extractors.get(name)
         for case in case_list:
-            mem = AdaMem(config=config)
+            mem = AdaMem(config=config, state_extractor=state_extractor)
             for observation in case.observations:
                 mem.observe(
                     observation.content,
