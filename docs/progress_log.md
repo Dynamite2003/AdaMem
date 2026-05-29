@@ -1819,3 +1819,33 @@ to a paper-facing claim and evaluation gate.
     usefulness, but it now provides auditable evidence that enabling the
     correction mechanism did not trigger spurious correction readouts or degrade
     retrieval support on the balanced LongMemEval-S pilot.
+
+### 2026-05-30 claim audit transfer evidence
+
+- Extended `adamem.claims` to read JSONL sidecar records referenced by
+  `notes.records_path` and audit two narrow retrieval-transfer claims:
+  - `paired_retrieval_no_regression`: supported only when a candidate baseline
+    has at least 10 paired retrieval cases against the reference and loses zero
+    cases on the selected retrieval metric.
+  - `premise_correction_no_trigger_on_transfer`: supported only when a
+    premise-correction baseline has at least 10 records and emits zero
+    correction readouts on a non-STALE transfer benchmark.
+- Added machine-readable `claim_evidence.retrieval_transfer` and Markdown
+  `Claim Evidence` output with paired counts and premise-correction counts.
+- Re-ran claim audit on
+  `results/longmemeval_s_balanced_60_premise_correction.json`:
+  - Supported claims: `retrieval_diagnostics`,
+    `answerability_diagnostics`, `paired_retrieval_no_regression`,
+    `premise_correction_no_trigger_on_transfer`.
+  - Paired metric: `evidence_support_matched`.
+  - Pair: `semantic_state_premise_correction` vs
+    `semantic_state_adjudication`, common `60`, gained `0`, lost `0`,
+    net `0`.
+  - Premise correction: `60` records, `0` correction records, `0` correction
+    items, `0` unresolved forbidden records.
+  - Answer accuracy and SOTA remained blocked, preserving claim boundaries.
+- Added unit coverage:
+  - `test_claim_audit_supports_paired_retrieval_no_regression`
+- Validation:
+  - `python -m pytest tests/test_claims.py -q`
+  - `python -m pytest -q`

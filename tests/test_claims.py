@@ -29,6 +29,77 @@ def test_claim_audit_blocks_retrieval_as_answer_accuracy(tmp_path: Path) -> None
     assert audit["raw_output_count"] == 2
 
 
+def test_claim_audit_supports_paired_retrieval_no_regression(tmp_path: Path) -> None:
+    records = tmp_path / "retrieval.records.jsonl"
+    rows = []
+    for index in range(12):
+        passed = index % 3 != 0
+        rows.append(
+            _retrieval_record(
+                "semantic_state_adjudication",
+                f"q{index}",
+                evidence=passed,
+            )
+        )
+        rows.append(
+            _retrieval_record(
+                "semantic_state_premise_correction",
+                f"q{index}",
+                evidence=passed,
+                premise_correction_count=0,
+            )
+        )
+    records.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="jsonl_retrieval_benchmark",
+        baseline_names=[
+            "semantic_state_adjudication",
+            "semantic_state_premise_correction",
+        ],
+        notes={
+            "ground_truth_runtime_use": "forbidden",
+            "ground_truth_evaluation_use": "query_metadata_only",
+            "records_path": "retrieval.records.jsonl",
+        },
+        baseline_configs={
+            "semantic_state_premise_correction": {
+                "use_state_premise_correction": True,
+            },
+        },
+        results={"semantic_state_premise_correction": {"total": 12}},
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+    transfer = audit["claim_evidence"]["retrieval_transfer"]
+
+    assert "paired_retrieval_no_regression" in audit["supported_claims"]
+    assert "premise_correction_no_trigger_on_transfer" in audit["supported_claims"]
+    assert transfer["paired_metric"] == "evidence_support_matched"
+    assert transfer["paired_no_regression"] == [
+        {
+            "reference": "semantic_state_adjudication",
+            "candidate": "semantic_state_premise_correction",
+            "common_total": 12,
+            "gained": 0,
+            "lost": 0,
+            "net_delta": 0,
+        }
+    ]
+    assert transfer["premise_correction"]["semantic_state_premise_correction"] == {
+        "records": 12,
+        "correction_records": 0,
+        "correction_items": 0,
+        "corrected_forbidden_records": 0,
+        "unresolved_forbidden_records": 0,
+    }
+    assert "No-regression pair" in markdown
+
+
 def test_claim_audit_marks_mock_answer_generation_as_plumbing(tmp_path: Path) -> None:
     experiment = _write_experiment(
         tmp_path,
@@ -105,6 +176,7 @@ def _write_experiment(
     notes: dict | None = None,
     raw_outputs: list[dict] | None = None,
     results=None,
+    baseline_configs: dict | None = None,
 ) -> Path:
     path = tmp_path / f"{run_type}.json"
     payload = {
@@ -112,6 +184,7 @@ def _write_experiment(
         "run_type": run_type,
         "dataset": "benchmarks/example.jsonl",
         "baseline_names": baseline_names or ["semantic_only"],
+        "baseline_configs": baseline_configs or {},
         "results": results,
         "raw_outputs": raw_outputs or [],
         "notes": notes or {},
@@ -119,3 +192,25 @@ def _write_experiment(
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
+
+
+def _retrieval_record(
+    baseline: str,
+    query_id: str,
+    *,
+    evidence: bool,
+    premise_correction_count: int | None = None,
+) -> dict:
+    record = {
+        "baseline": baseline,
+        "case_id": f"case-{query_id}",
+        "query_id": query_id,
+        "passed": evidence,
+        "expected_evidence": ["step001"],
+        "evidence_support_matched": evidence,
+        "present_forbidden": [],
+        "corrected_forbidden": [],
+    }
+    if premise_correction_count is not None:
+        record["premise_correction_count"] = premise_correction_count
+    return record
