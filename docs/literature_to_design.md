@@ -216,7 +216,7 @@ Current implementation:
   old value.
 - The deterministic extractor covers unknown-current invalidations for
   location, resource status, workflow/runbook rules, runtime/tool status,
-  role, and manager relationship state.
+  beverage preference, role, and manager relationship state.
 - The deterministic extractor now also covers current role and manager
   relationship state, with slots `role.current` and `relationship.manager`.
 - JSONL reports now separate unknown-current records, unknown-current
@@ -229,9 +229,9 @@ Required next evidence:
 - Trace export showing which observation created the active state.
 - Tests for state replacement under paraphrases and unrelated updates.
 - Error analysis separating extraction failure from adjudication failure.
-- Extend unknown-current extraction to preference slots once public
-  state-sensitive transfer cases require invalidation without a replacement
-  value.
+- Extend unknown-current extraction beyond beverage to broader preference slots
+  once public state-sensitive transfer cases require invalidation without a
+  replacement value.
 
 ### 3. Slot-Aware Query Routing
 
@@ -519,11 +519,11 @@ readout/adjudication variants `9/9`. This is useful as a guard
 against overfitting to location updates, but it remains synthetic local
 evidence.
 
-`benchmarks/unknown_current_state_transfer.jsonl` now covers seven
-invalidated-without-replacement cases across location, resource, workflow,
-runtime, role, and manager relationship state. It is a local mechanism guard for
-Premise Resistance and state resolution, not a substitute for public benchmark
-validation.
+`benchmarks/unknown_current_state_transfer.jsonl` now covers eight
+invalidated-without-replacement cases across location, beverage preference,
+resource, workflow, runtime, role, and manager relationship state. It is a local
+mechanism guard for Premise Resistance and state resolution, not a substitute
+for public benchmark validation.
 
 AdaMem now has a LongMemEval converter for the official cleaned schema, but the
 converter is only an evaluation adapter. Official LongMemEval transfer requires

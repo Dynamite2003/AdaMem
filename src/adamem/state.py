@@ -327,6 +327,20 @@ BEVERAGE_PATTERNS = [
     re.compile(r"\b(?:my\s+)?(?:favorite|usual)\s+(?:drink|beverage|coffee\s+order|order)\s+is\s+(?P<value>[A-Za-z ]{2,30})", re.I),
 ]
 
+BEVERAGE_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(r"\b(?:i\s+)?no\s+longer\s+(?:prefer|drink|order|like)\s+(?P<value>[A-Za-z ]{2,30})", re.I),
+    re.compile(
+        r"\b(?P<value>[A-Za-z ]{2,30})\s+is\s+no\s+longer\s+my\s+"
+        r"(?:favorite|usual)\s+(?:drink|beverage|coffee\s+order|order)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:my\s+)?(?:favorite|usual)\s+(?:drink|beverage|coffee\s+order|order)\s+"
+        r"is\s+no\s+longer\s+(?P<value>[A-Za-z ]{2,30})",
+        re.I,
+    ),
+]
+
 BEVERAGE_QUERY_TERMS = {
     "beverage",
     "cafe",
@@ -708,8 +722,18 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
                     invalidates_value=invalidated_location,
                 )
             )
-    beverage = _extract_beverage_value(content)
-    if beverage:
+    beverage_unknown_current = _extract_beverage_unknown_current(content)
+    if beverage_unknown_current:
+        patches.append(
+            StatePatch(
+                slot="preference.beverage",
+                value="unknown-current",
+                evidence=content,
+                status="unknown_current",
+                invalidates_value=beverage_unknown_current,
+            )
+        )
+    elif beverage := _extract_beverage_value(content):
         patches.append(StatePatch(slot="preference.beverage", value=beverage, evidence=content))
     schedule = _extract_schedule_availability(content)
     if schedule:
@@ -993,6 +1017,17 @@ def _clean_location(raw: str) -> str:
 
 def _extract_beverage_value(content: str) -> str | None:
     for pattern in BEVERAGE_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        value = _clean_state_value(match.group("value"))
+        if _is_known_beverage(value):
+            return value
+    return None
+
+
+def _extract_beverage_unknown_current(content: str) -> str | None:
+    for pattern in BEVERAGE_UNKNOWN_CURRENT_PATTERNS:
         match = pattern.search(content)
         if not match:
             continue

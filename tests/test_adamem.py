@@ -619,6 +619,50 @@ def test_state_readout_handles_non_location_preference_slot() -> None:
     assert "Boston" not in results[0].item.content
 
 
+def test_state_unknown_current_handles_preference_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: My favorite drink is coffee.")
+    mem.observe("[2026-02-01] user: My usual drink is no longer coffee.")
+
+    states = [
+        item
+        for item in mem.store.all()
+        if item.kind == "state" and item.metadata.get("state_slot") == "preference.beverage"
+    ]
+    active = [item for item in states if item.active]
+    inactive = [item for item in states if not item.active]
+
+    assert [item.metadata["state_value"] for item in active] == ["unknown-current"]
+    assert active[0].metadata["state_status"] == "unknown_current"
+    assert active[0].metadata["invalidated_state_value"] == "coffee"
+    assert [item.metadata["state_value"] for item in inactive] == ["coffee"]
+
+    results = mem.retrieve("Should I order coffee for the user?", top_k=1)
+
+    assert results[0].item.kind == "state_correction"
+    assert results[0].item.metadata["state_slot"] == "preference.beverage"
+    assert results[0].item.metadata["stale_value"] == "coffee"
+    assert results[0].item.metadata["current_value"] == "unknown-current"
+
+
 def test_state_readout_handles_schedule_availability_slot() -> None:
     mem = AdaMem(
         config=AdaMemConfig(

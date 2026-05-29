@@ -1161,22 +1161,22 @@ def test_unknown_current_transfer_fixture_favors_state_authority() -> None:
     by_baseline = {result.name: result for result in results}
 
     assert by_baseline["semantic_only"].passed == 0
-    assert by_baseline["semantic_state_adjudication"].passed == 7
-    assert by_baseline["semantic_state_premise_correction"].passed == 7
-    assert summary["unknown_current"]["semantic_state_adjudication"]["unknown_current_records"] == 7
+    assert by_baseline["semantic_state_adjudication"].passed == 8
+    assert by_baseline["semantic_state_premise_correction"].passed == 8
+    assert summary["unknown_current"]["semantic_state_adjudication"]["unknown_current_records"] == 8
     assert (
         summary["unknown_current"]["semantic_state_premise_correction"][
             "unknown_current_correction_records"
         ]
-        == 6
+        == 7
     )
     assert (
         summary["unknown_current"]["semantic_state_premise_correction"][
             "resolved_invalidated_value_records"
         ]
-        == 7
+        == 8
     )
-    assert summary["pairwise_vs_first_baseline"]["semantic_state_adjudication"]["gained_passes"] == 7
+    assert summary["pairwise_vs_first_baseline"]["semantic_state_adjudication"]["gained_passes"] == 8
 
 
 def test_jsonl_records_expose_state_pollution_metrics() -> None:

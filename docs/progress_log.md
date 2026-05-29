@@ -29,8 +29,9 @@ API-free variant combines authorized state readout with query-scoped
 state-source adjudication. The deterministic state extractor now covers
 location, schedule availability, beverage preference, task status,
 health/dietary constraints, resource status, workflow/runbook rules, and
-runtime/tool status, and can represent unknown-current invalidations when new
-evidence says an old state is no longer valid without naming a replacement.
+runtime/tool status, role, and manager relationship state, and can represent
+unknown-current invalidations when new evidence says an old state is no longer
+valid without naming a replacement.
 The latest public-transfer diagnostic shows the next
 method bottleneck clearly: state-sensitive query routing must be precise before
 state-readout metrics are meaningful. The first LongMemEval-S inferred-state
@@ -3480,5 +3481,39 @@ to a paper-facing claim and evaluation gate.
     -> `semantic_only` `0/7`, `semantic_state_adjudication` `7/7`,
     `semantic_state_premise_correction` `7/7`
   - `PYTHONPATH=src python -m pytest -q` -> `203 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+
+### 2026-05-30 unknown-current beverage preference invalidation
+
+- Added `preference.beverage` unknown-current extraction for observations that
+  invalidate a known beverage preference without naming a replacement.
+  - `My usual drink is no longer coffee.`
+  - `Coffee is no longer my usual drink.`
+  - `I no longer prefer coffee.`
+- Changed beverage extraction order so unknown-current invalidations are
+  recognized before broad active preference patterns.
+- Added a regression test covering active state supersession and stale-premise
+  correction for beverage preference.
+- Extended `benchmarks/unknown_current_state_transfer.jsonl` from 7 to 8
+  queries with a beverage Premise Resistance case.
+- Purpose:
+  - Complete the currently documented local unknown-current slot set for a
+    common personalization domain.
+  - Preserve the scientific distinction between "old preference invalid" and
+    "new preference known"; this matters for CCF-A-level causal validity because
+    the memory layer should not hallucinate replacement preferences.
+- Validation so far:
+  - Focused extraction check confirmed three beverage invalidation phrasings
+    emit `preference.beverage=unknown-current` patches with
+    `invalidated_state_value=coffee`.
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py::test_state_unknown_current_handles_preference_slot tests/test_eval.py::test_unknown_current_transfer_fixture_favors_state_authority -q`
+    -> `2 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py tests/test_eval.py -q`
+    -> `75 passed`
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/unknown_current_state_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_premise_correction --json`
+    -> `semantic_only` `0/8`, `semantic_state_adjudication` `8/8`,
+    `semantic_state_premise_correction` `8/8`
+  - `PYTHONPATH=src python -m pytest -q` -> `204 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
