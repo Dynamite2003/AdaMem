@@ -140,22 +140,29 @@ def write_experiment_bundle_batch(
     }
     claim_matrix = claim_matrix_rows(manifests)
     study_model_coverage = study_model_coverage_rows(manifests)
+    paper_readiness = paper_readiness_summary(claim_matrix, study_model_coverage)
     claim_matrix_json = output / "claim_matrix.json"
     claim_matrix_md = output / "claim_matrix.md"
     next_steps_md = output / "paper_next_steps.md"
     study_model_json = output / "study_model_coverage.json"
     study_model_md = output / "study_model_coverage.md"
+    readiness_json = output / "paper_readiness.json"
+    readiness_md = output / "paper_readiness.md"
     claim_matrix_json.write_text(json.dumps(claim_matrix, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     claim_matrix_md.write_text(claim_matrix_markdown(claim_matrix), encoding="utf-8")
     next_steps_md.write_text(paper_next_steps_markdown(claim_matrix), encoding="utf-8")
     study_model_json.write_text(json.dumps(study_model_coverage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     study_model_md.write_text(study_model_coverage_markdown(study_model_coverage), encoding="utf-8")
+    readiness_json.write_text(json.dumps(paper_readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    readiness_md.write_text(paper_readiness_markdown(paper_readiness), encoding="utf-8")
     batch_manifest["artifacts"] = {
         "claim_matrix_json": str(claim_matrix_json),
         "claim_matrix_markdown": str(claim_matrix_md),
         "paper_next_steps_markdown": str(next_steps_md),
         "study_model_coverage_json": str(study_model_json),
         "study_model_coverage_markdown": str(study_model_md),
+        "paper_readiness_json": str(readiness_json),
+        "paper_readiness_markdown": str(readiness_md),
     }
     manifest_path = output / "batch_manifest.json"
     batch_manifest["manifest"] = str(manifest_path)
@@ -295,6 +302,67 @@ def study_model_coverage_markdown(rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def paper_readiness_summary(
+    claim_rows: list[dict[str, Any]],
+    study_model_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    gate_counts = _count_values(row.get("readiness_gate") for row in claim_rows)
+    action_counts = _next_action_counts(claim_rows)
+    complete_studies = [row for row in study_model_rows if row.get("complete")]
+    incomplete_studies = [row for row in study_model_rows if not row.get("complete")]
+    status = _paper_readiness_status(claim_rows, complete_studies)
+    return {
+        "status": status,
+        "experiment_count": len(claim_rows),
+        "gate_counts": gate_counts,
+        "action_counts": action_counts,
+        "top_next_actions": _top_actions(action_counts),
+        "study_model_group_count": len(study_model_rows),
+        "complete_study_model_group_count": len(complete_studies),
+        "incomplete_study_model_group_count": len(incomplete_studies),
+        "complete_study_model_groups": [
+            _compact_study_group(row) for row in complete_studies
+        ],
+        "incomplete_study_model_groups": [
+            _compact_study_group(row) for row in incomplete_studies
+        ],
+    }
+
+
+def paper_readiness_markdown(summary: dict[str, Any]) -> str:
+    lines = ["# AdaMem Paper Readiness", ""]
+    lines.append(f"Status: `{summary.get('status') or '<missing>'}`")
+    lines.append(f"Experiments: `{int(summary.get('experiment_count') or 0)}`")
+    lines.append(
+        "Study model groups: "
+        f"`{int(summary.get('complete_study_model_group_count') or 0)}` complete / "
+        f"`{int(summary.get('study_model_group_count') or 0)}` total"
+    )
+    lines.append("")
+    lines.append("## Gates")
+    for gate, count in (summary.get("gate_counts") or {}).items():
+        lines.append(f"- `{gate}`: `{count}`")
+    lines.append("")
+    lines.append("## Top Next Actions")
+    actions = summary.get("top_next_actions") or []
+    if not actions:
+        lines.append("- None.")
+    for item in actions:
+        lines.append(f"- `{item['action']}`: `{item['count']}`")
+    incomplete = summary.get("incomplete_study_model_groups") or []
+    if incomplete:
+        lines.append("")
+        lines.append("## Incomplete Study Model Groups")
+        for item in incomplete:
+            lines.append(
+                "- "
+                f"`{item['run_type']}` dataset `{item['dataset']}`, "
+                f"split `{item['split_or_case_limit'] or '-'}`, "
+                f"missing `{', '.join(item['missing_requirements'])}`"
+            )
+    return "\n".join(lines) + "\n"
+
+
 def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
@@ -335,11 +403,7 @@ def paper_next_steps_markdown(rows: list[dict[str, Any]]) -> str:
         lines.append("- `add_experiment_records`: no experiment records were found.")
         return "\n".join(lines) + "\n"
 
-    action_counts: dict[str, int] = {}
-    for row in rows:
-        for action in row.get("next_actions") or []:
-            key = str(action)
-            action_counts[key] = action_counts.get(key, 0) + 1
+    action_counts = _next_action_counts(rows)
 
     lines.append("## Action Summary")
     for action, count in sorted(action_counts.items(), key=lambda item: (-item[1], item[0])):
@@ -428,6 +492,63 @@ def _study_model_missing_requirements(
         elif len(judge_models) < MIN_JUDGE_MODELS_FOR_ROBUSTNESS:
             missing.append("multiple_judge_models")
     return missing
+
+
+def _paper_readiness_status(
+    claim_rows: list[dict[str, Any]],
+    complete_studies: list[dict[str, Any]],
+) -> str:
+    if not claim_rows:
+        return "no_experiments"
+    gates = set(str(row.get("readiness_gate") or "") for row in claim_rows)
+    if "needs_attention" in gates:
+        return "needs_attention"
+    if "sota_candidate" in gates and complete_studies:
+        return "sota_candidate_with_model_coverage"
+    if "answer_candidate" in gates and complete_studies:
+        return "answer_candidate_with_model_coverage"
+    if "sota_candidate" in gates or "answer_candidate" in gates:
+        return "answer_candidate_needs_model_coverage"
+    if "diagnostic_ready" in gates:
+        return "diagnostic_ready"
+    return "needs_attention"
+
+
+def _next_action_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        for action in row.get("next_actions") or []:
+            key = str(action)
+            counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _top_actions(counts: dict[str, int], *, limit: int = 5) -> list[dict[str, Any]]:
+    return [
+        {"action": action, "count": count}
+        for action, count in list(counts.items())[:limit]
+    ]
+
+
+def _count_values(values: Iterable[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "<missing>")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _compact_study_group(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_type": row.get("run_type"),
+        "dataset": row.get("dataset"),
+        "split_or_case_limit": row.get("split_or_case_limit"),
+        "baselines": list(row.get("baselines") or []),
+        "experiment_count": int(row.get("experiment_count") or 0),
+        "answer_model_count": int(row.get("answer_model_count") or 0),
+        "judge_model_count": int(row.get("judge_model_count") or 0),
+        "missing_requirements": list(row.get("missing_requirements") or []),
+    }
 
 
 def _paper_next_actions(row: dict[str, Any]) -> list[str]:

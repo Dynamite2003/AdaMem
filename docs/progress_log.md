@@ -2594,3 +2594,34 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `157 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 directory-level paper readiness summary
+
+- Extended batch `adamem.reporting` outputs with:
+  - `paper_readiness.json`
+  - `paper_readiness.md`
+- The readiness summary aggregates:
+  - experiment count
+  - readiness-gate counts
+  - next-action counts
+  - top next actions
+  - study model group counts
+  - compact complete/incomplete study model groups
+- Status labels include:
+  - `no_experiments`
+  - `needs_attention`
+  - `diagnostic_ready`
+  - `answer_candidate_needs_model_coverage`
+  - `answer_candidate_with_model_coverage`
+  - `sota_candidate_with_model_coverage`
+- Purpose:
+  - Give a result directory one high-level paper-track status without hiding
+    the underlying claim matrix or per-run audits.
+  - Make API-enabled result review faster by showing the dominant next actions
+    and whether study-level model robustness is already complete.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `13 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py tests/test_claims.py -q` -> `26 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `158 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

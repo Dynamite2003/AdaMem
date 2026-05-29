@@ -8,6 +8,8 @@ from adamem.reporting import (
     claim_matrix_rows,
     main,
     paper_next_steps_markdown,
+    paper_readiness_markdown,
+    paper_readiness_summary,
     study_model_coverage_markdown,
     study_model_coverage_rows,
     write_experiment_bundle,
@@ -124,6 +126,8 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()
     assert Path(manifest["artifacts"]["study_model_coverage_json"]).exists()
     assert Path(manifest["artifacts"]["study_model_coverage_markdown"]).exists()
+    assert Path(manifest["artifacts"]["paper_readiness_json"]).exists()
+    assert Path(manifest["artifacts"]["paper_readiness_markdown"]).exists()
     assert len(manifest["bundles"]) == 3
     for bundle in manifest["bundles"]:
         assert "claim_evidence" in bundle
@@ -160,6 +164,7 @@ def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["claim_matrix_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()
     assert Path(manifest["artifacts"]["study_model_coverage_markdown"]).exists()
+    assert Path(manifest["artifacts"]["paper_readiness_markdown"]).exists()
 
 
 def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
@@ -268,6 +273,45 @@ def test_study_model_coverage_merges_comparable_experiments() -> None:
     assert rows[1]["missing_requirements"] == ["multiple_answer_models", "multiple_judge_models"]
     assert "stale_llm_judge" in markdown
     assert "| stale_llm_judge | benchmarks/stale.adamem.jsonl | - | 2 | 2 | 2 | - |" in markdown
+
+
+def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() -> None:
+    claim_rows = claim_matrix_rows([
+        {
+            "experiment": "answer.experiment.json",
+            "run_type": "stale_llm_judge",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "raw_output_count": 12,
+            "supported_claims": ["stale_answer_accuracy_candidate"],
+            "blocked_claims": {"sota": ["no strong baseline reproduction"]},
+            "warnings": [],
+            "claim_evidence": {},
+        }
+    ])
+    study_rows = study_model_coverage_rows([
+        _model_manifest(
+            "stale_gpt.experiment.json",
+            answer_models=["openai:gpt-4o-mini"],
+            judge_models=["gemini:gemini-2.5-pro"],
+        ),
+        _model_manifest(
+            "stale_gpt5.experiment.json",
+            answer_models=["openai:gpt-5-mini"],
+            judge_models=["openai:gpt-5"],
+        ),
+    ])
+
+    summary = paper_readiness_summary(claim_rows, study_rows)
+    markdown = paper_readiness_markdown(summary)
+
+    assert summary["status"] == "answer_candidate_with_model_coverage"
+    assert summary["gate_counts"] == {"answer_candidate": 1}
+    assert summary["complete_study_model_group_count"] == 1
+    assert summary["top_next_actions"][0] == {
+        "action": "add_strong_baselines_and_judge_robustness",
+        "count": 1,
+    }
+    assert "answer_candidate_with_model_coverage" in markdown
 
 
 def test_paper_next_steps_markdown_groups_actions() -> None:

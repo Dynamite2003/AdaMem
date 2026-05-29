@@ -681,7 +681,10 @@ Completed API-free foundations:
   `complete_reproducibility_packet`. Batch report bundles also write
   `study_model_coverage.json` and `study_model_coverage.md`, which merge
   comparable answer/judge experiments by run type, dataset, split, and baseline
-  set so one-model-per-run API sweeps can still be audited as one study.
+  set so one-model-per-run API sweeps can still be audited as one study. Batch
+  mode also writes `paper_readiness.json` and `paper_readiness.md`, which
+  summarize directory-level gate counts, top next actions, and complete vs
+  incomplete study-level model coverage.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records

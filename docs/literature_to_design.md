@@ -83,6 +83,9 @@ Current implementation:
   experiments by run type, dataset, split, and baseline set. This lets a
   directory of one-model-per-run experiments show whether the study as a whole
   has enough answer/judge coverage.
+- Batch report bundles also write `paper_readiness.json/md`, which summarizes
+  gate counts, top next actions, and complete vs incomplete study-level model
+  groups for a result directory.
 - `paper_next_steps.md` adds `add_model_or_judge_robustness_runs` when
   per-experiment coverage is incomplete.
 
