@@ -2011,3 +2011,29 @@ to a paper-facing claim and evaluation gate.
 - Validation:
   - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py tests/test_eval.py -q`
     -> `31 passed`
+
+### 2026-05-30 LongMemEval-V2 trajectory manifest
+
+- Added `adamem.lme_v2 trajectory-manifest`:
+  - Maps a selected split JSONL to required haystack trajectory ids.
+  - Writes per-question trajectory records, a de-duplicated trajectory-id
+    JSONL, a manifest JSON, and a Markdown report.
+  - Keeps answer labels out of the manifest path; records contain split,
+    question type, domain/environment, state-slot diagnostics, and trajectory
+    ids only.
+- Fixed split selection to round-robin by `domain` inside each transfer type
+  and static control group. The previous source-order split was valid but
+  over-focused on `enterprise/workarena`, which is too weak for a transfer
+  claim.
+- Re-generated the public text-only split and trajectory manifest:
+  - Selected questions: `60`.
+  - Domain coverage: `35` enterprise and `25` web.
+  - Environment coverage: `workarena`, `webarena-reddit`, `webarena-cms`, and
+    `webarena-onestopshop`.
+  - Unique trajectories required: `200`.
+  - Trajectory references: `6,000`.
+  - Missing haystack questions: `0`.
+- Generated ignored local artifacts under
+  `results/longmemeval_v2_trajectory_manifest/`.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `7 passed`

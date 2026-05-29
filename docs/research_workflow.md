@@ -46,6 +46,7 @@ PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.j
 PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_manual_audit.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --state-audit-input results/longmemeval_s_balanced_60_state_audit_reviewed.jsonl
 PYTHONPATH=src python -m adamem.lme_v2 question-audit --output-dir results/longmemeval_v2_question_audit --json
 PYTHONPATH=src python -m adamem.lme_v2 transfer-split --audit-records results/longmemeval_v2_question_audit/longmemeval_v2_question_audit.records.jsonl --output-dir results/longmemeval_v2_transfer_split --transfer-per-type 10 --control-per-group 10 --json
+PYTHONPATH=src python -m adamem.lme_v2 trajectory-manifest --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --output-dir results/longmemeval_v2_trajectory_manifest --json
 PYTHONPATH=src python -m adamem.convert longmemeval-v2 data/longmemeval-v2/questions.jsonl data/longmemeval-v2/trajectories.jsonl data/longmemeval-v2/haystacks/lme_v2_small.json /tmp/longmemeval_v2_small.adamem.jsonl --expected answer --top-k 8 --limit-per-type 5 --max-trajectories-per-question 20
 PYTHONPATH=src python -m adamem.convert longmemeval-v2 data/longmemeval-v2/questions.jsonl data/longmemeval-v2/trajectories.jsonl data/longmemeval-v2/haystacks/lme_v2_small.json /tmp/longmemeval_v2_text_transfer_60.adamem.jsonl --question-ids-file results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --expected answer --top-k 8
 PYTHONPATH=src python -m adamem.convert ama data/ama_bench.jsonl benchmarks/ama_bench.adamem.jsonl --expected answer --top-k 8
@@ -74,6 +75,9 @@ Outputs:
   transfer split.
 - LongMemEval-V2 transfer split manifest and exact question-id file for later
   answer-model and retrieval runs.
+- LongMemEval-V2 trajectory-id manifest for the selected split so data
+  acquisition and conversion can be checked before loading the full trajectory
+  file.
 - Notes on any regression before new work begins.
 
 Done when:

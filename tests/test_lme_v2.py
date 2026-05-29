@@ -4,11 +4,14 @@ import json
 from pathlib import Path
 
 from adamem.lme_v2 import (
+    longmemeval_v2_split_trajectory_records,
     longmemeval_v2_question_audit_records,
     select_longmemeval_v2_transfer_split,
     summarize_longmemeval_v2_question_audit,
+    summarize_longmemeval_v2_trajectory_manifest,
     summarize_longmemeval_v2_transfer_split,
     write_longmemeval_v2_question_audit,
+    write_longmemeval_v2_trajectory_manifest,
     write_longmemeval_v2_transfer_split,
 )
 
@@ -185,6 +188,31 @@ def test_longmemeval_v2_transfer_split_balances_candidates_and_controls() -> Non
     assert summary["question_ids"] == ["dyn1", "proc1", "static_warn1", "static_clean1"]
 
 
+def test_longmemeval_v2_transfer_split_balances_domains_within_type() -> None:
+    records = [
+        _audit_record("dyn_ent_1", "dynamic-environment", domain="enterprise"),
+        _audit_record("dyn_ent_2", "dynamic-environment", domain="enterprise"),
+        _audit_record("dyn_web_1", "dynamic-environment", domain="web"),
+        _audit_record("dyn_web_2", "dynamic-environment", domain="web"),
+        _audit_record("static_ent", "static-environment", type_candidate=False, state_slots=["location"], domain="enterprise"),
+        _audit_record("static_web", "static-environment", type_candidate=False, state_slots=["location"], domain="web"),
+    ]
+
+    selected = select_longmemeval_v2_transfer_split(
+        records,
+        transfer_per_type=4,
+        control_per_group=2,
+    )
+
+    assert [record["id"] for record in selected[:4]] == [
+        "dyn_ent_1",
+        "dyn_web_1",
+        "dyn_ent_2",
+        "dyn_web_2",
+    ]
+    assert [record["id"] for record in selected[4:]] == ["static_ent", "static_web"]
+
+
 def test_write_longmemeval_v2_transfer_split_outputs_manifest(tmp_path: Path) -> None:
     audit_records = tmp_path / "audit.records.jsonl"
     audit_records.write_text(
@@ -221,10 +249,100 @@ def test_write_longmemeval_v2_transfer_split_outputs_manifest(tmp_path: Path) ->
     assert "LongMemEval-V2 Transfer Split" in report
 
 
+def test_longmemeval_v2_trajectory_manifest_summarizes_required_ids() -> None:
+    split_records = [
+        {**_audit_record("dyn1", "dynamic-environment"), "split": "transfer", "selection_group": "dynamic-environment"},
+        {**_audit_record("proc1", "procedure"), "split": "transfer", "selection_group": "procedure"},
+        {
+            **_audit_record("static_warn", "static-environment", type_candidate=False, state_slots=["location"]),
+            "split": "router_warning_control",
+            "selection_group": "static_query_state_slot_signal",
+        },
+        {
+            **_audit_record("missing", "procedure"),
+            "split": "transfer",
+            "selection_group": "procedure",
+        },
+    ]
+    records = list(longmemeval_v2_split_trajectory_records(
+        split_records,
+        haystacks={
+            "dyn1": ["traj-a", "traj-b"],
+            "proc1": ["traj-b", "traj-c"],
+            "static_warn": ["traj-static"],
+        },
+    ))
+    summary = summarize_longmemeval_v2_trajectory_manifest(records)
+    by_id = {record["id"]: record for record in records}
+
+    assert by_id["dyn1"]["trajectory_ids"] == ["traj-a", "traj-b"]
+    assert by_id["missing"]["haystack_missing"] is True
+    assert "answer" not in by_id["dyn1"]
+    assert summary["total_questions"] == 4
+    assert summary["unique_trajectories"] == 4
+    assert summary["trajectory_references"] == 5
+    assert summary["missing_haystack_questions"] == 1
+    assert summary["trajectory_ids"] == ["traj-a", "traj-b", "traj-c", "traj-static"]
+    assert summary["by_split"]["transfer"]["questions"] == 3
+    assert summary["by_split"]["transfer"]["unique_trajectories"] == 3
+    assert summary["by_split"]["router_warning_control"]["unique_trajectories"] == 1
+
+
+def test_write_longmemeval_v2_trajectory_manifest_outputs_artifacts(tmp_path: Path) -> None:
+    split_records = tmp_path / "split.records.jsonl"
+    split_records.write_text(
+        "\n".join([
+            json.dumps({
+                **_audit_record("dyn1", "dynamic-environment", state_slots=["runtime.*.status"]),
+                "split": "transfer",
+                "selection_group": "dynamic-environment",
+            }),
+            json.dumps({
+                **_audit_record("static_clean", "static-environment", type_candidate=False),
+                "split": "static_clean_control",
+                "selection_group": "static_no_state_slot_signal",
+            }),
+        ]),
+        encoding="utf-8",
+    )
+    haystack = tmp_path / "haystack.json"
+    haystack.write_text(
+        json.dumps({
+            "dyn1": ["traj-a", "traj-b"],
+            "static_clean": ["traj-b", "traj-c"],
+        }),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "manifest"
+
+    result = write_longmemeval_v2_trajectory_manifest(split_records, haystack, output_dir)
+    question_records_path = Path(result["question_records_path"])
+    trajectory_ids_path = Path(result["trajectory_ids_path"])
+    manifest_path = Path(result["manifest_path"])
+    report_path = Path(result["report_path"])
+    question_records = [
+        json.loads(line)
+        for line in question_records_path.read_text(encoding="utf-8").splitlines()
+    ]
+    trajectory_ids = [
+        json.loads(line)["id"]
+        for line in trajectory_ids_path.read_text(encoding="utf-8").splitlines()
+    ]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    report = report_path.read_text(encoding="utf-8")
+
+    assert [record["id"] for record in question_records] == ["dyn1", "static_clean"]
+    assert trajectory_ids == ["traj-a", "traj-b", "traj-c"]
+    assert manifest["unique_trajectories"] == 3
+    assert manifest["by_split"]["transfer"]["trajectory_references"] == 2
+    assert "LongMemEval-V2 Trajectory Manifest" in report
+
+
 def _audit_record(
     question_id: str,
     question_type: str,
     *,
+    domain: str = "enterprise",
     type_candidate: bool = True,
     state_slots: list[str] | None = None,
     image_required: bool = False,
@@ -238,7 +356,7 @@ def _audit_record(
         candidate_reasons.append("query_state_slot")
     return {
         "id": question_id,
-        "domain": "enterprise",
+        "domain": domain,
         "environment": "workarena",
         "question_type": question_type,
         "abstention": question_type.endswith("-abs"),

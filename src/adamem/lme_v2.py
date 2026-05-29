@@ -108,6 +108,134 @@ def write_longmemeval_v2_transfer_split(
     }
 
 
+def write_longmemeval_v2_trajectory_manifest(
+    split_records_source: str | Path,
+    haystack_source: str | Path,
+    output_dir: str | Path,
+) -> dict[str, Any]:
+    """Write the trajectory id manifest needed by a selected LME-V2 split."""
+
+    split_records = _load_jsonl_objects(split_records_source)
+    haystacks = _load_haystack_json(haystack_source)
+    question_records = list(longmemeval_v2_split_trajectory_records(split_records, haystacks=haystacks))
+    summary = summarize_longmemeval_v2_trajectory_manifest(question_records)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    question_records_path = output / "longmemeval_v2_split_trajectories.records.jsonl"
+    trajectory_ids_path = output / "longmemeval_v2_split_trajectory_ids.jsonl"
+    manifest_path = output / "longmemeval_v2_split_trajectory_manifest.json"
+    report_path = output / "longmemeval_v2_split_trajectory_manifest.md"
+    _write_jsonl(question_records_path, question_records)
+    _write_jsonl(trajectory_ids_path, [{"id": trajectory_id} for trajectory_id in summary["trajectory_ids"]])
+    _write_json(manifest_path, summary)
+    report_path.write_text(longmemeval_v2_trajectory_manifest_report(summary), encoding="utf-8")
+    return {
+        "split_records_source": str(split_records_source),
+        "haystack_source": str(haystack_source),
+        "question_records_path": str(question_records_path),
+        "trajectory_ids_path": str(trajectory_ids_path),
+        "manifest_path": str(manifest_path),
+        "report_path": str(report_path),
+        "summary": summary,
+    }
+
+
+def longmemeval_v2_split_trajectory_records(
+    split_records: Iterable[Mapping[str, Any]],
+    *,
+    haystacks: Mapping[str, list[str]],
+) -> Iterable[dict[str, Any]]:
+    for record in split_records:
+        question_id = str(record.get("id") or record.get("question_id") or "")
+        trajectory_ids = haystacks.get(question_id, [])
+        yield {
+            "id": question_id,
+            "split": record.get("split"),
+            "selection_group": record.get("selection_group"),
+            "question_type": record.get("question_type"),
+            "domain": record.get("domain"),
+            "environment": record.get("environment"),
+            "abstention": record.get("abstention"),
+            "image_required": record.get("image_required"),
+            "state_transfer_candidate": record.get("state_transfer_candidate"),
+            "type_transfer_candidate": record.get("type_transfer_candidate"),
+            "query_state_slot_candidate": record.get("query_state_slot_candidate"),
+            "state_slot": record.get("state_slot"),
+            "inferred_state_slots": record.get("inferred_state_slots") or [],
+            "trajectory_ids": list(trajectory_ids),
+            "trajectory_count": len(trajectory_ids),
+            "haystack_missing": question_id not in haystacks,
+        }
+
+
+def summarize_longmemeval_v2_trajectory_manifest(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    record_list = list(records)
+    all_trajectory_ids = sorted({
+        str(trajectory_id)
+        for record in record_list
+        for trajectory_id in record.get("trajectory_ids") or []
+    })
+    by_split: dict[str, dict[str, Any]] = {}
+    for split in sorted({str(record.get("split") or "<missing>") for record in record_list}):
+        subset = [record for record in record_list if str(record.get("split") or "<missing>") == split]
+        trajectory_ids = sorted({
+            str(trajectory_id)
+            for record in subset
+            for trajectory_id in record.get("trajectory_ids") or []
+        })
+        by_split[split] = {
+            "questions": len(subset),
+            "unique_trajectories": len(trajectory_ids),
+            "trajectory_references": sum(int(record.get("trajectory_count") or 0) for record in subset),
+            "missing_haystack_questions": sum(1 for record in subset if record.get("haystack_missing")),
+        }
+    return {
+        "total_questions": len(record_list),
+        "unique_trajectories": len(all_trajectory_ids),
+        "trajectory_references": sum(int(record.get("trajectory_count") or 0) for record in record_list),
+        "missing_haystack_questions": sum(1 for record in record_list if record.get("haystack_missing")),
+        "trajectory_ids": all_trajectory_ids,
+        "by_split": by_split,
+        "by_question_type": _question_type_summary(record_list),
+        "by_domain": _count_by(record_list, "domain"),
+        "by_environment": _count_by(record_list, "environment"),
+    }
+
+
+def longmemeval_v2_trajectory_manifest_report(summary: Mapping[str, Any]) -> str:
+    lines = [
+        "# LongMemEval-V2 Trajectory Manifest",
+        "",
+        f"Total questions: {summary['total_questions']}",
+        f"Unique trajectories: {summary['unique_trajectories']}",
+        f"Trajectory references: {summary['trajectory_references']}",
+        f"Missing-haystack questions: {summary['missing_haystack_questions']}",
+        "",
+        "## Splits",
+        "",
+        "| split | questions | unique trajectories | references | missing haystack |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for split, aggregate in sorted(summary["by_split"].items()):
+        lines.append(
+            f"| {split} | {aggregate['questions']} | {aggregate['unique_trajectories']} | "
+            f"{aggregate['trajectory_references']} | {aggregate['missing_haystack_questions']} |"
+        )
+    lines.extend([
+        "",
+        "## Question Types",
+        "",
+        "| question_type | total | inferred state | abstention |",
+        "| --- | ---: | ---: | ---: |",
+    ])
+    for question_type, aggregate in sorted(summary["by_question_type"].items()):
+        lines.append(
+            f"| {question_type} | {aggregate['total']} | "
+            f"{aggregate['inferred_state_slot_questions']} | {aggregate['abstention_questions']} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def select_longmemeval_v2_transfer_split(
     audit_records: Iterable[Mapping[str, Any]],
     *,
@@ -131,7 +259,7 @@ def select_longmemeval_v2_transfer_split(
         ]
         selected.extend(
             _tag_selected_records(
-                candidates[:transfer_per_type],
+                _balanced_prefix(candidates, transfer_per_type, field_name="domain"),
                 split="transfer",
                 selection_group=question_type,
             )
@@ -143,12 +271,20 @@ def select_longmemeval_v2_transfer_split(
         and _eligible_for_split(record, include_image_required=include_image_required, require_haystack=require_haystack)
     ]
     selected.extend(_tag_selected_records(
-        [record for record in static_records if record.get("query_state_slot_candidate")][:control_per_group],
+        _balanced_prefix(
+            [record for record in static_records if record.get("query_state_slot_candidate")],
+            control_per_group,
+            field_name="domain",
+        ),
         split="router_warning_control",
         selection_group="static_query_state_slot_signal",
     ))
     selected.extend(_tag_selected_records(
-        [record for record in static_records if not record.get("query_state_slot_candidate")][:control_per_group],
+        _balanced_prefix(
+            [record for record in static_records if not record.get("query_state_slot_candidate")],
+            control_per_group,
+            field_name="domain",
+        ),
         split="static_clean_control",
         selection_group="static_no_state_slot_signal",
     ))
@@ -173,7 +309,7 @@ def summarize_longmemeval_v2_transfer_split(
             "control_per_group": control_per_group,
             "include_image_required": include_image_required,
             "require_haystack": require_haystack,
-            "ordering": "source_order_with_sorted_question_type_groups",
+            "ordering": "source_order_with_sorted_question_type_groups_and_domain_round_robin",
             "label_use": "question metadata only; reference answers excluded",
         },
         "source_audit_total": len(audit),
@@ -396,6 +532,35 @@ def _tag_selected_records(
     return tagged
 
 
+def _balanced_prefix(
+    records: list[Mapping[str, Any]],
+    limit: int,
+    *,
+    field_name: str,
+) -> list[Mapping[str, Any]]:
+    if limit <= 0:
+        return []
+    groups: dict[str, list[Mapping[str, Any]]] = {}
+    for record in records:
+        key = str(record.get(field_name) or "<missing>")
+        groups.setdefault(key, []).append(record)
+    selected: list[Mapping[str, Any]] = []
+    group_names = sorted(groups)
+    while len(selected) < limit:
+        added = False
+        for group_name in group_names:
+            group = groups[group_name]
+            if not group:
+                continue
+            selected.append(group.pop(0))
+            added = True
+            if len(selected) >= limit:
+                break
+        if not added:
+            break
+    return selected
+
+
 def _transfer_candidate_availability(
     audit_records: list[Mapping[str, Any]],
     selected_records: list[Mapping[str, Any]],
@@ -597,6 +762,15 @@ def main(argv: list[str] | None = None) -> None:
     split.add_argument("--allow-missing-haystack", action="store_true")
     split.add_argument("--json", action="store_true")
 
+    trajectories = sub.add_parser(
+        "trajectory-manifest",
+        help="Map a selected LongMemEval-V2 split to required haystack trajectory ids",
+    )
+    trajectories.add_argument("--split-records", type=Path, required=True)
+    trajectories.add_argument("--haystack", default=LONGMEMEVAL_V2_SMALL_HAYSTACK_URL)
+    trajectories.add_argument("--output-dir", type=Path, required=True)
+    trajectories.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "question-audit":
         result = write_longmemeval_v2_question_audit(
@@ -623,6 +797,17 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             print(f"wrote LongMemEval-V2 transfer split to {args.output_dir}")
+            print(f"report: {result['report_path']}")
+    elif args.command == "trajectory-manifest":
+        result = write_longmemeval_v2_trajectory_manifest(
+            args.split_records,
+            args.haystack,
+            args.output_dir,
+        )
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"wrote LongMemEval-V2 trajectory manifest to {args.output_dir}")
             print(f"report: {result['report_path']}")
 
 

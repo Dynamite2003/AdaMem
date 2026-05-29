@@ -138,6 +138,11 @@ PYTHONPATH=src python -m adamem.lme_v2 transfer-split \
   --transfer-per-type 10 \
   --control-per-group 10 \
   --json
+
+PYTHONPATH=src python -m adamem.lme_v2 trajectory-manifest \
+  --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl \
+  --output-dir results/longmemeval_v2_trajectory_manifest \
+  --json
 ```
 
 Latest question-side audit:
@@ -160,9 +165,15 @@ Latest text-only transfer split:
   `dynamic-environment-abs`, `procedure`, and `procedure-abs`.
 - Static controls: `20`, split into `10` router-warning controls and `10`
   clean static controls.
+- Domain/environment coverage after domain round-robin selection:
+  `35` enterprise/workarena questions and `25` web questions across
+  WebArena Reddit, CMS, and OneStopShop.
 - `errors-gotchas` had `29` source candidates but `0` eligible text-only
   candidates because all require images. Include them only in a separate
   multimodal setting.
+- Trajectory manifest for the split:
+  `6,000` trajectory references collapse to `200` unique trajectory ids, with
+  `0` missing haystack questions.
 - The split records can drive exact conversion after the trajectory file is
   available:
 
