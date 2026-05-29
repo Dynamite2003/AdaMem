@@ -133,6 +133,26 @@ def write_experiment_bundle(
     manifest["artifacts"]["method_coverage_json"] = str(method_json)
     manifest["artifacts"]["method_coverage_markdown"] = str(method_md)
 
+    run_claim_rows = claim_matrix_rows([manifest])
+    run_study_rows = study_model_coverage_rows([manifest])
+    run_benchmark_coverage = benchmark_coverage_summary([manifest])
+    run_readiness = paper_readiness_summary(
+        run_claim_rows,
+        run_study_rows,
+        benchmark_coverage=run_benchmark_coverage,
+        method_coverage=method_coverage,
+    )
+    next_steps_md = output / f"{stem}.paper_next_steps.md"
+    readiness_json = output / f"{stem}.paper_readiness.json"
+    readiness_md = output / f"{stem}.paper_readiness.md"
+    next_steps_md.write_text(paper_next_steps_markdown(run_claim_rows), encoding="utf-8")
+    readiness_json.write_text(json.dumps(run_readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    readiness_md.write_text(paper_readiness_markdown(run_readiness), encoding="utf-8")
+    manifest["paper_readiness"] = run_readiness
+    manifest["artifacts"]["paper_next_steps_markdown"] = str(next_steps_md)
+    manifest["artifacts"]["paper_readiness_json"] = str(readiness_json)
+    manifest["artifacts"]["paper_readiness_markdown"] = str(readiness_md)
+
     manifest_path = output / f"{stem}.manifest.json"
     manifest["artifacts"]["manifest"] = str(manifest_path)
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

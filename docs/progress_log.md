@@ -76,6 +76,21 @@ extraction on those true state cases.
   - Keep claim boundaries explicit: coverage artifacts identify experimental
     design gaps; they do not imply answer accuracy or SOTA.
 
+### 2026-05-30 single-run paper readiness artifacts
+
+- Extended each single-experiment report bundle with run-level readiness and
+  next-step artifacts:
+  - `<run>.paper_readiness.json`
+  - `<run>.paper_readiness.md`
+  - `<run>.paper_next_steps.md`
+  - `manifest["paper_readiness"]`
+- Purpose:
+  - Let a single STALE API pilot, diagnostic run, or transfer run immediately
+    report its claim gate, benchmark coverage gaps, method coverage gaps,
+    model/judge robustness gaps, and next actions.
+  - Reduce dependence on batch-only summaries when iterating on one expensive
+    run at a time.
+
 ### 2026-05-30 day-end handoff
 
 - Current committed implementation is at the paper-workflow stage for
