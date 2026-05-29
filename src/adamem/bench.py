@@ -142,6 +142,7 @@ def benchmark_failure_summary(
         "answerability": {},
         "paper_metrics": {},
         "pairwise_vs_first_baseline": {},
+        "diagnostics_by_metadata": {},
     }
     baseline_order = list(dict.fromkeys(str(record["baseline"]) for record in records))
     for baseline in sorted(set(baseline_order)):
@@ -187,6 +188,11 @@ def benchmark_failure_summary(
             }
             field_summary[value] = by_baseline
         summary["by_metadata"][field_name] = field_summary
+        summary["diagnostics_by_metadata"][field_name] = _metadata_diagnostic_summary(
+            records,
+            field_name=field_name,
+            values=values,
+        )
     return summary
 
 
@@ -317,6 +323,28 @@ def benchmark_failure_report(
                 lines.append(
                     f"| {value} | {baseline} | {aggregate['passed']}/{aggregate['total']} | "
                     f"{aggregate['accuracy']:.2%} |"
+                )
+        lines.append("")
+
+    for field_name, field_summary in summary.get("diagnostics_by_metadata", {}).items():
+        if list(field_summary) == ["<missing>"]:
+            continue
+        if not _has_grouped_diagnostic_signal(field_summary):
+            continue
+        lines.append(f"## By {field_name} Diagnostics")
+        lines.append(
+            "| value | baseline | evidence support | answer recall | basis recall | "
+            "basis matched |"
+        )
+        lines.append("| --- | --- | ---: | ---: | ---: | ---: |")
+        for value, by_baseline in field_summary.items():
+            for baseline, metrics in by_baseline.items():
+                lines.append(
+                    f"| {value} | {baseline} | "
+                    f"{_format_fraction_rate(metrics['evidence_matched_records'], metrics['evidence_query_total'])} | "
+                    f"{_format_optional_rate(metrics['answer_keyword_recall_avg'])} | "
+                    f"{_format_optional_rate(metrics['basis_answer_keyword_recall_avg'])} | "
+                    f"{metrics['basis_answer_keyword_matched_records']}/{metrics['answer_query_total']} |"
                 )
         lines.append("")
 
@@ -593,6 +621,43 @@ def _answerability_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _metadata_diagnostic_summary(
+    records: list[dict[str, Any]],
+    *,
+    field_name: str,
+    values: list[str],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    field_summary: dict[str, dict[str, dict[str, Any]]] = {}
+    for value in values:
+        value_subset = [
+            record
+            for record in records
+            if _metadata_group_value(record["metadata"], field_name) == value
+        ]
+        field_summary[value] = {}
+        for baseline in sorted({str(record["baseline"]) for record in value_subset}):
+            subset = [record for record in value_subset if record["baseline"] == baseline]
+            evidence = _evidence_support_aggregate(subset)
+            answerability = _answerability_aggregate(subset)
+            field_summary[value][baseline] = {
+                "total": len(subset),
+                "evidence_query_total": evidence["evidence_query_total"],
+                "evidence_matched_records": evidence["evidence_matched_records"],
+                "evidence_missing_records": evidence["evidence_missing_records"],
+                "answer_query_total": answerability["answer_query_total"],
+                "answer_keyword_matched_records": answerability["answer_keyword_matched_records"],
+                "answer_keyword_recall_avg": answerability["answer_keyword_recall_avg"],
+                "basis_answer_keyword_matched_records": (
+                    answerability["basis_answer_keyword_matched_records"]
+                ),
+                "basis_answer_keyword_recall_avg": (
+                    answerability["basis_answer_keyword_recall_avg"]
+                ),
+                "answer_basis_records": answerability["answer_basis_records"],
+            }
+    return field_summary
+
+
 def _paper_metrics_for_baseline(
     baseline: str,
     *,
@@ -653,6 +718,22 @@ def _format_optional_rate(value: float | None) -> str:
     if value is None:
         return "n/a"
     return f"{value:.2%}"
+
+
+def _format_fraction_rate(numerator: int, denominator: int) -> str:
+    if denominator == 0:
+        return "n/a"
+    return f"{numerator}/{denominator} ({numerator / denominator:.2%})"
+
+
+def _has_grouped_diagnostic_signal(field_summary: dict[str, dict[str, dict[str, Any]]]) -> bool:
+    for by_baseline in field_summary.values():
+        for metrics in by_baseline.values():
+            if metrics.get("evidence_query_total", 0) > 0:
+                return True
+            if metrics.get("answer_query_total", 0) > 0:
+                return True
+    return False
 
 
 def _state_trace_count(trace: list[dict[str, Any]]) -> int:

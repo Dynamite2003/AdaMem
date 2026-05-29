@@ -1399,6 +1399,48 @@ to a paper-facing claim and evaluation gate.
     runnable on the 20-episode public AMA pilot, and the result strengthens the
     method claim that explicit trajectory-step authorization is not recovered
     by generic full-memory scoring.
+- Added per-metadata diagnostics to JSONL benchmark reports:
+  - `diagnostics_by_metadata` now records evidence support and answerability
+    metrics for every grouped metadata value, not only exact pass/accuracy.
+  - Markdown reports include sections such as `By question_type Diagnostics`.
+  - This matters for AMA because exact answer-string support is zero, while
+    evidence and answerability expose useful A/B/C/D differences.
+- Re-ran the 20-episode public AMA pilot report with grouped diagnostics:
+  - `trajectory_step_readout` evidence support by AMA type:
+    - A: `79/79`.
+    - B: `60/60`.
+    - C: `60/60`.
+    - D: `40/40`.
+  - `semantic_only` evidence support by AMA type:
+    - A: `12/79`.
+    - B: `8/60`.
+    - C: `10/60`.
+    - D: `4/40`.
+  - `trajectory_step_readout` structured basis recall by AMA type:
+    - A: `25.00%`.
+    - B: `24.46%`.
+    - C: `23.62%`.
+    - D: `23.91%`.
+  - `semantic_only` basis recall by AMA type:
+    - A: `16.25%`.
+    - B: `15.64%`.
+    - C: `16.50%`.
+    - D: `13.39%`.
+  - Interpretation: the step-authorized evidence-recall gain is not isolated
+    to a single AMA question type; it appears across recall, causal inference,
+    state updating, and state abstraction categories.
+- Kept grouped diagnostic report sections conditional:
+  - Reports now omit all-`n/a` grouped diagnostics for datasets without
+    evidence or answer metadata.
+  - This keeps dynamic-state/state-slot reports readable while preserving AMA
+    `question_type` diagnostics.
+- Re-ran deterministic validation:
+  - `python -m pytest`
+  - Result: `78 passed`.
+  - `git diff --check`
+  - Result: clean.
+  - Regenerated `results/ama_public_20_full/ama_public_20.report.md` from
+    existing records to include `By question_type Diagnostics`.
 - Re-ran deterministic validation:
   - `python -m pytest`
   - Result: `77 passed`.

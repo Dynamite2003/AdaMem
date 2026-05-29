@@ -290,7 +290,9 @@ PYTHONPATH=src python -m adamem.pilot ama-public --limit 20 --output-dir results
 The pilot writes a raw JSONL subset, converted AdaMem JSONL, Markdown report,
 case records, and a compact experiment JSON. Use `--answer-only` for larger
 API-free smoke runs because answer-mode reports already include evidence
-support and answerability diagnostics.
+support and answerability diagnostics. Reports include grouped diagnostics for
+metadata such as AMA `question_type`, so A/B/C/D evidence and answerability can
+be inspected even when exact answer-string accuracy is zero.
 
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes

@@ -122,6 +122,10 @@ Outputs:
   no-progress, state-reversion, and inverse-action facts. This is
   evaluation-only and may use answer text; the basis itself must not use answer
   labels.
+- Per-metadata diagnostic breakdowns for evidence support and answerability,
+  not only exact answer-string pass/fail. This is required for AMA A/B/C/D
+  analysis because exact answer-string support is too strict for open-ended
+  trajectory answers.
 - Pairwise baseline comparisons against the first requested baseline, including
   gained passes, lost passes, net delta, both-pass, and both-fail counts.
 - Case-level diagnostic JSONL records for representative failure analysis.
@@ -564,6 +568,10 @@ Next API-free work:
    remains at `239/239`. The next method work should scale this beyond 20
    episodes and add API-backed judge robustness over correctly recalled
    trajectory steps.
+   Per-type diagnostics on the same run show `trajectory_step_readout` reaches
+   full evidence support for every AMA type: A `79/79`, B `60/60`, C `60/60`,
+   and D `40/40`; structured basis recall is also higher than semantic-only in
+   every type.
 4. Build a reliable public state-sensitive transfer subset. The first
    LongMemEval-S inferred-state pilot exposed query-router false positives;
    after word-boundary matching and intent gates, the balanced 60-case sample

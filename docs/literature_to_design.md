@@ -242,6 +242,10 @@ Required next evidence:
   `34/239` for `semantic_only`, with basis keyword recall `24.34%` versus
   `15.68%`. The exact-answer string metric remains `0/240`, so this is still a
   retrieval/answerability claim, not an answer-accuracy claim.
+- Per-type AMA diagnostics now show that the evidence-recall effect is not
+  concentrated in one category: `trajectory_step_readout` reaches A `79/79`, B
+  `60/60`, C `60/60`, and D `40/40` evidence support on the 20-episode pilot.
+  Basis keyword recall is also higher than semantic-only in all four types.
 - Adding bounded candidate pools and bounded soft-stale propagation makes the
   graph-heavy `full` baseline tractable on the same 20 public episodes
   (`~33s` local wall time) without changing the research conclusion:

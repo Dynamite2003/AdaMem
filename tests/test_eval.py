@@ -730,6 +730,9 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert "## Paper Metrics" in report
     assert "## State Readout Exposure" in report
     assert "## Evidence Support" in report
+    assert summary["diagnostics_by_metadata"]["dimension"]["implicit_policy_adaptation"]["state_readout"][
+        "total"
+    ] > 0
     assert summary["paper_metrics"]["state_readout"]["support_accuracy"] == 1.0
     assert summary["paper_metrics"]["state_readout"]["state_slot_match_rate"] == 1.0
     assert summary["paper_metrics"]["state_readout"]["state_readout_missing_rate"] == 0.0
@@ -740,6 +743,47 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert summary["state_readout_exposure"]["state_readout"]["unmarked_state_retrieval_records"] == 0
     assert summary["state_readout_exposure"]["semantic_only"]["state_readout_missing_records"] == 7
     assert summary["failure_modes"]["state_readout_missing"] == 7
+
+
+def test_jsonl_benchmark_metadata_diagnostics_include_evidence_and_answerability() -> None:
+    case = MemoryQACase(
+        id="ama_grouped",
+        observations=[
+            ObservationSpec(
+                label="step001.action",
+                content="[step001.action] action: right",
+                kind="action",
+                metadata={"benchmark": "ama", "trajectory_step": 1, "memory_key": "step001.action"},
+            ),
+        ],
+        queries=[
+            QuerySpec(
+                id="q-a",
+                query="What happened at Step 1?",
+                expected_substrings=["right"],
+                top_k=1,
+                metadata={
+                    "benchmark": "ama",
+                    "question_type": "A",
+                    "answer": "right",
+                    "evidence": ["step001"],
+                },
+            )
+        ],
+    )
+    results = run_benchmark(cases=[case], configs={
+        "trajectory_step_readout": baseline_registry()["trajectory_step_readout"].config,
+    })
+    records = benchmark_case_records(results)
+    summary = benchmark_failure_summary(records)
+    report = benchmark_failure_report(records)
+    diagnostics = summary["diagnostics_by_metadata"]["question_type"]["A"]["trajectory_step_readout"]
+
+    assert diagnostics["evidence_matched_records"] == 1
+    assert diagnostics["evidence_query_total"] == 1
+    assert diagnostics["basis_answer_keyword_recall_avg"] == 1.0
+    assert "## By question_type Diagnostics" in report
+    assert "| A | trajectory_step_readout | 1/1 (100.00%) | 100.00% | 100.00% | 1/1 |" in report
 
 
 def test_jsonl_benchmark_summary_compares_pairs_against_first_baseline() -> None:
