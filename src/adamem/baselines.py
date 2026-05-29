@@ -107,6 +107,18 @@ def baseline_registry() -> dict[str, BaselineSpec]:
             }),
         ),
         BaselineSpec(
+            name="trajectory_step_readout",
+            category="trajectory_memory_ablation",
+            description=(
+                "Semantic retrieval plus authorized trajectory-step readout for queries "
+                "that explicitly mention Step N or short step ranges."
+            ),
+            config=AdaMemConfig(**{
+                **semantic_only,
+                "use_trajectory_step_readout": True,
+            }),
+        ),
+        BaselineSpec(
             name="delta_graph",
             category="adamem_ablation",
             description="Graph retrieval with hard memory-key supersession.",

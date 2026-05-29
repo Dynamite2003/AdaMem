@@ -219,6 +219,11 @@ accuracy. The same records include expected/retrieved state slots and failure
 modes for missing state readout, slot mismatch, and unmarked state exposure.
 They also include a `Paper Metrics` table with support accuracy, net delta,
 state-slot match, missing readout, slot mismatch, and unmarked state exposure.
+Reports also include an `Evidence Support` table that separates answer/support
+string success from evidence-label recall and graph evidence hits. This is
+especially important for AMA-style trajectory runs, where the key question is
+whether causal action-result edges retrieved the right trajectory step rather
+than merely retrieving a semantically similar observation.
 
 `benchmarks/dynamic_state_transfer.jsonl` is a local non-STALE smoke fixture for
 schedule, task status, preference, health/dietary, resource, workflow/runbook,
@@ -262,4 +267,17 @@ The `ama` converter accepts AMA-Bench-style JSON or JSONL agent trajectories.
 It emits actions, observations, and environment-state snapshots as runtime
 observations, links action results through `cause_labels`, and keeps answers or
 evidence labels query-only. This prepares API-free tests of whether causal
-trajectory structure helps beyond raw similarity retrieval.
+trajectory structure helps beyond raw similarity retrieval. JSONL benchmark
+records expose `expected_evidence`, `missing_evidence`, `graph_retrieval_count`,
+and `graph_evidence_hits` for these trajectory diagnostics. For the public
+AMA-Bench schema, the converter preserves `turn_idx`, `question_uuid`, and
+`type`, and derives diagnostic evidence labels from `Step N` references in the
+question text when explicit evidence fields are absent.
+
+The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
+when a query explicitly mentions `Step N` or a short step range, it authorizes
+retrieval of the matching trajectory steps by metadata instead of relying only
+on lexical similarity. On the first five public AMA-Bench samples, this
+improves evidence support from `0/60` for `semantic_only` and `full` to
+`60/60`, while answer-string support remains `0/60`; that result is retrieval
+evidence only, not an answer-accuracy claim.

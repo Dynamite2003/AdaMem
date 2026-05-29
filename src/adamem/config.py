@@ -40,6 +40,7 @@ class AdaMemConfig:
     use_salient_memory: bool = False
     use_salient_memory_only: bool = False
     use_salient_memory_readout: bool = False
+    use_trajectory_step_readout: bool = False
 
     semantic_weight: float = 0.58
     temporal_weight: float = 0.08
@@ -57,6 +58,7 @@ class AdaMemConfig:
     state_readout_boost: float = 2.0
     temporal_kg_readout_boost: float = 1.6
     salient_memory_readout_boost: float = 1.8
+    trajectory_step_readout_boost: float = 2.2
     memory_evolution_threshold: float = 0.28
     memory_evolution_keyword_limit: int = 8
     memory_evolution_candidate_limit: int = 48

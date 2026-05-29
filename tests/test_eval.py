@@ -402,6 +402,9 @@ def test_ama_converter_preserves_action_observation_causality(tmp_path: Path) ->
         "causal_graph": causal_graph,
     })
     by_name = {result.name: result for result in results}
+    records = benchmark_case_records(results)
+    summary = benchmark_failure_summary(records)
+    by_record = {record["baseline"]: record for record in records}
 
     assert count == 1
     assert cases[0].id == "ama_checkout_1"
@@ -416,6 +419,121 @@ def test_ama_converter_preserves_action_observation_causality(tmp_path: Path) ->
     assert by_name["semantic_no_graph"].passed == 0
     assert by_name["causal_graph"].passed == 1
     assert by_name["causal_graph"].queries[0].trace[0]["relation"] == "graph"
+    assert by_record["semantic_no_graph"]["missing_evidence"] == []
+    assert by_record["semantic_no_graph"]["graph_evidence_hit_count"] == 0
+    assert by_record["causal_graph"]["expected_evidence"] == ["step000"]
+    assert by_record["causal_graph"]["graph_evidence_hits"] == ["step000"]
+    assert summary["evidence_support"]["semantic_no_graph"]["evidence_matched_records"] == 1
+    assert summary["evidence_support"]["causal_graph"]["graph_evidence_hit_records"] == 1
+
+
+def test_ama_converter_matches_public_hf_schema_fields(tmp_path: Path) -> None:
+    source = tmp_path / "ama_hf.jsonl"
+    source.write_text(
+        json.dumps({
+            "episode_id": 0,
+            "task": "Baba Is You style rule puzzle.",
+            "domain": "Game",
+            "task_type": "babaisai",
+            "source": "agentbench",
+            "success": False,
+            "num_turns": 3,
+            "total_tokens": 1200,
+            "trajectory": [
+                {"turn_idx": 6, "action": "left", "observation": "The agent returned to the previous tile."},
+                {"turn_idx": 7, "action": "down", "observation": "The agent moved away from the goal."},
+                {"turn_idx": 8, "action": "up", "observation": "The observation matches Step 6 again."},
+            ],
+            "qa_pairs": [
+                {
+                    "question": "The observation after the `up` action at Step 8 is identical to the observation from Step 6. What causal relationship explains this?",
+                    "answer": "The up action reversed the previous down movement.",
+                    "question_uuid": "ama-q-uuid",
+                    "type": "B",
+                },
+                {
+                    "question": "Between steps 6 and 8, which actions were taken?",
+                    "answer": "left, down, up",
+                    "question_uuid": "ama-q-range",
+                    "type": "A",
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+    output = tmp_path / "ama_hf.adamem.jsonl"
+
+    count = convert_ama_file(source, output, expected="answer")
+    cases = load_jsonl_cases(output)
+    by_query = {query.id: query for query in cases[0].queries}
+
+    assert count == 1
+    assert cases[0].id == "0"
+    assert cases[0].observations[0].label == "step006.action"
+    assert cases[0].observations[1].label == "step006.observation"
+    assert cases[0].observations[1].cause_labels == ["step006.action"]
+    assert by_query["ama-q-uuid"].metadata["question_type"] == "B"
+    assert by_query["ama-q-uuid"].metadata["question_type_name"] == "Causal Inference"
+    assert by_query["ama-q-uuid"].metadata["evidence"] == ["step006", "step008"]
+    assert by_query["ama-q-range"].metadata["evidence"] == ["step006", "step007", "step008"]
+
+
+def test_trajectory_step_readout_recovers_step_evidence() -> None:
+    case = MemoryQACase(
+        id="ama_step_readout",
+        observations=[
+            ObservationSpec(
+                label="step006.action",
+                content="[step006.action] action: left",
+                kind="action",
+                metadata={"benchmark": "ama", "trajectory_step": 6, "memory_key": "step006.action"},
+            ),
+            ObservationSpec(
+                label="step006.observation",
+                content="[step006.observation] observation: The agent returned to the previous tile.",
+                kind="observation",
+                cause_labels=["step006.action"],
+                metadata={"benchmark": "ama", "trajectory_step": 6, "memory_key": "step006.observation"},
+            ),
+            ObservationSpec(
+                label="step008.action",
+                content="[step008.action] action: restore-alpha-token",
+                kind="action",
+                metadata={"benchmark": "ama", "trajectory_step": 8, "memory_key": "step008.action"},
+            ),
+            ObservationSpec(
+                label="step008.observation",
+                content="[step008.observation] observation: The agent returned to the previous tile.",
+                kind="observation",
+                cause_labels=["step008.action"],
+                metadata={"benchmark": "ama", "trajectory_step": 8, "memory_key": "step008.observation"},
+            ),
+        ],
+        queries=[
+            QuerySpec(
+                id="step_compare",
+                query="The observation at Step 8 is identical to the observation from Step 6. What action was taken at Step 8?",
+                expected_substrings=["restore-alpha-token"],
+                top_k=2,
+                metadata={"benchmark": "ama", "evidence": ["step006", "step008"]},
+            ),
+        ],
+    )
+
+    results = run_benchmark(cases=[case], configs={
+        "semantic_only": baseline_registry()["semantic_only"].config,
+        "trajectory_step_readout": baseline_registry()["trajectory_step_readout"].config,
+    })
+    records = benchmark_case_records(results)
+    by_record = {record["baseline"]: record for record in records}
+
+    assert by_record["semantic_only"]["passed"] is False
+    assert by_record["trajectory_step_readout"]["passed"] is True
+    assert by_record["trajectory_step_readout"]["missing_evidence"] == []
+    assert any(
+        item["relation"] == "trajectory_step"
+        for item in by_record["trajectory_step_readout"]["trace"]
+    )
 
 
 def test_jsonl_benchmark_experiment_record_shape(tmp_path: Path) -> None:
@@ -474,6 +592,7 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert "# JSONL Retrieval Benchmark Failure Report" in report
     assert "## Paper Metrics" in report
     assert "## State Readout Exposure" in report
+    assert "## Evidence Support" in report
     assert summary["paper_metrics"]["state_readout"]["support_accuracy"] == 1.0
     assert summary["paper_metrics"]["state_readout"]["state_slot_match_rate"] == 1.0
     assert summary["paper_metrics"]["state_readout"]["state_readout_missing_rate"] == 0.0
@@ -598,4 +717,4 @@ def test_jsonl_paper_metrics_report_n_a_for_no_state_queries() -> None:
 
     assert summary["paper_metrics"]["state_readout"]["state_slot_match_rate"] is None
     assert summary["paper_metrics"]["state_readout"]["state_readout_missing_rate"] is None
-    assert "| state_readout | 1/1 | 100.00% | 0 | n/a | n/a | n/a | 0.00% |" in report
+    assert "| state_readout | 1/1 | 100.00% | 0 | n/a | n/a | n/a | n/a | n/a | 0.00% |" in report

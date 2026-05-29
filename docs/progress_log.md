@@ -1128,6 +1128,96 @@ to a paper-facing claim and evaluation gate.
   - A graph-enabled config recovers it through the action-result cause edge.
 - Updated `README.md` and `docs/research_workflow.md` with the AMA converter
   command and the next API-free trajectory-transfer step.
+- Updated `src/adamem/bench.py` with evidence-support diagnostics for JSONL
+  retrieval benchmarks:
+  - Case records now expose `expected_evidence`, `missing_evidence`,
+    `evidence_support_matched`, `graph_retrieval_count`,
+    `graph_evidence_hits`, and `graph_evidence_hit_count`.
+  - Markdown reports now include an `Evidence Support` table.
+  - Paper metrics now include evidence-support and graph-evidence-hit rates.
+  - Trace metadata now includes `memory_key`, `benchmark`,
+    `trajectory_step`, and `subject`, so trajectory evidence labels can be
+    checked without relying only on text substrings.
+- Extended the AMA causality smoke test to verify that the semantic no-graph
+  run retrieves the outcome evidence but misses the answer, while the
+  graph-enabled run records a graph evidence hit for `step000`.
+- Updated `README.md`, `docs/research_workflow.md`, and
+  `docs/literature_to_design.md` with the causal trajectory evidence
+  diagnostic and its paper-facing interpretation.
+- Checked the public AMA-Bench Hugging Face schema:
+  - Dataset card fields include `episode_id`, `task`, `task_type`, `domain`,
+    `success`, `num_turns`, `total_tokens`, `trajectory`, and `qa_pairs`.
+  - Trajectory entries use `turn_idx`, `action`, and `observation`.
+  - QA entries use `question`, `answer`, `question_uuid`, and `type`.
+- Updated `src/adamem/convert.py` to better match the public AMA-Bench schema:
+  - Preserves numeric `episode_id=0` instead of falling back to `ama-sample`.
+  - Uses `turn_idx` for `stepNNN.action` / `stepNNN.observation` labels.
+  - Uses `question_uuid` as the query id when present.
+  - Maps AMA `type` labels `A/B/C/D` to recall, causal inference, state
+    updating, and state abstraction names.
+  - Infers diagnostic evidence labels from `Step N` references in question
+    text when explicit evidence fields are absent.
+- Added `tests/test_eval.py` coverage for the public AMA-Bench Hugging Face
+  schema shape, including `turn_idx`, `question_uuid`, type-name mapping, and
+  step-range evidence extraction.
+- Ran an API-free smoke check on the first public AMA-Bench sample downloaded
+  from Hugging Face to `/tmp`:
+  - Conversion result: `1` case, `200` action/observation memories, `12` QA
+    pairs.
+  - Retrieval diagnostic command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/ama_first.adamem.jsonl --baselines semantic_only full --max-cases 1 --benchmark-report-output /tmp/ama_first_report.md --experiment-output /tmp/ama_first_eval.json`
+  - Result: `semantic_only` `0/12`, `full` `0/12`, evidence support `0/12`
+    for both.
+  - Interpretation: generic similarity/default graph retrieval is not enough
+    for real AMA-Bench trajectories; the next mechanism should add step-aware
+    trajectory indexing or query routing.
+- Added step-aware trajectory retrieval:
+  - New config flag: `use_trajectory_step_readout`.
+  - New score weight: `trajectory_step_readout_boost`.
+  - New baseline: `trajectory_step_readout`.
+  - Runtime behavior: when a query explicitly mentions `Step N` or a short
+    step range, AdaMem authorizes matching AMA trajectory memories through
+    `trajectory_step` metadata. It does not use answer labels or query
+    evidence labels.
+- Added `tests/test_eval.py` coverage for the step-aware retrieval failure mode:
+  - Semantic retrieval returns repeated observation text and misses the
+    action-only answer.
+  - `trajectory_step_readout` retrieves the explicit step action and covers all
+    expected step evidence.
+- Re-ran the first public AMA-Bench sample smoke with
+  `trajectory_step_readout`:
+  - Command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/ama_first.adamem.jsonl --baselines semantic_only full trajectory_step_readout --max-cases 1 --benchmark-report-output /tmp/ama_first_step_readout_report.md --experiment-output /tmp/ama_first_step_readout_eval.json`
+  - Result: answer support remains `0/12` for all three baselines.
+  - Evidence support: `semantic_only` `0/12`, `full` `0/12`,
+    `trajectory_step_readout` `12/12`.
+  - Interpretation: the retrieval layer can now recover the correct trajectory
+    steps on this real sample; the remaining AMA gap is answer synthesis or
+    LLM-as-judge scoring over those retrieved steps.
+- Scaled the API-free public AMA-Bench smoke to the first five Hugging Face
+  samples:
+  - Downloaded the first five JSONL rows to `/tmp/ama_first5.jsonl`.
+  - Converted answer-mode records:
+    `PYTHONPATH=src python -m adamem.convert ama /tmp/ama_first5.jsonl /tmp/ama_first5.adamem.jsonl --expected answer --top-k 8`
+  - Conversion result: `5` cases, `782` action/observation memories, `60` QA
+    pairs.
+  - Answer-mode command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/ama_first5.adamem.jsonl --baselines semantic_only full trajectory_step_readout --max-cases 5 --benchmark-report-output /tmp/ama_first5_step_readout_report.md --experiment-output /tmp/ama_first5_step_readout_eval.json`
+  - Answer-mode result: answer support remains `0/60` for all three baselines;
+    evidence support is `0/60` for `semantic_only`, `0/60` for `full`, and
+    `60/60` for `trajectory_step_readout`.
+  - Converted evidence-mode records:
+    `PYTHONPATH=src python -m adamem.convert ama /tmp/ama_first5.jsonl /tmp/ama_first5_evidence.adamem.jsonl --expected evidence --top-k 8`
+  - Evidence-mode command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/ama_first5_evidence.adamem.jsonl --baselines semantic_only full trajectory_step_readout --max-cases 5 --benchmark-report-output /tmp/ama_first5_evidence_step_readout_report.md --experiment-output /tmp/ama_first5_evidence_step_readout_eval.json`
+  - Evidence-mode result: `semantic_only` `0/60`, `full` `0/60`,
+    `trajectory_step_readout` `60/60`.
+  - Interpretation: the mechanism is not only fitting one case. On this small
+    public smoke subset, explicit step readout fully recovers the diagnostic
+    step evidence that generic retrieval misses. This still does not support an
+    AMA answer-accuracy or SOTA claim because exact answer strings are
+    inappropriate for open-ended AMA answers; API-backed answer synthesis and
+    judge evaluation remain required.
 - Re-ran deterministic local tests:
   - `python -m pytest`
-  - Result: `67 passed`.
+  - Result: `69 passed`.

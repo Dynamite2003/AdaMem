@@ -137,6 +137,7 @@ def benchmark_failure_summary(
         "failure_modes": {},
         "by_metadata": {},
         "state_readout_exposure": {},
+        "evidence_support": {},
         "paper_metrics": {},
         "pairwise_vs_first_baseline": {},
     }
@@ -145,6 +146,7 @@ def benchmark_failure_summary(
         subset = [record for record in records if record["baseline"] == baseline]
         summary["by_baseline"][baseline] = _aggregate_records(subset)
         summary["state_readout_exposure"][baseline] = _state_exposure_aggregate(subset)
+        summary["evidence_support"][baseline] = _evidence_support_aggregate(subset)
     if baseline_order:
         reference = baseline_order[0]
         for candidate in baseline_order[1:]:
@@ -221,9 +223,10 @@ def benchmark_failure_report(
         lines.append("## Paper Metrics")
         lines.append(
             "| baseline | support | accuracy | net vs reference | state slot match | "
-            "state missing | slot mismatch | unmarked state exposure |"
+            "state missing | slot mismatch | evidence support | graph evidence hit | "
+            "unmarked state exposure |"
         )
-        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
         for baseline, metrics in paper_metrics.items():
             lines.append(
                 f"| {baseline} | {metrics['support_passed']}/{metrics['support_total']} | "
@@ -231,6 +234,8 @@ def benchmark_failure_report(
                 f"{_format_optional_rate(metrics['state_slot_match_rate'])} | "
                 f"{_format_optional_rate(metrics['state_readout_missing_rate'])} | "
                 f"{_format_optional_rate(metrics['state_slot_mismatch_rate'])} | "
+                f"{_format_optional_rate(metrics['evidence_support_rate'])} | "
+                f"{_format_optional_rate(metrics['graph_evidence_hit_rate'])} | "
                 f"{_format_optional_rate(metrics['unmarked_state_exposure_rate'])} |"
             )
         lines.append("")
@@ -254,6 +259,24 @@ def benchmark_failure_report(
                 f"{aggregate['state_slot_mismatch_records']} | "
                 f"{aggregate['unmarked_state_retrieval_records']} | "
                 f"{aggregate['unmarked_state_exposure_rate']:.2%} |"
+            )
+        lines.append("")
+
+    evidence = summary.get("evidence_support", {})
+    if evidence:
+        lines.append("## Evidence Support")
+        lines.append(
+            "| baseline | evidence queries | evidence matched | evidence missing | "
+            "graph evidence hits | graph retrievals |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+        for baseline, aggregate in evidence.items():
+            lines.append(
+                f"| {baseline} | {aggregate['evidence_query_total']} | "
+                f"{aggregate['evidence_matched_records']} | "
+                f"{aggregate['evidence_missing_records']} | "
+                f"{aggregate['graph_evidence_hit_records']} | "
+                f"{aggregate['graph_retrieval_records']} |"
             )
         lines.append("")
 
@@ -350,6 +373,18 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
     missing_expected = [
         expected for expected in query.expected_substrings if expected.lower() not in text
     ]
+    expected_evidence = _expected_evidence_labels(query.metadata)
+    missing_evidence = [
+        evidence for evidence in expected_evidence
+        if not _evidence_label_hit(evidence, query.retrieved, query.trace)
+    ]
+    graph_retrieval_count = _graph_trace_count(query.trace)
+    graph_items = _graph_trace_items(query.trace)
+    graph_retrieved = [str(item.get("content") or "") for item in graph_items]
+    graph_evidence_hits = [
+        evidence for evidence in expected_evidence
+        if _evidence_label_hit(evidence, graph_retrieved, graph_items)
+    ]
     present_forbidden = [
         forbidden for forbidden in query.forbidden_substrings if forbidden.lower() in text
     ]
@@ -370,6 +405,8 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
     failure_modes: list[str] = []
     if missing_expected:
         failure_modes.append("expected_support_missing")
+    if missing_evidence:
+        failure_modes.append("evidence_support_missing")
     if present_forbidden:
         failure_modes.append("forbidden_support_present")
     if not query.retrieved:
@@ -388,6 +425,12 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
         "passed": query.passed,
         "expected_substrings": query.expected_substrings,
         "missing_expected": missing_expected,
+        "expected_evidence": expected_evidence,
+        "missing_evidence": missing_evidence,
+        "evidence_support_matched": bool(expected_evidence) and not missing_evidence,
+        "graph_retrieval_count": graph_retrieval_count,
+        "graph_evidence_hits": graph_evidence_hits,
+        "graph_evidence_hit_count": len(graph_evidence_hits),
         "forbidden_substrings": query.forbidden_substrings,
         "present_forbidden": present_forbidden,
         "failure_modes": failure_modes,
@@ -462,6 +505,18 @@ def _state_exposure_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _evidence_support_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
+    evidence_records = [record for record in records if record["expected_evidence"]]
+    return {
+        "total": len(records),
+        "evidence_query_total": len(evidence_records),
+        "evidence_matched_records": sum(1 for record in evidence_records if record["evidence_support_matched"]),
+        "evidence_missing_records": sum(1 for record in evidence_records if record["missing_evidence"]),
+        "graph_evidence_hit_records": sum(1 for record in evidence_records if record["graph_evidence_hit_count"] > 0),
+        "graph_retrieval_records": sum(1 for record in records if record["graph_retrieval_count"] > 0),
+    }
+
+
 def _paper_metrics_for_baseline(
     baseline: str,
     *,
@@ -470,6 +525,7 @@ def _paper_metrics_for_baseline(
 ) -> dict[str, Any]:
     support = summary["by_baseline"][baseline]
     exposure = summary["state_readout_exposure"][baseline]
+    evidence = summary["evidence_support"][baseline]
     pairwise = summary.get("pairwise_vs_first_baseline", {})
     comparison = pairwise.get(baseline)
     net_delta = 0 if baseline == reference else (comparison or {}).get("net_delta")
@@ -485,6 +541,15 @@ def _paper_metrics_for_baseline(
         "state_slot_match_rate": _ratio_or_none(exposure["state_slot_match_records"], state_total),
         "state_readout_missing_rate": _ratio_or_none(exposure["state_readout_missing_records"], state_total),
         "state_slot_mismatch_rate": _ratio_or_none(exposure["state_slot_mismatch_records"], state_total),
+        "evidence_query_total": evidence["evidence_query_total"],
+        "evidence_support_rate": _ratio_or_none(
+            evidence["evidence_matched_records"],
+            evidence["evidence_query_total"],
+        ),
+        "graph_evidence_hit_rate": _ratio_or_none(
+            evidence["graph_evidence_hit_records"],
+            evidence["evidence_query_total"],
+        ),
         "unmarked_state_exposure_rate": _ratio_or_none(
             exposure["unmarked_state_retrieval_records"],
             exposure["unmarked_total"],
@@ -529,6 +594,58 @@ def _trace_is_state(item: dict[str, Any]) -> bool:
     return isinstance(contributions, dict) and "state_readout" in contributions
 
 
+def _graph_trace_count(trace: list[dict[str, Any]]) -> int:
+    return len(_graph_trace_items(trace))
+
+
+def _graph_trace_items(trace: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for item in trace:
+        relation = str(item.get("relation") or "")
+        contributions = item.get("contributions")
+        if "graph" in relation or (isinstance(contributions, dict) and contributions.get("graph", 0) > 0):
+            items.append(item)
+    return items
+
+
+def _expected_evidence_labels(metadata: dict[str, Any]) -> list[str]:
+    raw = metadata.get("evidence")
+    if raw is None:
+        raw = metadata.get("answer_session_ids")
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    return [str(raw)]
+
+
+def _evidence_label_hit(label: str, retrieved: list[str], trace: list[dict[str, Any]]) -> bool:
+    normalized = label.lower()
+    if any(normalized in text.lower() for text in retrieved):
+        return True
+    for item in trace:
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        for key in ("memory_key", "label", "source_id"):
+            value = metadata.get(key)
+            if value is not None and str(value).lower().startswith(normalized):
+                return True
+        step = metadata.get("trajectory_step")
+        if step is not None and _step_label_from_value(step).lower().startswith(normalized):
+            return True
+    return False
+
+
+def _step_label_from_value(value: Any) -> str:
+    try:
+        return f"step{int(value):03d}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _expected_state_slots(metadata: dict[str, Any]) -> list[str]:
     raw = metadata.get("state_slot")
     if raw is None:
@@ -555,6 +672,11 @@ def _state_available(metadata: dict[str, Any], *, state_sensitive: bool) -> bool
 
 def _trace_metadata(item: MemoryItem) -> dict[str, Any]:
     keys = (
+        "memory_key",
+        "label",
+        "benchmark",
+        "trajectory_step",
+        "subject",
         "state_slot",
         "state_value",
         "kg_relation",

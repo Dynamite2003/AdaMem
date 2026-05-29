@@ -21,6 +21,7 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
         "a_mem_evolution",
         "zep_temporal_kg",
         "mem0_extraction",
+        "trajectory_step_readout",
         "delta_graph",
         "delta_soft",
         "delta_propagation",
@@ -39,6 +40,7 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
     assert configs["a_mem_evolution"].use_memory_evolution is True
     assert configs["zep_temporal_kg"].use_temporal_kg_memory is True
     assert configs["mem0_extraction"].use_salient_memory_only is True
+    assert configs["trajectory_step_readout"].use_trajectory_step_readout is True
     assert configs["full"].use_graph is True
     assert configs["semantic_state_readout"].use_graph is False
     assert configs["semantic_state_readout"].use_state_readout is True

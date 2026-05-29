@@ -180,6 +180,48 @@ Required next evidence:
   answer-model, or judge ambiguity.
 - Include representative failures in experiment records.
 
+### 6. Causal Trajectory Evidence
+
+Hypothesis:
+
+Agent-trajectory memory needs explicit action-result structure. A system can
+retrieve an observation that mentions the outcome while still missing the action
+or tool output that causally explains it.
+
+Current implementation:
+
+- The AMA-style converter emits actions, observations, and environment states
+  as runtime observations.
+- Observation steps caused by actions carry `cause_labels`, which become graph
+  edges in AdaMem.
+- JSONL benchmark records now separate expected answer/support strings from
+  expected evidence labels and graph evidence hits.
+- The converter has been aligned with the public AMA-Bench Hugging Face schema:
+  `episode_id`, `turn_idx`, `question_uuid`, and `type`. When no explicit
+  evidence field exists, diagnostic evidence labels are inferred from `Step N`
+  references in the query text.
+- `trajectory_step_readout` adds a narrow metadata-authorized retrieval path
+  for queries that explicitly mention `Step N` or a short step range.
+
+Required next evidence:
+
+- Convert a public AMA-Bench or AMA-like split and compare semantic-only
+  retrieval against graph-enabled retrieval on evidence recall and graph
+  evidence-hit rate.
+- Inspect cases where answer support is present but the causal action/tool step
+  is missing.
+- The first public AMA-Bench samples are negative evidence for generic
+  retrieval: the first five samples produce 782 converted action/observation
+  memories and 60 QA pairs, with both `semantic_only` and default `full` at
+  `0/60` answer support and `0/60` evidence support. This points to step-aware
+  trajectory indexing/routing as a necessary mechanism before claiming AMA
+  transfer.
+- The first step-aware runs validate that mechanism at retrieval level:
+  `trajectory_step_readout` reaches `60/60` evidence support on the first five
+  public samples, while answer support stays `0/60`. The next research question
+  is therefore answer synthesis/judging over correctly recalled steps, not
+  merely step retrieval.
+
 ## Baseline Requirements
 
 Paper tables should eventually include at least:
@@ -378,13 +420,16 @@ metrics.
    state-available cases to carry AdaMem's main transfer claim.
 3. Add relationship, user-role, environment-gotcha, and tool-output fact state
    slots.
-4. Connect or reproduce official implementations for at least one mainstream
+4. Scale the public AMA-Bench trajectory pilot beyond the first five samples
+   and test whether step evidence recall transfers once answer synthesis or an
+   LLM judge is added.
+5. Connect or reproduce official implementations for at least one mainstream
    memory system where licensing and dependencies permit; local approximations
    are useful but cannot substitute for final paper baselines.
-5. Expand state-slot dependency propagation beyond the initial location
+6. Expand state-slot dependency propagation beyond the initial location
    topology and evaluate it on larger STALE T2-style cases.
-6. Add API pilot output directories with raw prompts and raw model outputs.
-7. Review official A-MEM, Zep/Graphiti, Mem0, and LongMemEval code/licenses.
-8. Run larger STALE diagnostics when full converted data is available.
-9. Draft method section once at least one larger diagnostic run supports the
+7. Add API pilot output directories with raw prompts and raw model outputs.
+8. Review official A-MEM, Zep/Graphiti, Mem0, and LongMemEval code/licenses.
+9. Run larger STALE diagnostics when full converted data is available.
+10. Draft method section once at least one larger diagnostic run supports the
    state-aware direction.

@@ -110,6 +110,10 @@ Outputs:
   per-query metadata/traces.
 - Markdown JSONL retrieval reports grouped by query metadata such as
   LongMemEval `question_type`, local `dimension`, state slot, and abstention.
+- Evidence-support diagnostics for JSONL retrieval records, including expected
+  evidence labels, missing evidence labels, graph retrieval counts, and graph
+  evidence hits. These diagnostics are required for AMA-style trajectory runs
+  so answer-string success can be separated from causal step recall.
 - Pairwise baseline comparisons against the first requested baseline, including
   gained passes, lost passes, net delta, both-pass, and both-fail counts.
 - Case-level diagnostic JSONL records for representative failure analysis.
@@ -469,7 +473,17 @@ Completed API-free foundations:
   `longmemeval_*_cleaned.json` schema.
 - AMA-Bench-style trajectory converter for JSON or JSONL agent traces. It
   preserves action-to-observation causality through `cause_labels` and keeps
-  answer/evidence labels on query metadata only.
+  answer/evidence labels on query metadata only. The converter now follows the
+  public Hugging Face schema fields `episode_id`, `turn_idx`,
+  `question_uuid`, and `type`, and infers diagnostic evidence labels from
+  `Step N` query references when AMA records do not provide explicit evidence.
+- JSONL benchmark evidence-support diagnostics, including an `Evidence Support`
+  Markdown table and case-level `graph_evidence_hits` for causal trajectory
+  audits.
+- `trajectory_step_readout`, a narrow step-aware trajectory retrieval
+  ablation. It authorizes matching `Step N` or short step-range memories by
+  trajectory metadata and is useful for separating step evidence recall from
+  answer generation on AMA-style questions.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so
@@ -514,10 +528,14 @@ Next API-free work:
    settings.
 2. Run retrieval-only diagnostics on larger converted STALE data when available
    and extend the failure taxonomy with representative cases.
-3. Convert a public AMA-Bench or AMA-like trajectory split locally and run
-   graph/causal retrieval diagnostics against semantic-only retrieval. This
-   should test whether AdaMem's explicit causal edges transfer to real
-   action-observation-tool trajectories before any demo claim.
+3. Scale the public AMA-Bench trajectory pilot beyond the first five samples
+   and add step-level answer synthesis or LLM judge evaluation. The first five
+   public samples converted successfully, but `semantic_only` and `full`
+   scored `0/60` answer support and `0/60` evidence support.
+   `trajectory_step_readout` improves evidence support on those same samples
+   to `60/60`, while answer-string support remains `0/60`. Treat this as
+   retrieval evidence only; the next method work is answer synthesis and judge
+   robustness over correctly recalled trajectory steps.
 4. Build a reliable public state-sensitive transfer subset. The first
    LongMemEval-S inferred-state pilot exposed query-router false positives;
    after word-boundary matching and intent gates, the balanced 60-case sample

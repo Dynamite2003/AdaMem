@@ -181,7 +181,7 @@ def convert_ama_file(
 
 
 def convert_ama_sample(sample: Mapping[str, Any], *, expected: str = "answer", top_k: int = 8) -> dict[str, Any]:
-    sample_id = str(sample.get("episode_id") or sample.get("task_id") or sample.get("id") or "ama-sample")
+    sample_id = str(_first_present(sample, "episode_id", "task_id", "id", default="ama-sample"))
     observations = list(_ama_observations(sample))
     queries = [
         _ama_query(sample, qa, index=index, expected=expected, top_k=top_k)
@@ -193,6 +193,10 @@ def convert_ama_sample(sample: Mapping[str, Any], *, expected: str = "answer", t
             "benchmark": "ama",
             "domain": sample.get("domain"),
             "task_type": sample.get("task_type") or sample.get("category"),
+            "source": sample.get("source"),
+            "success": sample.get("success"),
+            "num_turns": sample.get("num_turns"),
+            "total_tokens": sample.get("total_tokens"),
         },
         "observations": observations,
         "queries": queries,
@@ -224,24 +228,25 @@ def _ama_observations(sample: Mapping[str, Any]) -> Iterable[dict[str, Any]]:
     if isinstance(trajectory, Mapping):
         trajectory = trajectory.get("steps") or trajectory.get("trajectory") or []
     for index, step in enumerate(trajectory):
+        step_index = _ama_step_index(step, fallback=index)
         if not isinstance(step, Mapping):
             content = _stringify(step)
             if not content:
                 continue
-            label = f"step{index:03d}.observation"
+            label = f"step{step_index:03d}.observation"
             yield _ama_observation_row(
                 sample,
                 label=label,
                 content=f"[{label}] {content}",
                 kind="observation",
-                step_index=index,
+                step_index=step_index,
                 source_field="trajectory",
                 cause_labels=[],
             )
             continue
 
         action = _first_text(step, "action", "command", "tool_call", "tool_input")
-        action_label = f"step{index:03d}.action"
+        action_label = f"step{step_index:03d}.action"
         cause_labels: list[str] = []
         if action:
             yield _ama_observation_row(
@@ -249,7 +254,7 @@ def _ama_observations(sample: Mapping[str, Any]) -> Iterable[dict[str, Any]]:
                 label=action_label,
                 content=f"[{action_label}] action: {action}",
                 kind="action",
-                step_index=index,
+                step_index=step_index,
                 source_field="action",
                 cause_labels=[],
             )
@@ -257,26 +262,26 @@ def _ama_observations(sample: Mapping[str, Any]) -> Iterable[dict[str, Any]]:
 
         observation = _first_text(step, "observation", "result", "tool_output", "response")
         if observation:
-            label = f"step{index:03d}.observation"
+            label = f"step{step_index:03d}.observation"
             yield _ama_observation_row(
                 sample,
                 label=label,
                 content=f"[{label}] observation: {observation}",
                 kind="observation",
-                step_index=index,
+                step_index=step_index,
                 source_field="observation",
                 cause_labels=cause_labels,
             )
 
         state = _first_text(step, "state", "world_state", "environment_state")
         if state:
-            label = f"step{index:03d}.state"
+            label = f"step{step_index:03d}.state"
             yield _ama_observation_row(
                 sample,
                 label=label,
                 content=f"[{label}] state: {state}",
                 kind="trajectory_state",
-                step_index=index,
+                step_index=step_index,
                 source_field="state",
                 cause_labels=cause_labels,
             )
@@ -340,7 +345,10 @@ def _ama_query(
         for key in ("evidence", "evidence_steps", "supporting_steps", "supporting_step_ids", "answer_step_ids")
         for item in _as_list(qa.get(key))
     ]
+    if not evidence:
+        evidence = _ama_step_evidence_from_question(str(qa.get("question") or qa.get("query") or ""))
     evidence = [item for item in evidence if item]
+    question_type = qa.get("question_type") or qa.get("type")
     if expected == "evidence":
         expected_substrings = evidence
     elif expected == "both":
@@ -348,19 +356,37 @@ def _ama_query(
     else:
         expected_substrings = answer_strings
     return {
-        "id": str(qa.get("question_id") or qa.get("id") or f"q{index}"),
+        "id": str(_first_present(qa, "question_id", "question_uuid", "id", default=f"q{index}")),
         "query": str(qa.get("question") or qa.get("query") or ""),
         "expected_substrings": expected_substrings,
         "top_k": top_k,
         "metadata": {
             "benchmark": "ama",
-            "question_type": qa.get("question_type") or qa.get("type"),
+            "question_type": question_type,
+            "question_type_name": _ama_question_type_name(question_type),
             "domain": sample.get("domain"),
             "task_type": sample.get("task_type") or sample.get("category"),
             "answer": answer,
             "evidence": evidence,
         },
-    }
+}
+
+
+def _first_present(mapping: Mapping[str, Any], *keys: str, default: Any = None) -> Any:
+    for key in keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return default
+
+
+def _ama_step_index(step: Any, *, fallback: int) -> int:
+    if not isinstance(step, Mapping):
+        return fallback
+    raw = step.get("turn_idx", step.get("step", step.get("step_idx", fallback)))
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _ama_evidence_label(value: Any) -> str:
@@ -370,6 +396,38 @@ def _ama_evidence_label(value: Any) -> str:
     if text.isdigit():
         return f"step{int(text):03d}"
     return text
+
+
+def _ama_step_evidence_from_question(question: str) -> list[str]:
+    steps: set[int] = set()
+    for match in re.finditer(
+        r"\b(?:from|between)?\s*steps?\s+(\d+)\s*(?:-|to|through|and)\s*(?:step\s+)?(\d+)\b",
+        question,
+        flags=re.IGNORECASE,
+    ):
+        start = int(match.group(1))
+        end = int(match.group(2))
+        if start <= end and end - start <= 20:
+            steps.update(range(start, end + 1))
+        elif end <= start and start - end <= 20:
+            steps.update(range(end, start + 1))
+        else:
+            steps.update({start, end})
+    for match in re.finditer(r"\bstep\s+(\d+)\b", question, flags=re.IGNORECASE):
+        steps.add(int(match.group(1)))
+    return [_ama_evidence_label(step) for step in sorted(steps)]
+
+
+def _ama_question_type_name(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return {
+        "A": "Recall",
+        "B": "Causal Inference",
+        "C": "State Updating",
+        "D": "State Abstraction",
+    }.get(text, text)
 
 
 def _first_text(mapping: Mapping[str, Any], *keys: str) -> str:

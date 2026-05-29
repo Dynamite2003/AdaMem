@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import math
+import re
 from dataclasses import fields
 from datetime import datetime, timezone
 from typing import Iterable
@@ -123,6 +124,10 @@ class AdaMem:
         if self.config.use_salient_memory_readout:
             for salient_result in self._salient_memory_readout(query, query_embedding, now=now):
                 candidates[salient_result.item.id] = salient_result
+
+        if self.config.use_trajectory_step_readout:
+            for step_result in self._trajectory_step_readout(query, query_embedding, now=now):
+                candidates[step_result.item.id] = step_result
 
         if self.config.use_graph:
             for seed in sorted(direct, key=lambda result: result.score, reverse=True)[: max(top_k, 3)]:
@@ -511,6 +516,39 @@ class AdaMem:
                 continue
             result = self._score(item, query_embedding, now=now, relation="salient")
             result.contributions["salient_memory_readout"] = self.config.salient_memory_readout_boost
+            result.score = sum(result.contributions.values())
+            results.append(result)
+        return results
+
+    def _trajectory_step_readout(
+        self,
+        query: str,
+        query_embedding: dict[str, float],
+        *,
+        now: str | None,
+    ) -> list[MemoryResult]:
+        step_indices = _query_step_indices(query)
+        if not step_indices:
+            return []
+        results: list[MemoryResult] = []
+        for item in self.store.all():
+            if not item.active:
+                continue
+            if item.metadata.get("benchmark") != "ama":
+                continue
+            step = item.metadata.get("trajectory_step")
+            if step is None:
+                continue
+            try:
+                step_index = int(step)
+            except (TypeError, ValueError):
+                continue
+            if step_index not in step_indices:
+                continue
+            result = self._score(item, query_embedding, now=now, relation="trajectory_step")
+            result.contributions["trajectory_step_readout"] = self.config.trajectory_step_readout_boost
+            if item.kind == "action":
+                result.contributions["trajectory_action"] = 0.2
             result.score = sum(result.contributions.values())
             results.append(result)
         return results
@@ -904,6 +942,25 @@ def _metadata_strings(value: object) -> list[str]:
     if isinstance(value, list):
         return [entry for entry in (str(entry) for entry in value) if entry]
     return []
+
+
+def _query_step_indices(query: str) -> set[int]:
+    steps: set[int] = set()
+    for match in re.finditer(
+        r"\b(?:from|between)?\s*steps?\s+(\d+)\s*(?:-|to|through|and)\s*(?:step\s+)?(\d+)\b",
+        query,
+        flags=re.IGNORECASE,
+    ):
+        start = int(match.group(1))
+        end = int(match.group(2))
+        if abs(end - start) <= 20:
+            low, high = sorted((start, end))
+            steps.update(range(low, high + 1))
+        else:
+            steps.update({start, end})
+    for match in re.finditer(r"\bstep\s+(\d+)\b", query, flags=re.IGNORECASE):
+        steps.add(int(match.group(1)))
+    return steps
 
 
 def _append_metadata_value(metadata: dict[str, object], key: str, value: str) -> None:
