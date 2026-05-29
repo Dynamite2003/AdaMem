@@ -515,7 +515,11 @@ def test_trajectory_step_readout_recovers_step_evidence() -> None:
                 query="The observation at Step 8 is identical to the observation from Step 6. What action was taken at Step 8?",
                 expected_substrings=["restore-alpha-token"],
                 top_k=2,
-                metadata={"benchmark": "ama", "evidence": ["step006", "step008"]},
+                metadata={
+                    "benchmark": "ama",
+                    "evidence": ["step006", "step008"],
+                    "answer": "restore-alpha-token",
+                },
             ),
         ],
     )
@@ -525,15 +529,82 @@ def test_trajectory_step_readout_recovers_step_evidence() -> None:
         "trajectory_step_readout": baseline_registry()["trajectory_step_readout"].config,
     })
     records = benchmark_case_records(results)
+    summary = benchmark_failure_summary(records)
     by_record = {record["baseline"]: record for record in records}
 
     assert by_record["semantic_only"]["passed"] is False
     assert by_record["trajectory_step_readout"]["passed"] is True
     assert by_record["trajectory_step_readout"]["missing_evidence"] == []
+    assert by_record["trajectory_step_readout"]["answer_keyword_support_matched"] is True
+    assert "Step 8 action: restore-alpha-token" in by_record["trajectory_step_readout"]["answer_basis"]
+    assert summary["answerability"]["semantic_only"]["answer_keyword_recall_avg"] == 0.0
+    assert summary["answerability"]["trajectory_step_readout"]["basis_answer_keyword_recall_avg"] == 1.0
     assert any(
         item["relation"] == "trajectory_step"
         for item in by_record["trajectory_step_readout"]["trace"]
     )
+
+
+def test_trajectory_answer_basis_marks_inverse_repeated_steps() -> None:
+    case = MemoryQACase(
+        id="ama_step_basis",
+        observations=[
+            ObservationSpec(
+                label="step007.action",
+                content="[step007.action] action: down",
+                kind="action",
+                metadata={"benchmark": "ama", "trajectory_step": 7, "memory_key": "step007.action"},
+            ),
+            ObservationSpec(
+                label="step007.observation",
+                content="[step007.observation] observation: Baba is one tile lower.",
+                kind="observation",
+                cause_labels=["step007.action"],
+                metadata={"benchmark": "ama", "trajectory_step": 7, "memory_key": "step007.observation"},
+            ),
+            ObservationSpec(
+                label="step008.action",
+                content="[step008.action] action: up",
+                kind="action",
+                metadata={"benchmark": "ama", "trajectory_step": 8, "memory_key": "step008.action"},
+            ),
+            ObservationSpec(
+                label="step008.observation",
+                content="[step008.observation] observation: Baba returned to the previous tile.",
+                kind="observation",
+                cause_labels=["step008.action"],
+                metadata={"benchmark": "ama", "trajectory_step": 8, "memory_key": "step008.observation"},
+            ),
+            ObservationSpec(
+                label="step006.observation",
+                content="[step006.observation] observation: Baba returned to the previous tile.",
+                kind="observation",
+                metadata={"benchmark": "ama", "trajectory_step": 6, "memory_key": "step006.observation"},
+            ),
+        ],
+        queries=[
+            QuerySpec(
+                id="inverse",
+                query="The observation after Step 8 is identical to Step 6. What explains steps 7 and 8?",
+                expected_substrings=["up"],
+                top_k=5,
+                metadata={
+                    "benchmark": "ama",
+                    "evidence": ["step006", "step007", "step008"],
+                    "answer": "The down and up actions are inverse and cancel out with zero net progress.",
+                },
+            ),
+        ],
+    )
+
+    results = run_benchmark(cases=[case], configs={
+        "trajectory_step_readout": baseline_registry()["trajectory_step_readout"].config,
+    })
+    record = benchmark_case_records(results)[0]
+
+    assert "Steps 7-8 actions are inverse" in record["answer_basis"]
+    assert "Steps 6 and 8 have identical observations" in record["answer_basis"]
+    assert record["basis_answer_keyword_recall"] > record["answer_keyword_recall"]
 
 
 def test_jsonl_benchmark_experiment_record_shape(tmp_path: Path) -> None:
@@ -717,4 +788,7 @@ def test_jsonl_paper_metrics_report_n_a_for_no_state_queries() -> None:
 
     assert summary["paper_metrics"]["state_readout"]["state_slot_match_rate"] is None
     assert summary["paper_metrics"]["state_readout"]["state_readout_missing_rate"] is None
-    assert "| state_readout | 1/1 | 100.00% | 0 | n/a | n/a | n/a | n/a | n/a | 0.00% |" in report
+    assert (
+        "| state_readout | 1/1 | 100.00% | 0 | n/a | n/a | n/a | "
+        "n/a | n/a | n/a | n/a | 0.00% |"
+    ) in report

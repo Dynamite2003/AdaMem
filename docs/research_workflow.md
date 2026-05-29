@@ -114,6 +114,11 @@ Outputs:
   evidence labels, missing evidence labels, graph retrieval counts, and graph
   evidence hits. These diagnostics are required for AMA-style trajectory runs
   so answer-string success can be separated from causal step recall.
+- Answerability diagnostics for open-ended JSONL records, including
+  answer-keyword recall over retrieved context and over a deterministic
+  trajectory answer basis derived from retrieved step/action/observation
+  traces. This is evaluation-only and may use answer text; the basis itself
+  must not use answer labels.
 - Pairwise baseline comparisons against the first requested baseline, including
   gained passes, lost passes, net delta, both-pass, and both-fail counts.
 - Case-level diagnostic JSONL records for representative failure analysis.
@@ -484,6 +489,10 @@ Completed API-free foundations:
   ablation. It authorizes matching `Step N` or short step-range memories by
   trajectory metadata and is useful for separating step evidence recall from
   answer generation on AMA-style questions.
+- Deterministic AMA trajectory answer-basis diagnostics. The basis summarizes
+  retrieved step actions, observations, inverse action pairs, and repeated
+  observations without reading gold answers; answer labels are used only to
+  compute keyword-recall diagnostics.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so
@@ -533,8 +542,10 @@ Next API-free work:
    public samples converted successfully, but `semantic_only` and `full`
    scored `0/60` answer support and `0/60` evidence support.
    `trajectory_step_readout` improves evidence support on those same samples
-   to `60/60`, while answer-string support remains `0/60`. Treat this as
-   retrieval evidence only; the next method work is answer synthesis and judge
+   to `60/60`, while answer-string support remains `0/60`. The deterministic
+   trajectory basis improves answer-keyword recall only from `22.73%` to
+   `24.81%` and matched queries from `8/60` to `11/60`, so the next method
+   work should add richer state/causal summarization plus API-backed judge
    robustness over correctly recalled trajectory steps.
 4. Build a reliable public state-sensitive transfer subset. The first
    LongMemEval-S inferred-state pilot exposed query-router false positives;

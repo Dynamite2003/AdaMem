@@ -1221,3 +1221,43 @@ to a paper-facing claim and evaluation gate.
 - Re-ran deterministic local tests:
   - `python -m pytest`
   - Result: `69 passed`.
+
+## 2026-05-30 continued
+
+- Added API-free answerability diagnostics for open-ended JSONL benchmarks:
+  - `benchmark_case_records` now records answer keywords, missing answer
+    keywords, retrieved-context keyword recall, and a matched/not-matched
+    threshold signal.
+  - AMA records also get a deterministic `answer_basis` derived only from
+    retrieved step/action/observation traces. It summarizes explicit step
+    actions, observations, inverse action pairs, and repeated observations.
+  - The basis is query-scoped: when the question mentions `Step N` or a short
+    step range, unrelated retrieved steps are excluded from the basis.
+  - Gold answer text is used only for evaluation keyword recall, not for the
+    runtime memory method or basis generation.
+- Added tests for the answerability path:
+  - Step-readout retrieval now records a basis containing the recovered action.
+  - Repeated observations and inverse action pairs are surfaced in the basis.
+  - The report table handles no-answer/no-state cases with `n/a` rates.
+- Re-ran the first five public AMA-Bench answer-mode records with
+  answerability diagnostics:
+  - Command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/ama_first5.adamem.jsonl --baselines semantic_only full trajectory_step_readout --max-cases 5 --benchmark-report-output /tmp/ama_first5_answerability_report.md --experiment-output /tmp/ama_first5_answerability_eval.json`
+  - Exact answer-string support remains `0/60` for all baselines.
+  - Evidence support remains `0/60` for `semantic_only`, `0/60` for `full`,
+    and `60/60` for `trajectory_step_readout`.
+  - Answerability diagnostics:
+    - `semantic_only`: keyword matched `8/60`, average recall `22.73%`,
+      basis average recall `22.73%`.
+    - `trajectory_step_readout`: keyword matched `8/60`, average recall
+      `22.73%`, basis keyword matched `11/60`, basis average recall `24.81%`.
+    - `full`: keyword matched `0/60`, average recall `3.25%`.
+  - Interpretation: step evidence recall transfers on this small public smoke
+    subset, but the deterministic step basis is too weak to bridge open-ended
+    causal answers. The next mechanism should add richer state/causal
+    summarization or use API-backed answer synthesis and judge scoring.
+- Re-ran deterministic validation:
+  - `python -m pytest`
+  - Result: `70 passed`.
+  - `git diff --check`
+  - Result: clean.

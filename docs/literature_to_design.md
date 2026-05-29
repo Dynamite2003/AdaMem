@@ -196,6 +196,10 @@ Current implementation:
   edges in AdaMem.
 - JSONL benchmark records now separate expected answer/support strings from
   expected evidence labels and graph evidence hits.
+- JSONL reports now include answerability diagnostics: answer-keyword recall
+  from retrieved context and from a deterministic trajectory answer basis.
+  Gold answers are used only for evaluation; the basis is built from retrieved
+  step/action/observation traces.
 - The converter has been aligned with the public AMA-Bench Hugging Face schema:
   `episode_id`, `turn_idx`, `question_uuid`, and `type`. When no explicit
   evidence field exists, diagnostic evidence labels are inferred from `Step N`
@@ -221,6 +225,11 @@ Required next evidence:
   public samples, while answer support stays `0/60`. The next research question
   is therefore answer synthesis/judging over correctly recalled steps, not
   merely step retrieval.
+- The first answerability diagnostic confirms that gap: on the same 60 public
+  AMA questions, `trajectory_step_readout` raises basis answer-keyword recall
+  only from `22.73%` to `24.81%` and matched queries from `8/60` to `11/60`.
+  Correct step evidence is necessary but not sufficient for open-ended causal
+  trajectory answers.
 
 ## Baseline Requirements
 
@@ -421,8 +430,8 @@ metrics.
 3. Add relationship, user-role, environment-gotcha, and tool-output fact state
    slots.
 4. Scale the public AMA-Bench trajectory pilot beyond the first five samples
-   and test whether step evidence recall transfers once answer synthesis or an
-   LLM judge is added.
+   and test whether step evidence recall transfers once richer state/causal
+   summarization or an LLM judge is added.
 5. Connect or reproduce official implementations for at least one mainstream
    memory system where licensing and dependencies permit; local approximations
    are useful but cannot substitute for final paper baselines.

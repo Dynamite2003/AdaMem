@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -138,6 +139,7 @@ def benchmark_failure_summary(
         "by_metadata": {},
         "state_readout_exposure": {},
         "evidence_support": {},
+        "answerability": {},
         "paper_metrics": {},
         "pairwise_vs_first_baseline": {},
     }
@@ -147,6 +149,7 @@ def benchmark_failure_summary(
         summary["by_baseline"][baseline] = _aggregate_records(subset)
         summary["state_readout_exposure"][baseline] = _state_exposure_aggregate(subset)
         summary["evidence_support"][baseline] = _evidence_support_aggregate(subset)
+        summary["answerability"][baseline] = _answerability_aggregate(subset)
     if baseline_order:
         reference = baseline_order[0]
         for candidate in baseline_order[1:]:
@@ -224,9 +227,11 @@ def benchmark_failure_report(
         lines.append(
             "| baseline | support | accuracy | net vs reference | state slot match | "
             "state missing | slot mismatch | evidence support | graph evidence hit | "
-            "unmarked state exposure |"
+            "answer keyword recall | basis keyword recall | unmarked state exposure |"
         )
-        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+        lines.append(
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+        )
         for baseline, metrics in paper_metrics.items():
             lines.append(
                 f"| {baseline} | {metrics['support_passed']}/{metrics['support_total']} | "
@@ -236,6 +241,8 @@ def benchmark_failure_report(
                 f"{_format_optional_rate(metrics['state_slot_mismatch_rate'])} | "
                 f"{_format_optional_rate(metrics['evidence_support_rate'])} | "
                 f"{_format_optional_rate(metrics['graph_evidence_hit_rate'])} | "
+                f"{_format_optional_rate(metrics['answer_keyword_recall_avg'])} | "
+                f"{_format_optional_rate(metrics['basis_answer_keyword_recall_avg'])} | "
                 f"{_format_optional_rate(metrics['unmarked_state_exposure_rate'])} |"
             )
         lines.append("")
@@ -277,6 +284,25 @@ def benchmark_failure_report(
                 f"{aggregate['evidence_missing_records']} | "
                 f"{aggregate['graph_evidence_hit_records']} | "
                 f"{aggregate['graph_retrieval_records']} |"
+            )
+        lines.append("")
+
+    answerability = summary.get("answerability", {})
+    if answerability:
+        lines.append("## Answerability Diagnostics")
+        lines.append(
+            "| baseline | answer queries | keyword matched | avg recall | "
+            "basis keyword matched | avg basis recall | basis records |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for baseline, aggregate in answerability.items():
+            lines.append(
+                f"| {baseline} | {aggregate['answer_query_total']} | "
+                f"{aggregate['answer_keyword_matched_records']} | "
+                f"{_format_optional_rate(aggregate['answer_keyword_recall_avg'])} | "
+                f"{aggregate['basis_answer_keyword_matched_records']} | "
+                f"{_format_optional_rate(aggregate['basis_answer_keyword_recall_avg'])} | "
+                f"{aggregate['answer_basis_records']} |"
             )
         lines.append("")
 
@@ -373,6 +399,22 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
     missing_expected = [
         expected for expected in query.expected_substrings if expected.lower() not in text
     ]
+    answer_keywords = _answer_keywords(query.metadata)
+    missing_answer_keywords = [
+        keyword for keyword in answer_keywords
+        if keyword not in text
+    ]
+    answer_keyword_recall = _keyword_recall(answer_keywords, text)
+    answer_basis = (
+        _trajectory_answer_basis(query.query, query.trace)
+        if query.metadata.get("benchmark") == "ama" else ""
+    )
+    answer_basis_text = f"{text}\n{answer_basis.lower()}"
+    basis_missing_answer_keywords = [
+        keyword for keyword in answer_keywords
+        if keyword not in answer_basis_text
+    ]
+    basis_answer_keyword_recall = _keyword_recall(answer_keywords, answer_basis_text)
     expected_evidence = _expected_evidence_labels(query.metadata)
     missing_evidence = [
         evidence for evidence in expected_evidence
@@ -426,6 +468,18 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
         "expected_substrings": query.expected_substrings,
         "missing_expected": missing_expected,
         "expected_evidence": expected_evidence,
+        "answer_keywords": answer_keywords,
+        "missing_answer_keywords": missing_answer_keywords,
+        "answer_keyword_recall": answer_keyword_recall,
+        "answer_keyword_support_matched": (
+            bool(answer_keywords) and answer_keyword_recall >= _ANSWER_KEYWORD_MATCH_THRESHOLD
+        ),
+        "answer_basis": answer_basis,
+        "basis_missing_answer_keywords": basis_missing_answer_keywords,
+        "basis_answer_keyword_recall": basis_answer_keyword_recall,
+        "basis_answer_keyword_support_matched": (
+            bool(answer_keywords) and basis_answer_keyword_recall >= _ANSWER_KEYWORD_MATCH_THRESHOLD
+        ),
         "missing_evidence": missing_evidence,
         "evidence_support_matched": bool(expected_evidence) and not missing_evidence,
         "graph_retrieval_count": graph_retrieval_count,
@@ -517,6 +571,28 @@ def _evidence_support_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def _answerability_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
+    answer_records = [record for record in records if record["answer_keywords"]]
+    basis_records = [record for record in answer_records if record["answer_basis"]]
+    return {
+        "total": len(records),
+        "answer_query_total": len(answer_records),
+        "answer_keyword_matched_records": sum(
+            1 for record in answer_records if record["answer_keyword_support_matched"]
+        ),
+        "answer_keyword_recall_avg": _mean_or_none(
+            record["answer_keyword_recall"] for record in answer_records
+        ),
+        "basis_answer_keyword_matched_records": sum(
+            1 for record in answer_records if record["basis_answer_keyword_support_matched"]
+        ),
+        "basis_answer_keyword_recall_avg": _mean_or_none(
+            record["basis_answer_keyword_recall"] for record in answer_records
+        ),
+        "answer_basis_records": len(basis_records),
+    }
+
+
 def _paper_metrics_for_baseline(
     baseline: str,
     *,
@@ -526,6 +602,7 @@ def _paper_metrics_for_baseline(
     support = summary["by_baseline"][baseline]
     exposure = summary["state_readout_exposure"][baseline]
     evidence = summary["evidence_support"][baseline]
+    answerability = summary["answerability"][baseline]
     pairwise = summary.get("pairwise_vs_first_baseline", {})
     comparison = pairwise.get(baseline)
     net_delta = 0 if baseline == reference else (comparison or {}).get("net_delta")
@@ -550,6 +627,8 @@ def _paper_metrics_for_baseline(
             evidence["graph_evidence_hit_records"],
             evidence["evidence_query_total"],
         ),
+        "answer_keyword_recall_avg": answerability["answer_keyword_recall_avg"],
+        "basis_answer_keyword_recall_avg": answerability["basis_answer_keyword_recall_avg"],
         "unmarked_state_exposure_rate": _ratio_or_none(
             exposure["unmarked_state_retrieval_records"],
             exposure["unmarked_total"],
@@ -561,6 +640,13 @@ def _ratio_or_none(numerator: int, denominator: int) -> float | None:
     if denominator == 0:
         return None
     return numerator / denominator
+
+
+def _mean_or_none(values: Iterable[float]) -> float | None:
+    numbers = list(values)
+    if not numbers:
+        return None
+    return sum(numbers) / len(numbers)
 
 
 def _format_optional_rate(value: float | None) -> str:
@@ -687,6 +773,206 @@ def _trace_metadata(item: MemoryItem) -> dict[str, Any]:
         "derived",
     )
     return {key: item.metadata[key] for key in keys if key in item.metadata}
+
+
+_ANSWER_KEYWORD_MATCH_THRESHOLD = 0.35
+
+_ANSWER_STOPWORDS = {
+    "about",
+    "above",
+    "after",
+    "again",
+    "agent",
+    "also",
+    "because",
+    "before",
+    "being",
+    "between",
+    "could",
+    "directly",
+    "does",
+    "during",
+    "each",
+    "from",
+    "given",
+    "have",
+    "into",
+    "itself",
+    "likely",
+    "made",
+    "more",
+    "move",
+    "moved",
+    "moving",
+    "must",
+    "only",
+    "other",
+    "position",
+    "question",
+    "result",
+    "same",
+    "step",
+    "steps",
+    "that",
+    "their",
+    "then",
+    "there",
+    "these",
+    "this",
+    "those",
+    "through",
+    "toward",
+    "towards",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "with",
+    "would",
+}
+
+
+def _answer_keywords(metadata: dict[str, Any]) -> list[str]:
+    answer = metadata.get("answer")
+    if answer is None:
+        return []
+    if isinstance(answer, list):
+        text = " ".join(str(item) for item in answer)
+    else:
+        text = str(answer)
+    tokens = [
+        token
+        for token in _keyword_tokens(text)
+        if token not in _ANSWER_STOPWORDS
+    ]
+    return sorted(set(tokens))
+
+
+def _keyword_tokens(text: str) -> list[str]:
+    return [
+        token
+        for token in re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}", text.lower())
+        if len(token) >= 3
+    ]
+
+
+def _keyword_recall(keywords: list[str], text: str) -> float:
+    if not keywords:
+        return 0.0
+    return sum(1 for keyword in keywords if keyword in text) / len(keywords)
+
+
+def _trajectory_answer_basis(query: str, trace: list[dict[str, Any]]) -> str:
+    allowed_steps = set(_query_step_indices(query))
+    steps: dict[int, dict[str, list[str]]] = {}
+    for item in trace:
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        step = metadata.get("trajectory_step")
+        if step is None:
+            continue
+        try:
+            step_index = int(step)
+        except (TypeError, ValueError):
+            continue
+        if allowed_steps and step_index not in allowed_steps:
+            continue
+        kind = str(item.get("kind") or "")
+        content = str(item.get("content") or "")
+        field = "action" if kind == "action" else "observation"
+        steps.setdefault(step_index, {"action": [], "observation": []})[field].append(
+            _strip_step_prefix(content)
+        )
+    if not steps:
+        return ""
+
+    lines: list[str] = []
+    for step_index in sorted(steps):
+        fields = steps[step_index]
+        if fields["action"]:
+            lines.append(f"Step {step_index} action: {'; '.join(fields['action'])}")
+        if fields["observation"]:
+            lines.append(f"Step {step_index} observation: {'; '.join(fields['observation'])}")
+    lines.extend(_trajectory_basis_relations(steps))
+    return "\n".join(lines)
+
+
+def _query_step_indices(query: str) -> list[int]:
+    steps: set[int] = set()
+    for match in re.finditer(
+        r"\b(?:from|between)?\s*steps?\s+(\d+)\s*(?:-|to|through|and)\s*(?:step\s+)?(\d+)\b",
+        query,
+        flags=re.IGNORECASE,
+    ):
+        start = int(match.group(1))
+        end = int(match.group(2))
+        if start <= end and end - start <= 20:
+            steps.update(range(start, end + 1))
+        elif end <= start and start - end <= 20:
+            steps.update(range(end, start + 1))
+        else:
+            steps.update({start, end})
+    for match in re.finditer(r"\bstep\s+(\d+)\b", query, flags=re.IGNORECASE):
+        steps.add(int(match.group(1)))
+    return sorted(steps)
+
+
+def _strip_step_prefix(content: str) -> str:
+    return re.sub(
+        r"^\[step\d+\.(?:action|observation|state)\]\s*(?:action|observation|state):\s*",
+        "",
+        content.strip(),
+        flags=re.IGNORECASE,
+    )
+
+
+def _trajectory_basis_relations(steps: dict[int, dict[str, list[str]]]) -> list[str]:
+    lines: list[str] = []
+    sorted_steps = sorted(steps)
+    action_by_step = {
+        step: _first_action_word(values["action"][0])
+        for step, values in steps.items()
+        if values["action"]
+    }
+    for previous, current in zip(sorted_steps, sorted_steps[1:]):
+        previous_action = action_by_step.get(previous)
+        current_action = action_by_step.get(current)
+        if previous_action and current_action and _inverse_actions(previous_action, current_action):
+            lines.append(
+                f"Steps {previous}-{current} actions are inverse; they cancel out with zero net progress."
+            )
+    observation_texts = {
+        step: _normalize_observation(values["observation"][0])
+        for step, values in steps.items()
+        if values["observation"]
+    }
+    for index, previous in enumerate(sorted_steps):
+        for current in sorted_steps[index + 1:]:
+            if observation_texts.get(previous) and observation_texts.get(previous) == observation_texts.get(current):
+                lines.append(
+                    f"Steps {previous} and {current} have identical observations, indicating state reversion."
+                )
+    return lines
+
+
+def _first_action_word(text: str) -> str | None:
+    match = re.search(r"[a-zA-Z][a-zA-Z0-9_-]*", text.lower())
+    return match.group(0) if match else None
+
+
+def _inverse_actions(left: str, right: str) -> bool:
+    return (left, right) in {
+        ("up", "down"),
+        ("down", "up"),
+        ("left", "right"),
+        ("right", "left"),
+    }
+
+
+def _normalize_observation(text: str) -> str:
+    return " ".join(_keyword_tokens(text))
 
 
 def _metadata_group_value(metadata: dict[str, Any], field_name: str) -> str:
