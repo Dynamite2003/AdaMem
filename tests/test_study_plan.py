@@ -405,6 +405,44 @@ def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> Non
     assert records[0]["missing_outputs"] == ["experiment", "records", "report"]
 
 
+def test_run_study_plan_supports_command_name_filter(tmp_path: Path) -> None:
+    plan = build_smoke_study_plan(output_dir=tmp_path / "study")
+    target = next(command for command in plan["commands"] if command["stage"] == "transfer")
+    log_path = tmp_path / "study" / "command.records.jsonl"
+
+    summary = run_study_plan(
+        plan,
+        command_names=[target["name"]],
+        dry_run=True,
+        log_path=log_path,
+    )
+
+    records = [
+        json.loads(line)
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert summary["selected_command_filter"] == [target["name"]]
+    assert summary["selected_command_count"] == 1
+    assert records[0]["name"] == target["name"]
+
+
+def test_run_study_plan_command_filter_rejects_unknown_name(tmp_path: Path) -> None:
+    plan = build_smoke_study_plan(output_dir=tmp_path / "study")
+
+    try:
+        run_study_plan(
+            plan,
+            command_names=["missing-command"],
+            dry_run=True,
+            log_path=tmp_path / "run.jsonl",
+        )
+    except ValueError as exc:
+        assert "missing-command" in str(exc)
+        assert "available" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected unknown command filter to fail")
+
+
 def test_run_study_plan_executes_simple_command(tmp_path: Path) -> None:
     output_path = tmp_path / "ok.txt"
     plan = {
@@ -745,6 +783,35 @@ def test_study_plan_cli_can_resume_saved_plan_run(tmp_path: Path) -> None:
     assert "Skipped completed commands" in summary_md
     assert "Prior log records" in summary_md
     assert output_path.read_text(encoding="utf-8") == "1"
+
+
+def test_study_plan_cli_can_filter_by_command_name(tmp_path: Path) -> None:
+    output_dir = tmp_path / "cli-command-filter"
+    main([
+        "--profile",
+        "smoke",
+        "--output-dir",
+        str(output_dir),
+        "--json",
+    ])
+    plan = json.loads((output_dir / "paper_study_plan.json").read_text(encoding="utf-8"))
+    target = next(command for command in plan["commands"] if command["stage"] == "transfer")
+
+    main([
+        "--plan",
+        str(output_dir / "paper_study_plan.json"),
+        "--run",
+        "--dry-run",
+        "--command",
+        target["name"],
+        "--json",
+    ])
+
+    summary = json.loads((output_dir / "paper_study_run.summary.json").read_text(encoding="utf-8"))
+    summary_md = (output_dir / "paper_study_run.summary.md").read_text(encoding="utf-8")
+    assert summary["selected_command_filter"] == [target["name"]]
+    assert summary["selected_command_count"] == 1
+    assert "Command filter" in summary_md
 
 
 def test_study_plan_cli_can_dry_run_smoke_profile(tmp_path: Path) -> None:

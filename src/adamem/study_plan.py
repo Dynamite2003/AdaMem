@@ -552,6 +552,7 @@ def run_study_plan(
     plan: dict[str, Any],
     *,
     stages: Iterable[str] | None = None,
+    command_names: Iterable[str] | None = None,
     dry_run: bool = False,
     resume: bool = False,
     require_ready: bool = True,
@@ -565,10 +566,19 @@ def run_study_plan(
         missing = ", ".join(validation["missing_requirements"])
         raise ValueError(f"study plan is not execution-ready: {missing}")
     allowed_stages = set(str(stage) for stage in stages or [])
+    allowed_names = set(str(name) for name in command_names or [])
     selected = [
         command for command in plan.get("commands") or []
         if not allowed_stages or str(command.get("stage")) in allowed_stages
     ]
+    selected = [
+        command for command in selected
+        if not allowed_names or str(command.get("name")) in allowed_names
+    ]
+    if allowed_names and not selected:
+        available = ", ".join(str(command.get("name")) for command in plan.get("commands") or [])
+        requested = ", ".join(sorted(allowed_names))
+        raise ValueError(f"no study plan commands matched --command filter: {requested}; available: {available}")
     output_dir = Path(str(plan.get("output_dir") or "."))
     log = Path(log_path) if log_path is not None else output_dir / "paper_study_run.records.jsonl"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -617,6 +627,7 @@ def run_study_plan(
         "resume": resume,
         "log_path": str(log),
         "selected_stage_filter": sorted(allowed_stages),
+        "selected_command_filter": sorted(allowed_names),
         "selected_command_count": len(selected),
         "prior_log_record_count": prior_log_record_count if resume else 0,
         "appended_record_count": len(records),
@@ -643,6 +654,12 @@ def study_run_summary_markdown(summary: dict[str, Any]) -> str:
     lines.append(f"Status: `{summary.get('status')}`")
     lines.append(f"Dry run: `{bool(summary.get('dry_run'))}`")
     lines.append(f"Resume: `{bool(summary.get('resume'))}`")
+    command_filter = summary.get("selected_command_filter") or []
+    if command_filter:
+        lines.append(
+            "Command filter: "
+            + ", ".join(f"`{item}`" for item in command_filter)
+        )
     lines.append(f"Selected commands: `{int(summary.get('selected_command_count') or 0)}`")
     lines.append(f"Prior log records: `{int(summary.get('prior_log_record_count') or 0)}`")
     lines.append(f"Appended records: `{int(summary.get('appended_record_count') or 0)}`")
@@ -1649,6 +1666,7 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="With --run, append to the run log and skip matching prior completed commands with all outputs present.",
     )
+    parser.add_argument("--command", action="append", dest="run_commands", help="With --run, execute only this command name. Repeatable.")
     parser.add_argument("--stage", action="append", dest="run_stages", help="With --run, execute only this stage. Repeatable.")
     parser.add_argument("--allow-not-ready", action="store_true", help="With --run, allow execution even if validation has gaps.")
     parser.add_argument("--run-log", type=Path, help="With --run, write JSONL execution records to this path.")
@@ -1751,6 +1769,7 @@ def main(argv: list[str] | None = None) -> None:
         run_summary = run_study_plan(
             plan,
             stages=args.run_stages,
+            command_names=args.run_commands,
             dry_run=args.dry_run,
             resume=args.resume_run,
             require_ready=not args.allow_not_ready,

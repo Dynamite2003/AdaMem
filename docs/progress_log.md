@@ -3176,3 +3176,26 @@ to a paper-facing claim and evaluation gate.
   - `git diff --check` -> no issues
   - CLI smoke resume summary reported prior `1`, appended `1`, final `2`,
     and the Markdown summary included the same count labels.
+
+### 2026-05-30 study run command filter
+
+- Added repeatable `--command NAME` for study-plan execution.
+- Behavior:
+  - filters selected commands by exact planned command name
+  - composes with `--stage` as an intersection
+  - rejects unknown command names instead of silently running zero commands
+  - records `selected_command_filter` in run summaries
+  - includes the command filter in run summary Markdown
+- Purpose:
+  - Let real API pilots run one answer/judge pair before spending budget on
+    the full `answer_judge` matrix.
+  - Make small pilot invocations auditable from the summary artifacts.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `33 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `61 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `193 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke dry-run with `--command longmemeval_transfer_retrieval`
+    selected exactly one command and recorded the command filter in JSON and
+    Markdown summaries.

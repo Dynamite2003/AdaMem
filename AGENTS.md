@@ -234,6 +234,7 @@ PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answe
 PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke --json
 PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke_run --run --dry-run --stage diagnostic --json
 PYTHONPATH=src python -m adamem.study_plan --plan /tmp/adamem_study_smoke/paper_study_plan.json --run --dry-run --stage diagnostic --json
+PYTHONPATH=src python -m adamem.study_plan --plan /tmp/adamem_study_smoke/paper_study_plan.json --run --dry-run --command longmemeval_transfer_retrieval --json
 PYTHONPATH=src python -m adamem.study_plan --plan /tmp/adamem_study_smoke/paper_study_plan.json --run --resume-run --stage diagnostic --json
 PYTHONPATH=src python -m adamem.study_plan --plan /tmp/adamem_study_smoke/paper_study_plan.json --refresh-fingerprint --json
 PYTHONPATH=src python -m adamem.study_plan --write-settings-template results/api_pilot_settings.json --output-dir results/api_pilot_study --json
