@@ -471,6 +471,26 @@ def test_claim_audit_records_reproducibility_coverage(tmp_path: Path) -> None:
                 "a_mem_evolution": {"use_memory_evolution": True},
                 "state_readout": {"use_state_memory": True, "use_state_readout": True},
             },
+            "baseline_provenance": {
+                "semantic_only": {
+                    "source_name": "AdaMem",
+                    "source_url": "",
+                    "implementation_status": "adamem_native",
+                    "reproduction_note": "Project-native method or local control.",
+                },
+                "a_mem_evolution": {
+                    "source_name": "A-MEM",
+                    "source_url": "https://arxiv.org/abs/2502.12110",
+                    "implementation_status": "api_free_approximation",
+                    "reproduction_note": "API-free approximation; not an official reproduction.",
+                },
+                "state_readout": {
+                    "source_name": "AdaMem",
+                    "source_url": "",
+                    "implementation_status": "adamem_native",
+                    "reproduction_note": "Project-native method or local control.",
+                },
+            },
             "raw_outputs": [
                 {
                     "baseline": "state_readout",
@@ -508,7 +528,29 @@ def test_claim_audit_records_reproducibility_coverage(tmp_path: Path) -> None:
     assert "reproducibility_audit" in audit["supported_claims"]
     assert reproducibility["complete"] is True
     assert reproducibility["missing"] == []
+    assert "baseline_provenance" in reproducibility["present"]
     assert "Reproducibility" in markdown
+
+
+def test_claim_audit_flags_missing_baseline_provenance(tmp_path: Path) -> None:
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="jsonl_retrieval_benchmark",
+        baseline_names=["semantic_only"],
+        baseline_configs={"semantic_only": {"use_graph": False}},
+        notes={
+            "ground_truth_runtime_use": "forbidden",
+            "benchmark_kind": "retrieval_support",
+        },
+        raw_outputs=[{"baseline": "semantic_only", "query_id": "q1"}],
+    )
+
+    audit = audit_experiment(experiment)
+    reproducibility = audit["claim_evidence"]["reproducibility"]
+
+    assert reproducibility["complete"] is False
+    assert "baseline_provenance" in reproducibility["missing"]
+    assert "reproducibility_audit" not in audit["supported_claims"]
 
 
 def test_claim_audit_markdown_and_cli_json(tmp_path: Path) -> None:

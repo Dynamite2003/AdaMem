@@ -613,6 +613,7 @@ def _reproducibility_evidence(
         "dataset",
         "baseline_names",
         "baseline_configs",
+        "baseline_provenance",
         "ground_truth_runtime_use",
         "case_level_records",
     ]
@@ -668,6 +669,8 @@ def _has_reproducibility_item(
         return bool(experiment.get("baseline_names"))
     if item == "baseline_configs":
         return bool(experiment.get("baseline_configs"))
+    if item == "baseline_provenance":
+        return _has_baseline_provenance(experiment)
     if item == "ground_truth_runtime_use":
         return notes.get("ground_truth_runtime_use") == "forbidden"
     if item == "case_level_records":
@@ -693,6 +696,21 @@ def _has_reproducibility_item(
     if item == "judge_prompt":
         return bool(prompts.get("judge_system") and prompts.get("judge_template"))
     return False
+
+
+def _has_baseline_provenance(experiment: dict[str, Any]) -> bool:
+    names = [str(name) for name in experiment.get("baseline_names") or []]
+    provenance = experiment.get("baseline_provenance")
+    if not names or not isinstance(provenance, dict):
+        return False
+    required = {"source_name", "implementation_status", "reproduction_note"}
+    for name in names:
+        item = provenance.get(name)
+        if not isinstance(item, dict):
+            return False
+        if any(not item.get(field) for field in required):
+            return False
+    return True
 
 
 def _failure_attribution_claim_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:

@@ -23,6 +23,7 @@ class ExperimentRecord:
     split_or_case_limit: str | None = None
     baseline_names: list[str] = field(default_factory=list)
     baseline_configs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    baseline_provenance: dict[str, dict[str, str]] = field(default_factory=dict)
     results: Any = None
     diagnostics: Any = None
     prompts: dict[str, str] = field(default_factory=dict)
@@ -57,6 +58,7 @@ def experiment_record(
         split_or_case_limit=split_or_case_limit,
         baseline_names=list(baselines),
         baseline_configs={name: spec.config_dict() for name, spec in baselines.items()},
+        baseline_provenance={name: spec.provenance_dict() for name, spec in baselines.items()},
         results=results,
         diagnostics=diagnostics,
         prompts=prompts or {},

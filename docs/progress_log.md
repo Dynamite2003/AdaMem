@@ -3332,3 +3332,26 @@ to a paper-facing claim and evaluation gate.
     `baseline_reproduction_gaps=official_or_faithful_mainstream_reproduction`,
     and mainstream approximations
     `a_mem_evolution,mem0_extraction,zep_temporal_kg`.
+
+### 2026-05-30 experiment-record baseline provenance
+
+- Added `baseline_provenance` to `ExperimentRecord` and all experiment writers
+  that use `experiment_record(...)`.
+- Claim reproducibility audits now require baseline provenance in addition to
+  baseline names/configs.
+- Purpose:
+  - Make each experiment JSON self-contained enough to preserve whether a
+    baseline was AdaMem-native, an API-free approximation, or a future
+    official/faithful reproduction.
+  - Prevent registry drift from changing how old experiment artifacts should
+    be interpreted.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_experiments.py tests/test_claims.py tests/test_eval.py -q` -> `46 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py tests/test_stale_pipeline.py tests/test_pilot.py tests/test_answer_eval.py -q` -> `27 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `198 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI JSONL retrieval smoke wrote `baseline_provenance` for
+    `semantic_only,a_mem_evolution`; claim audit reported
+    `baseline_provenance` present and not missing in the reproducibility
+    packet.

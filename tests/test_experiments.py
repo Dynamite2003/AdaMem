@@ -83,7 +83,10 @@ def test_select_baselines_rejects_unknown_names() -> None:
 
 
 def test_experiment_record_writes_reproducible_json(tmp_path) -> None:
-    specs = {"semantic_only": baseline_registry()["semantic_only"]}
+    specs = {
+        "semantic_only": baseline_registry()["semantic_only"],
+        "a_mem_evolution": baseline_registry()["a_mem_evolution"],
+    }
     record = experiment_record(
         run_name="diagnostic-smoke",
         run_type="stale_retrieval_diagnostics",
@@ -102,7 +105,17 @@ def test_experiment_record_writes_reproducible_json(tmp_path) -> None:
     assert data["run_name"] == "diagnostic-smoke"
     assert data["run_type"] == "stale_retrieval_diagnostics"
     assert data["dataset"] == "benchmarks/stale_mini.jsonl"
-    assert data["baseline_names"] == ["semantic_only"]
+    assert data["baseline_names"] == ["semantic_only", "a_mem_evolution"]
     assert data["baseline_configs"]["semantic_only"]["use_graph"] is False
+    assert data["baseline_provenance"]["semantic_only"]["source_name"] == "AdaMem"
+    assert data["baseline_provenance"]["a_mem_evolution"] == {
+        "source_name": "A-MEM",
+        "source_url": "https://arxiv.org/abs/2502.12110",
+        "implementation_status": "api_free_approximation",
+        "reproduction_note": (
+            "Approximates memory evolution locally; replace with or validate against "
+            "the official implementation before SOTA-style claims."
+        ),
+    }
     assert data["diagnostics"] == [{"current_recall_rate": 0.0}]
     assert data["command"] == ["adamem-eval", "--stale-diagnostics"]

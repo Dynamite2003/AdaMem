@@ -734,10 +734,10 @@ Completed API-free foundations:
   multiple-judge-model, or semantic-LLM-judge requirements appear as model
   gaps and trigger `add_model_or_judge_robustness_runs`. Claim audits also
   record reproducibility packets covering schema version, commit, command,
-  dataset, baseline configs, case-level records, provider/model settings,
-  prompt templates, and retrieval context settings where applicable. Missing
-  packet fields appear as reproducibility gaps and trigger
-  `complete_reproducibility_packet`. Batch report bundles also write
+  dataset, baseline configs, baseline provenance, case-level records,
+  provider/model settings, prompt templates, and retrieval context settings
+  where applicable. Missing packet fields appear as reproducibility gaps and
+  trigger `complete_reproducibility_packet`. Batch report bundles also write
   `study_model_coverage.json` and `study_model_coverage.md`, which merge
   comparable answer/judge experiments by run type, dataset, split, and baseline
   set so one-model-per-run API sweeps can still be audited as one study. Batch

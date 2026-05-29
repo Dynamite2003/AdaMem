@@ -151,8 +151,12 @@ Current implementation:
 
 - Claim audits now record a reproducibility packet for each experiment.
 - The audit checks common fields such as schema version, commit, command,
-  dataset, baseline names/configs, ground-truth runtime-use note, and
-  case-level records.
+  dataset, baseline names/configs, baseline provenance, ground-truth
+  runtime-use note, and case-level records.
+- Experiment writers persist `baseline_provenance` next to
+  `baseline_configs`, so old runs remain auditable even if the baseline
+  registry later changes. Missing provenance is treated as a reproducibility
+  gap.
 - Answer-generation and STALE judge runs additionally require provider/model
   settings, `top_k`, `max_context_chars`, and answer/judge prompts where
   applicable.
