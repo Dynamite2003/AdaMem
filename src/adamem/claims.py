@@ -22,6 +22,8 @@ BASELINE_COVERAGE_GROUPS: dict[str, set[str]] = {
         "state_extractor_ablation",
     },
 }
+MIN_ANSWER_MODELS_FOR_ROBUSTNESS = 2
+MIN_JUDGE_MODELS_FOR_ROBUSTNESS = 2
 
 
 def audit_experiment(path: str | Path) -> dict[str, Any]:
@@ -126,6 +128,11 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         claim_evidence["baseline_coverage"] = baseline_coverage
         if baseline_coverage["complete"]:
             supported.append("baseline_coverage_audit")
+    model_coverage = _model_coverage_evidence(run_type, providers, claim_records)
+    if model_coverage:
+        claim_evidence["model_coverage"] = model_coverage
+        if model_coverage["complete"]:
+            supported.append("model_robustness_audit")
     attribution_evidence = _failure_attribution_claim_evidence(claim_records)
     if attribution_evidence:
         claim_evidence["failure_attributions"] = attribution_evidence
@@ -187,6 +194,7 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
     retrieval = claim_evidence.get("retrieval_transfer")
     state_evidence = claim_evidence.get("prepared_state_evidence")
     baseline_coverage = claim_evidence.get("baseline_coverage")
+    model_coverage = claim_evidence.get("model_coverage")
     if baseline_coverage:
         lines.append("")
         lines.append("## Baseline Coverage")
@@ -205,6 +213,27 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
             )
         for category, names in baseline_coverage.get("categories", {}).items():
             lines.append(f"- Category `{category}`: {', '.join(f'`{name}`' for name in names)}")
+    if model_coverage:
+        lines.append("")
+        lines.append("## Model Coverage")
+        lines.append(f"- Answer models: `{model_coverage['answer_model_count']}`")
+        lines.append(f"- Judge models: `{model_coverage['judge_model_count']}`")
+        lines.append(f"- Complete for robustness audit: `{model_coverage['complete']}`")
+        if model_coverage.get("answer_models"):
+            lines.append(
+                "- Answer model ids: "
+                + ", ".join(f"`{name}`" for name in model_coverage["answer_models"])
+            )
+        if model_coverage.get("judge_models"):
+            lines.append(
+                "- Judge model ids: "
+                + ", ".join(f"`{name}`" for name in model_coverage["judge_models"])
+            )
+        if model_coverage.get("missing_requirements"):
+            lines.append(
+                "- Missing requirements: "
+                + ", ".join(f"`{name}`" for name in model_coverage["missing_requirements"])
+            )
     if state_evidence:
         lines.append("")
         lines.append("## Prepared State Evidence")
@@ -480,6 +509,77 @@ def _baseline_coverage_evidence(baselines: list[str]) -> dict[str, Any]:
         "missing_groups": missing_groups,
         "complete": not unknown and not missing_groups,
     }
+
+
+def _model_coverage_evidence(
+    run_type: str,
+    providers: dict[str, str | None],
+    records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if run_type not in {
+        "jsonl_answer_generation_benchmark",
+        "ama_public_answer_generation_pilot",
+        "stale_llm_judge",
+    }:
+        return {}
+
+    answer_models = _model_ids(
+        providers,
+        records,
+        provider_key="answer_provider",
+        model_key="answer_model",
+    )
+    judge_models = _model_ids(
+        providers,
+        records,
+        provider_key="judge_provider",
+        model_key="judge_model",
+    )
+    missing: list[str] = []
+    if len(answer_models) < MIN_ANSWER_MODELS_FOR_ROBUSTNESS:
+        missing.append("multiple_answer_models")
+    if run_type == "stale_llm_judge" and len(judge_models) < MIN_JUDGE_MODELS_FOR_ROBUSTNESS:
+        missing.append("multiple_judge_models")
+    if run_type in {"jsonl_answer_generation_benchmark", "ama_public_answer_generation_pilot"}:
+        scorer = providers.get("scorer")
+        if scorer in {"llm", "llm_judge"} and len(judge_models) < MIN_JUDGE_MODELS_FOR_ROBUSTNESS:
+            missing.append("multiple_judge_models")
+        elif scorer not in {"llm", "llm_judge"}:
+            missing.append("semantic_llm_judge")
+    return {
+        "answer_models": sorted(answer_models),
+        "answer_model_count": len(answer_models),
+        "judge_models": sorted(judge_models),
+        "judge_model_count": len(judge_models),
+        "required_answer_models": MIN_ANSWER_MODELS_FOR_ROBUSTNESS,
+        "required_judge_models": MIN_JUDGE_MODELS_FOR_ROBUSTNESS,
+        "missing_requirements": missing,
+        "complete": not missing,
+    }
+
+
+def _model_ids(
+    providers: dict[str, str | None],
+    records: list[dict[str, Any]],
+    *,
+    provider_key: str,
+    model_key: str,
+) -> set[str]:
+    ids: set[str] = set()
+    _add_model_id(ids, providers.get(provider_key), providers.get(model_key))
+    for record in records:
+        _add_model_id(ids, record.get(provider_key), record.get(model_key))
+    return ids
+
+
+def _add_model_id(ids: set[str], provider: Any, model: Any) -> None:
+    if provider is None:
+        return
+    provider_text = str(provider)
+    if not provider_text or provider_text == "mock":
+        return
+    model_text = str(model) if model is not None else "<unspecified>"
+    ids.add(f"{provider_text}:{model_text}")
 
 
 def _failure_attribution_claim_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:

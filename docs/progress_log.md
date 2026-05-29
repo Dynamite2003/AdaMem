@@ -2502,3 +2502,33 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `154 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 model robustness coverage audit
+
+- Added claim-audit model coverage evidence for answer-generation and STALE
+  judge runs.
+- Each model coverage audit records:
+  - non-mock answer provider/model ids
+  - non-mock judge provider/model ids
+  - answer model count
+  - judge model count
+  - missing robustness requirements
+- `model_robustness_audit` is only supported when required coverage is
+  complete.
+- Batch claim-matrix rows now include:
+  - `model_coverage_complete`
+  - `answer_model_count`
+  - `judge_model_count`
+  - `missing_model_requirements`
+- `claim_matrix.md` now shows `model gaps`, and `paper_next_steps.md` emits
+  `add_model_or_judge_robustness_runs` when coverage is incomplete.
+- Purpose:
+  - Make multi-model answer and judge robustness visible before treating
+    answer accuracy as paper-grade evidence.
+  - Keep SOTA blockers conservative while providing a concrete checklist for
+    API-enabled reruns.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py -q` -> `23 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `155 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

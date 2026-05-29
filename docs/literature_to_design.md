@@ -63,6 +63,32 @@ Required next evidence:
 - Replace API-free mainstream approximations with official implementations
   where available, or document why a faithful local approximation is used.
 
+### 0b. Model and Judge Robustness Gate
+
+Hypothesis:
+
+A single answer model and a single judge are too fragile for a top-tier memory
+claim. Before treating answer accuracy as strong evidence, the project should
+make model and judge coverage visible in the same audit path as baseline and
+dataset scope.
+
+Current implementation:
+
+- Claim audits summarize non-mock answer-provider/model ids and
+  judge-provider/model ids for answer-generation and STALE judge runs.
+- `model_robustness_audit` is supported only when the run has at least two
+  answer models and two judge models where a semantic judge is required.
+- Batch claim matrices expose missing model requirements, and
+  `paper_next_steps.md` adds `add_model_or_judge_robustness_runs` when coverage
+  is incomplete.
+
+Required next evidence:
+
+- Run the same STALE split with at least two answer models and two judge models
+  once API keys are available.
+- Check whether gains hold under judge-model swaps before using answer
+  accuracy as a core paper claim.
+
 ### 1. Current-State Authority Layer
 
 Hypothesis:

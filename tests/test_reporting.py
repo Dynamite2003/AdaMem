@@ -202,6 +202,10 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "baseline_coverage_complete": False,
         "baseline_category_count": 0,
         "missing_baseline_groups": [],
+        "model_coverage_complete": False,
+        "answer_model_count": 0,
+        "judge_model_count": 0,
+        "missing_model_requirements": [],
         "failure_attribution_count": 0,
         "top_failure_attribution": None,
         "top_failure_attribution_count": 0,
@@ -221,7 +225,7 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
-    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | no-reg pairs | top attribution |" in markdown
+    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | model gaps | no-reg pairs | top attribution |" in markdown
 
 
 def test_paper_next_steps_markdown_groups_actions() -> None:
@@ -264,7 +268,14 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
             "supported_claims": ["answer_accuracy_candidate"],
             "blocked_claims": {"sota": ["no strong baselines"]},
             "warnings": [],
-            "claim_evidence": {},
+            "claim_evidence": {
+                "model_coverage": {
+                    "complete": False,
+                    "answer_model_count": 1,
+                    "judge_model_count": 1,
+                    "missing_requirements": ["multiple_answer_models"],
+                },
+            },
         },
         {
             "experiment": "bad.experiment.json",
@@ -300,7 +311,10 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
         "answer_accuracy_candidate_but_sota_blocked"
     ]
     assert by_name["answer.experiment.json"]["next_action"] == (
-        "add_strong_baselines_and_judge_robustness"
+        "add_model_or_judge_robustness_runs"
+    )
+    assert "add_strong_baselines_and_judge_robustness" in (
+        by_name["answer.experiment.json"]["next_actions"]
     )
     assert by_name["bad.experiment.json"]["readiness_gate"] == "needs_attention"
     assert by_name["bad.experiment.json"]["readiness_reasons"] == [

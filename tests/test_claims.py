@@ -418,6 +418,45 @@ def test_claim_audit_marks_real_stale_judge_as_candidate_not_sota(tmp_path: Path
     assert audit["raw_output_count"] == 1
 
 
+def test_claim_audit_records_model_robustness_coverage(tmp_path: Path) -> None:
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="stale_llm_judge",
+        baseline_names=["semantic_only", "a_mem_evolution", "state_readout"],
+        notes={
+            "ground_truth_runtime_use": "forbidden",
+            "ground_truth_judge_use": "allowed",
+            "answer_provider": "openai",
+            "answer_model": "gpt-4o-mini",
+            "judge_provider": "gemini",
+            "judge_model": "gemini-2.5-pro",
+        },
+        raw_outputs=[
+            {
+                "baseline": "state_readout",
+                "case_id": "c1",
+                "query_id": "q1",
+                "judge_correct": True,
+                "answer_provider": "openai",
+                "answer_model": "gpt-5-mini",
+                "judge_provider": "openai",
+                "judge_model": "gpt-5",
+            }
+        ],
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+    coverage = audit["claim_evidence"]["model_coverage"]
+
+    assert "model_robustness_audit" in audit["supported_claims"]
+    assert coverage["complete"] is True
+    assert coverage["answer_models"] == ["openai:gpt-4o-mini", "openai:gpt-5-mini"]
+    assert coverage["judge_models"] == ["gemini:gemini-2.5-pro", "openai:gpt-5"]
+    assert coverage["missing_requirements"] == []
+    assert "Model Coverage" in markdown
+
+
 def test_claim_audit_markdown_and_cli_json(tmp_path: Path) -> None:
     experiment = _write_experiment(
         tmp_path,

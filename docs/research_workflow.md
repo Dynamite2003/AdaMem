@@ -670,7 +670,10 @@ Completed API-free foundations:
   across required paper groups: a raw retrieval reference, at least one
   mainstream memory approximation, and an AdaMem/state ablation. Missing
   groups appear in `claim_matrix` and trigger `add_missing_baseline_categories`
-  in `paper_next_steps.md`.
+  in `paper_next_steps.md`. Answer-generation and STALE judge audits also
+  record answer-model and judge-model coverage. Missing multiple-answer-model,
+  multiple-judge-model, or semantic-LLM-judge requirements appear as model
+  gaps and trigger `add_model_or_judge_robustness_runs`.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records
