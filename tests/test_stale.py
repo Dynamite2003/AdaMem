@@ -298,6 +298,34 @@ def test_retrieval_diagnostics_separate_current_and_stale_evidence(tmp_path: Pat
     assert "stale exposure" in report
 
 
+def test_retrieval_diagnostics_measure_premise_correction_hits(tmp_path: Path) -> None:
+    src = tmp_path / "stale_in.json"
+    src.write_text(json.dumps([_toy_stale_instance()]))
+    out = tmp_path / "stale.jsonl"
+    convert_stale_file(src, out, top_k=4)
+    cases = load_jsonl_cases(out)
+    configs = {
+        "semantic_state_adjudication": default_ablation_configs()["semantic_state_adjudication"],
+        "semantic_state_premise_correction": (
+            default_ablation_configs()["semantic_state_premise_correction"]
+        ),
+    }
+
+    results = {result.name: result for result in run_stale_retrieval_diagnostics(cases, configs)}
+    correction = results["semantic_state_premise_correction"]
+    adjudication = results["semantic_state_adjudication"]
+    report = diagnostics_report(list(results.values()))
+
+    assert adjudication.premise_correction_hit_rate == 0.0
+    assert correction.premise_correction_opportunity_rate == 2 / 3
+    assert correction.premise_correction_hit_rate == 0.5
+    corrected_queries = [query for query in correction.queries if query.premise_correction_hit]
+    assert len(corrected_queries) == 1
+    assert all(query.premise_correction_best_rank == 1 for query in corrected_queries)
+    assert all(query.trace[0]["is_premise_correction"] for query in corrected_queries)
+    assert "premise correction hit" in report
+
+
 def test_diagnostic_case_records_export_failures(tmp_path: Path) -> None:
     src = tmp_path / "stale_in.json"
     src.write_text(json.dumps([_toy_stale_instance()]))

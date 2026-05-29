@@ -395,9 +395,6 @@ def _run_case(case: MemoryQACase, config: AdaMemConfig) -> list[QueryEvalResult]
 def _run_query(case_id: str, mem: AdaMem, query: QuerySpec) -> QueryEvalResult:
     results = mem.retrieve(query.query, top_k=query.top_k, now=query.now)
     retrieved = [result.item.content for result in results]
-    text = "\n".join(retrieved).lower()
-    has_expected = all(expected.lower() in text for expected in query.expected_substrings)
-    has_forbidden = any(forbidden.lower() in text for forbidden in query.forbidden_substrings)
     trace = [
         {
             "content": result.item.content,
@@ -409,6 +406,17 @@ def _run_query(case_id: str, mem: AdaMem, query: QuerySpec) -> QueryEvalResult:
         }
         for result in results
     ]
+    text = "\n".join(retrieved).lower()
+    non_correction_text = "\n".join(
+        str(item.get("content") or "")
+        for item in trace
+        if not _is_premise_correction_trace(item)
+    ).lower()
+    has_expected = all(expected.lower() in text for expected in query.expected_substrings)
+    has_forbidden = any(
+        forbidden.lower() in non_correction_text
+        for forbidden in query.forbidden_substrings
+    )
     return QueryEvalResult(
         case_id=case_id,
         query_id=query.id or query.query,
@@ -424,6 +432,13 @@ def _run_query(case_id: str, mem: AdaMem, query: QuerySpec) -> QueryEvalResult:
 
 def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
     text = "\n".join(query.retrieved).lower()
+    correction_items = [item for item in query.trace if _is_premise_correction_trace(item)]
+    correction_text = "\n".join(str(item.get("content") or "") for item in correction_items).lower()
+    non_correction_text = "\n".join(
+        str(item.get("content") or "")
+        for item in query.trace
+        if not _is_premise_correction_trace(item)
+    ).lower()
     missing_expected = [
         expected for expected in query.expected_substrings if expected.lower() not in text
     ]
@@ -456,7 +471,12 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
         if _evidence_label_hit(evidence, graph_retrieved, graph_items)
     ]
     present_forbidden = [
-        forbidden for forbidden in query.forbidden_substrings if forbidden.lower() in text
+        forbidden for forbidden in query.forbidden_substrings
+        if forbidden.lower() in non_correction_text
+    ]
+    corrected_forbidden = [
+        forbidden for forbidden in query.forbidden_substrings
+        if forbidden.lower() in correction_text and forbidden.lower() not in non_correction_text
     ]
     state_retrieval_count = _state_trace_count(query.trace)
     retrieved_state_slots = _state_trace_slots(query.trace)
@@ -515,6 +535,8 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
         "graph_evidence_hit_count": len(graph_evidence_hits),
         "forbidden_substrings": query.forbidden_substrings,
         "present_forbidden": present_forbidden,
+        "corrected_forbidden": corrected_forbidden,
+        "premise_correction_count": len(correction_items),
         "failure_modes": failure_modes,
         "metadata": dict(query.metadata),
         "retrieved": query.retrieved,
@@ -724,6 +746,13 @@ def _format_fraction_rate(numerator: int, denominator: int) -> str:
     if denominator == 0:
         return "n/a"
     return f"{numerator}/{denominator} ({numerator / denominator:.2%})"
+
+
+def _is_premise_correction_trace(item: dict[str, Any]) -> bool:
+    return (
+        item.get("kind") == "state_correction"
+        or item.get("relation") == "state_premise_correction"
+    )
 
 
 def _has_grouped_diagnostic_signal(field_summary: dict[str, dict[str, dict[str, Any]]]) -> bool:

@@ -151,11 +151,17 @@ Current implementation:
   store.
 - `semantic_state_premise_correction` isolates this mechanism on top of
   semantic-only state adjudication.
+- STALE retrieval diagnostics now report premise-correction opportunity rate,
+  hit rate, and best correction rank. Stale exposure excludes correction items
+  as stale evidence, while traces still mark corrections explicitly.
+- JSONL retrieval support checks treat old values inside `state_correction`
+  text as resolved forbidden support, while old values in ordinary retrieved
+  evidence remain failures.
 
 Required next evidence:
 
-- Add STALE diagnostics that count correction opportunities and correction
-  hits separately from current-state recall.
+- Run larger STALE diagnostics to verify that correction opportunities and
+  hits remain interpretable beyond the toy and mini fixtures.
 - Run Premise Resistance cases with real answer/judge models to test whether
   explicit correction changes final answers rather than only retrieval traces.
 - Compare against prompt-only correction baselines to show the gain comes from

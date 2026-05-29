@@ -95,9 +95,9 @@ Expected diagnostics:
   identified by retrieval.
 - Authorized-state hit rate: whether the readout exposes the active state that
   should govern the answer.
-- Stale premise correction opportunity: whether a Premise Resistance query
-  mentions an old state and the system has enough current-state evidence to
-  correct it.
+- Stale premise correction opportunity and hit rate: whether a Premise
+  Resistance query mentions an old state, the system has enough current-state
+  evidence to correct it, and a read-time correction is actually surfaced.
 
 Outputs:
 
@@ -482,6 +482,9 @@ Completed API-free foundations:
   only when a query mentions an inactive value for the same authorized state
   slot. This targets STALE Premise Resistance and should be evaluated separately
   from broader answer-prompt instructions.
+- Premise-correction diagnostics for STALE-style retrieval runs, including
+  opportunity rate, hit rate, correction rank, and correction-aware stale
+  exposure traces.
 - Semantic-only state-aware ablations, so state mechanisms can be tested
   independently of default full AdaMem scoring.
 - Synthetic tests for State Resolution, Premise Resistance, and Implicit Policy

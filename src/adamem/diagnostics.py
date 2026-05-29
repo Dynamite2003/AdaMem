@@ -93,6 +93,9 @@ class StaleQueryDiagnostic:
     current_evidence_recalled: bool
     stale_evidence_exposed: bool
     conflict_pair_covered: bool
+    premise_correction_opportunity: bool
+    premise_correction_hit: bool
+    premise_correction_best_rank: int | None
     current_before_stale: bool | None
     current_best_rank: int | None
     stale_best_rank: int | None
@@ -112,6 +115,8 @@ class StaleDiagnosticResult:
     conflict_pair_coverage_rate: float
     current_before_stale_rate: float
     premise_old_mention_rate: float
+    premise_correction_opportunity_rate: float
+    premise_correction_hit_rate: float
     old_support_adjudication_rate: float
     queries: list[StaleQueryDiagnostic]
 
@@ -164,6 +169,12 @@ def diagnose_stale_query(
         index
         for index, result in enumerate(retrieved, start=1)
         if text_supports_signal(result.item.content, old_signal)
+        and not _is_premise_correction_result(result)
+    ]
+    correction_ranks = [
+        index
+        for index, result in enumerate(retrieved, start=1)
+        if _is_premise_correction_result(result)
     ]
 
     current_best = min(current_ranks) if current_ranks else None
@@ -177,6 +188,11 @@ def diagnose_stale_query(
         item
         for item in stored_items
         if text_supports_signal(item.content, old_signal)
+    ]
+    current_supports = [
+        item
+        for item in stored_items
+        if text_supports_signal(item.content, new_signal)
     ]
     adjudicated = [
         item
@@ -195,6 +211,11 @@ def diagnose_stale_query(
         current_evidence_recalled=bool(current_ranks),
         stale_evidence_exposed=bool(stale_ranks),
         conflict_pair_covered=bool(current_ranks and stale_ranks),
+        premise_correction_opportunity=(
+            text_supports_signal(query.query, old_signal) and bool(current_supports)
+        ),
+        premise_correction_hit=bool(correction_ranks),
+        premise_correction_best_rank=min(correction_ranks) if correction_ranks else None,
         current_before_stale=current_before_stale,
         current_best_rank=current_best,
         stale_best_rank=stale_best,
@@ -209,6 +230,9 @@ def diagnose_stale_query(
                 "score": round(result.score, 4),
                 "staleness": round(result.item.staleness, 4),
                 "relation": result.relation,
+                "kind": result.item.kind,
+                "metadata": _trace_metadata(result.item),
+                "is_premise_correction": _is_premise_correction_result(result),
                 "supports_old": text_supports_signal(result.item.content, old_signal),
                 "supports_new": text_supports_signal(result.item.content, new_signal),
                 "contributions": {key: round(value, 4) for key, value in result.contributions.items()},
@@ -243,14 +267,15 @@ def text_supports_signal(text: str, signal: TextSignal) -> bool:
 def diagnostics_report(results: list[StaleDiagnosticResult]) -> str:
     lines = ["# AdaMem STALE Retrieval Diagnostics", ""]
     lines.append(
-        "| ablation | current recall | stale exposure | conflict coverage | current before stale | premise old mention | old support adjudication |"
+        "| ablation | current recall | stale exposure | conflict coverage | current before stale | premise old mention | premise correction hit | old support adjudication |"
     )
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
     for result in results:
         lines.append(
             f"| {result.name} | {result.current_recall_rate:.2%} | "
             f"{result.stale_exposure_rate:.2%} | {result.conflict_pair_coverage_rate:.2%} | "
             f"{result.current_before_stale_rate:.2%} | {result.premise_old_mention_rate:.2%} | "
+            f"{result.premise_correction_hit_rate:.2%} | "
             f"{result.old_support_adjudication_rate:.2%} |"
         )
     return "\n".join(lines) + "\n"
@@ -288,6 +313,9 @@ def diagnostic_case_records(
                 "current_evidence_recalled": query.current_evidence_recalled,
                 "stale_evidence_exposed": query.stale_evidence_exposed,
                 "conflict_pair_covered": query.conflict_pair_covered,
+                "premise_correction_opportunity": query.premise_correction_opportunity,
+                "premise_correction_hit": query.premise_correction_hit,
+                "premise_correction_best_rank": query.premise_correction_best_rank,
                 "current_before_stale": query.current_before_stale,
                 "current_best_rank": query.current_best_rank,
                 "stale_best_rank": query.stale_best_rank,
@@ -397,6 +425,12 @@ def _aggregate_diagnostics(name: str, queries: list[StaleQueryDiagnostic]) -> St
         conflict_pair_coverage_rate=_rate(record.conflict_pair_covered for record in queries),
         current_before_stale_rate=_rate(record.current_before_stale for record in ordered_pairs),
         premise_old_mention_rate=_rate(record.query_mentions_old for record in queries),
+        premise_correction_opportunity_rate=_rate(
+            record.premise_correction_opportunity for record in queries
+        ),
+        premise_correction_hit_rate=(
+            _rate(record.premise_correction_hit for record in queries if record.premise_correction_opportunity)
+        ),
         old_support_adjudication_rate=(
             old_support_adjudicated / old_support_total if old_support_total else 0.0
         ),
@@ -419,6 +453,8 @@ def _diagnostic_failure_modes(query: StaleQueryDiagnostic) -> list[str]:
         modes.append("stale_evidence_exposed")
     if query.current_before_stale is False:
         modes.append("stale_ranked_before_current")
+    if query.premise_correction_opportunity and not query.premise_correction_hit:
+        modes.append("premise_correction_missing")
     if query.old_supports and query.adjudicated_old_supports < query.old_supports:
         modes.append("old_support_not_fully_adjudicated")
     return modes
@@ -428,7 +464,29 @@ def _diagnostic_analysis_flags(query: StaleQueryDiagnostic) -> list[str]:
     flags: list[str] = []
     if query.query_mentions_old and query.current_evidence_recalled:
         flags.append("stale_premise_correction_opportunity")
+    if query.premise_correction_hit:
+        flags.append("stale_premise_corrected")
     return flags
+
+
+def _is_premise_correction_result(result: MemoryResult) -> bool:
+    return (
+        result.item.kind == "state_correction"
+        or result.relation == "state_premise_correction"
+    )
+
+
+def _trace_metadata(item: MemoryItem) -> dict[str, Any]:
+    keep = {
+        "ephemeral",
+        "source_state_id",
+        "stale_state_id",
+        "state_slot",
+        "state_value",
+        "stale_value",
+        "current_value",
+    }
+    return {key: value for key, value in item.metadata.items() if key in keep}
 
 
 def _compact_failure_example(record: dict[str, Any]) -> dict[str, Any]:

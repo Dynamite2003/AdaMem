@@ -808,6 +808,25 @@ def test_jsonl_benchmark_summary_compares_pairs_against_first_baseline() -> None
     assert "Pairwise Vs semantic_only" in report
 
 
+def test_jsonl_benchmark_treats_correction_text_as_resolved_forbidden_support() -> None:
+    cases = load_jsonl_cases(Path("benchmarks/dynamic_state_transfer.jsonl"))
+    results = run_benchmark(cases, {
+        "semantic_state_premise_correction": (
+            baseline_registry()["semantic_state_premise_correction"].config
+        ),
+    })
+    records = benchmark_case_records(results)
+    by_query = {record["query_id"]: record for record in records}
+
+    assert results[0].passed == results[0].total
+    for query_id in ("current_passport_status", "current_workflow_rule", "current_runtime_status"):
+        record = by_query[query_id]
+        assert record["premise_correction_count"] == 1
+        assert record["corrected_forbidden"]
+        assert record["present_forbidden"] == []
+        assert "forbidden_support_present" not in record["failure_modes"]
+
+
 def test_jsonl_records_expose_state_pollution_metrics() -> None:
     case = MemoryQACase(
         id="state_pollution_boundary",

@@ -1678,3 +1678,33 @@ to a paper-facing claim and evaluation gate.
   readout intentionally names the stale premise before rejecting it. Add
   correction-opportunity and correction-hit diagnostics before using this
   baseline in paper tables.
+
+### 2026-05-30 premise-correction diagnostics
+
+- Resolved the first diagnostic caveat for premise correction:
+  - JSONL benchmark support checks now exclude `state_correction` text when
+    deciding whether a forbidden old value was exposed as unresolved evidence.
+    The same old value is still counted as a failure if it appears in ordinary
+    retrieved evidence.
+  - Case records now include `corrected_forbidden` and
+    `premise_correction_count`, making corrected stale premises auditable
+    without hiding raw stale exposure.
+- Extended STALE retrieval diagnostics:
+  - Added premise-correction opportunity rate, hit rate, and best correction
+    rank to `StaleQueryDiagnostic` / `StaleDiagnosticResult`.
+  - Trace records now mark `kind`, selected state metadata, and
+    `is_premise_correction`.
+  - Failure records now distinguish `premise_correction_missing` from generic
+    stale exposure.
+- Smoke results:
+  - Dynamic-state JSONL smoke with `semantic_state_adjudication` and
+    `semantic_state_premise_correction`: both scored `7/7`; the correction
+    variant surfaced explicit corrections for passport, workflow, and runtime
+    stale-premise queries.
+  - STALE mini diagnostic with the same pair showed current recall `100%` for
+    both. `semantic_state_premise_correction` reached `100%` premise-correction
+    hit on the detected opportunities in that mini run, while adjudication-only
+    stayed at `0%`.
+- Added tests to lock both behaviors:
+  - `test_jsonl_benchmark_treats_correction_text_as_resolved_forbidden_support`
+  - `test_retrieval_diagnostics_measure_premise_correction_hits`
