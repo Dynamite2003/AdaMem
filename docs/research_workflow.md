@@ -486,6 +486,9 @@ Completed API-free foundations:
 - Premise-correction diagnostics for STALE-style retrieval runs, including
   opportunity rate, hit rate, correction rank, and correction-aware stale
   exposure traces.
+- Premise-correction trigger diagnostics for generic JSONL retrieval benchmarks,
+  so transfer runs can report correction records, corrected stale premises, and
+  unresolved forbidden old values.
 - `adamem.stale_pipeline`, a one-command API-free STALE workflow that converts
   raw STALE JSON, runs retrieval diagnostics, writes case records, paper
   tables, claim-audit report bundles, and a manifest. It also accepts already

@@ -1797,3 +1797,25 @@ to a paper-facing claim and evaluation gate.
   - `test_stale_diagnostic_pipeline_writes_reproducible_artifacts`
   - `test_stale_pipeline_cli_writes_manifest_json`
   - `test_stale_pipeline_accepts_converted_jsonl_input`
+
+### 2026-05-30 premise-correction transfer reporting
+
+- Added premise-correction aggregate metrics to JSONL retrieval benchmark
+  summaries and Markdown reports:
+  - `correction_records`
+  - `correction_items`
+  - `corrected_forbidden_records`
+  - `unresolved_forbidden_records`
+  - corresponding rates in machine-readable `paper_metrics`
+- This makes non-STALE transfer/no-pollution checks reproducible from ordinary
+  benchmark reports instead of ad hoc scripts.
+- Re-ran the LongMemEval-S balanced 60 premise-correction transfer report:
+  - `semantic_state_adjudication`: `39/60` evidence support.
+  - `semantic_state_premise_correction`: `39/60` evidence support.
+  - `Premise Correction` report section: both baselines had `0/60`
+    correction records, `0` correction items, and `0` unresolved forbidden
+    records.
+  - Interpretation: this public-transfer subset does not test correction
+    usefulness, but it now provides auditable evidence that enabling the
+    correction mechanism did not trigger spurious correction readouts or degrade
+    retrieval support on the balanced LongMemEval-S pilot.

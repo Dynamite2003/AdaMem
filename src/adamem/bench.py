@@ -138,6 +138,7 @@ def benchmark_failure_summary(
         "failure_modes": {},
         "by_metadata": {},
         "state_readout_exposure": {},
+        "premise_correction": {},
         "evidence_support": {},
         "answerability": {},
         "paper_metrics": {},
@@ -149,6 +150,7 @@ def benchmark_failure_summary(
         subset = [record for record in records if record["baseline"] == baseline]
         summary["by_baseline"][baseline] = _aggregate_records(subset)
         summary["state_readout_exposure"][baseline] = _state_exposure_aggregate(subset)
+        summary["premise_correction"][baseline] = _premise_correction_aggregate(subset)
         summary["evidence_support"][baseline] = _evidence_support_aggregate(subset)
         summary["answerability"][baseline] = _answerability_aggregate(subset)
     if baseline_order:
@@ -272,6 +274,24 @@ def benchmark_failure_report(
                 f"{aggregate['state_slot_mismatch_records']} | "
                 f"{aggregate['unmarked_state_retrieval_records']} | "
                 f"{aggregate['unmarked_state_exposure_rate']:.2%} |"
+            )
+        lines.append("")
+
+    correction = summary.get("premise_correction", {})
+    if correction:
+        lines.append("## Premise Correction")
+        lines.append(
+            "| baseline | queries | correction records | correction items | "
+            "corrected forbidden | unresolved forbidden |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+        for baseline, aggregate in correction.items():
+            lines.append(
+                f"| {baseline} | {aggregate['total']} | "
+                f"{aggregate['correction_records']} | "
+                f"{aggregate['correction_items']} | "
+                f"{aggregate['corrected_forbidden_records']} | "
+                f"{aggregate['unresolved_forbidden_records']} |"
             )
         lines.append("")
 
@@ -609,6 +629,28 @@ def _state_exposure_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _premise_correction_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(records)
+    correction_records = sum(1 for record in records if int(record.get("premise_correction_count") or 0) > 0)
+    correction_items = sum(int(record.get("premise_correction_count") or 0) for record in records)
+    corrected_forbidden_records = sum(1 for record in records if record.get("corrected_forbidden"))
+    corrected_forbidden_count = sum(len(record.get("corrected_forbidden") or []) for record in records)
+    unresolved_forbidden_records = sum(1 for record in records if record.get("present_forbidden"))
+    unresolved_forbidden_count = sum(len(record.get("present_forbidden") or []) for record in records)
+    return {
+        "total": total,
+        "correction_records": correction_records,
+        "correction_items": correction_items,
+        "correction_rate": correction_records / total if total else 0.0,
+        "corrected_forbidden_records": corrected_forbidden_records,
+        "corrected_forbidden_count": corrected_forbidden_count,
+        "corrected_forbidden_rate": corrected_forbidden_records / total if total else 0.0,
+        "unresolved_forbidden_records": unresolved_forbidden_records,
+        "unresolved_forbidden_count": unresolved_forbidden_count,
+        "unresolved_forbidden_rate": unresolved_forbidden_records / total if total else 0.0,
+    }
+
+
 def _evidence_support_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     evidence_records = [record for record in records if record["expected_evidence"]]
     return {
@@ -688,6 +730,7 @@ def _paper_metrics_for_baseline(
 ) -> dict[str, Any]:
     support = summary["by_baseline"][baseline]
     exposure = summary["state_readout_exposure"][baseline]
+    correction = summary["premise_correction"][baseline]
     evidence = summary["evidence_support"][baseline]
     answerability = summary["answerability"][baseline]
     pairwise = summary.get("pairwise_vs_first_baseline", {})
@@ -720,6 +763,9 @@ def _paper_metrics_for_baseline(
             exposure["unmarked_state_retrieval_records"],
             exposure["unmarked_total"],
         ),
+        "premise_correction_rate": correction["correction_rate"],
+        "corrected_forbidden_rate": correction["corrected_forbidden_rate"],
+        "unresolved_forbidden_rate": correction["unresolved_forbidden_rate"],
     }
 
 

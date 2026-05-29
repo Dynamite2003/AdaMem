@@ -729,6 +729,7 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert "# JSONL Retrieval Benchmark Failure Report" in report
     assert "## Paper Metrics" in report
     assert "## State Readout Exposure" in report
+    assert "## Premise Correction" in report
     assert "## Evidence Support" in report
     assert summary["diagnostics_by_metadata"]["dimension"]["implicit_policy_adaptation"]["state_readout"][
         "total"
@@ -737,6 +738,7 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert summary["paper_metrics"]["state_readout"]["state_slot_match_rate"] == 1.0
     assert summary["paper_metrics"]["state_readout"]["state_readout_missing_rate"] == 0.0
     assert summary["paper_metrics"]["state_readout"]["unmarked_state_exposure_rate"] is None
+    assert summary["paper_metrics"]["state_readout"]["premise_correction_rate"] == 0.0
     assert summary["paper_metrics"]["semantic_only"]["state_readout_missing_rate"] == 1.0
     assert summary["state_readout_exposure"]["state_readout"]["state_retrieval_records"] == 7
     assert summary["state_readout_exposure"]["state_readout"]["state_slot_match_records"] == 7
@@ -816,9 +818,18 @@ def test_jsonl_benchmark_treats_correction_text_as_resolved_forbidden_support() 
         ),
     })
     records = benchmark_case_records(results)
+    summary = benchmark_failure_summary(records)
+    report = benchmark_failure_report(records)
     by_query = {record["query_id"]: record for record in records}
 
     assert results[0].passed == results[0].total
+    correction = summary["premise_correction"]["semantic_state_premise_correction"]
+    assert correction["correction_records"] == 3
+    assert correction["correction_items"] == 3
+    assert correction["corrected_forbidden_records"] == 3
+    assert correction["unresolved_forbidden_records"] == 0
+    assert summary["paper_metrics"]["semantic_state_premise_correction"]["premise_correction_rate"] == 3 / 7
+    assert "## Premise Correction" in report
     for query_id in ("current_passport_status", "current_workflow_rule", "current_runtime_status"):
         record = by_query[query_id]
         assert record["premise_correction_count"] == 1
