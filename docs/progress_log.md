@@ -2142,3 +2142,22 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `14 passed`
   - `PYTHONPATH=src python -m pytest -q` -> `143 passed`
   - `git diff --check` -> no issues
+
+### 2026-05-30 LongMemEval-V2 prepared pilot state-evidence integration
+
+- Integrated the prepared state-evidence audit into
+  `adamem.pilot lme-v2-prepared`:
+  - The pilot now validates prepared files, runs state-evidence audit, converts
+    the exact split, and runs retrieval answer-string support.
+  - Experiment notes now include `state_evidence_summary_path` and
+    `state_evidence_report_path`.
+- Extended `adamem.claims` for prepared-pilot state evidence:
+  - Adds `prepared_state_evidence_audit` when the summary is present.
+  - Adds machine-readable `claim_evidence.prepared_state_evidence`.
+  - Warns when a prepared-pilot experiment lacks the state-evidence summary.
+- Updated workflow and benchmark data status docs so prepared-pilot claim audit
+  includes state availability, while answer accuracy and SOTA remain blocked.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_pilot.py tests/test_claims.py tests/test_reporting.py -q` -> `20 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `143 passed`
+  - `git diff --check` -> no issues

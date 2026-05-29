@@ -92,9 +92,9 @@ Outputs:
   LongMemEval-V2 questions have deterministic state evidence for their routed
   state slots before spending answer-model or judge-model budget.
 - API-free LongMemEval-V2 prepared-split pilot outputs, including validation,
-  exact-split conversion, retrieval answer-string support records, Markdown
-  report, and experiment JSON. This is a retrieval support diagnostic, not
-  generated answer accuracy.
+  state-evidence audit, exact-split conversion, retrieval answer-string
+  support records, Markdown report, and experiment JSON. This is a retrieval
+  support diagnostic, not generated answer accuracy.
 - LongMemEval-V2 prepared-pilot report bundle with claim audit, grouped paper
   tables, paired comparison, and an explicit block on answer-accuracy/SOTA
   claims.
@@ -595,7 +595,9 @@ Completed API-free foundations:
   blocked, ground-truth runtime-use notes, provider settings, and embedded or
   sidecar record counts. It recognizes LongMemEval-V2 prepared pilots as
   prepared-split readiness and retrieval answer-string support diagnostics,
-  not as answer accuracy.
+  not as answer accuracy. When a prepared-pilot experiment includes
+  `state_evidence_summary_path`, the audit also records the selected split's
+  state-available question count and state-evidence candidate count.
 - `adamem.reporting`, a report-bundle command that combines `adamem.tables`
   and `adamem.claims` for one experiment JSON and writes paper tables, claim
   audit files, and a manifest. If the input is a directory, it batches every

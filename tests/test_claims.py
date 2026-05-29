@@ -165,6 +165,20 @@ def test_claim_audit_supports_unknown_current_trace_resolution(tmp_path: Path) -
 
 def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path: Path) -> None:
     records = tmp_path / "lme_v2.records.jsonl"
+    state_evidence = tmp_path / "state_evidence.summary.json"
+    state_evidence.write_text(
+        json.dumps({
+            "total_questions": 10,
+            "with_expected_state_slots": 4,
+            "with_matching_state_evidence": 3,
+            "without_matching_state_evidence": 1,
+            "state_available_rate": 0.75,
+            "matching_state_evidence_candidate_total": 7,
+            "questions_with_missing_trajectories": 0,
+            "missing_trajectory_total": 0,
+        }),
+        encoding="utf-8",
+    )
     rows = []
     for index in range(10):
         rows.append(
@@ -197,6 +211,7 @@ def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path:
             "answer_model_required": False,
             "judge_model_required": False,
             "validation_summary_path": "validation/longmemeval_v2_prepared_validation.summary.json",
+            "state_evidence_summary_path": state_evidence.name,
         },
         baseline_configs={
             "semantic_state_readout": {
@@ -212,8 +227,11 @@ def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path:
     assert "retrieval_diagnostics" in audit["supported_claims"]
     assert "longmemeval_v2_prepared_split_readiness" in audit["supported_claims"]
     assert "retrieval_answer_string_support_diagnostics" in audit["supported_claims"]
+    assert "prepared_state_evidence_audit" in audit["supported_claims"]
     assert "answerability_diagnostics" not in audit["supported_claims"]
     assert "paired_retrieval_no_regression" in audit["supported_claims"]
+    assert audit["claim_evidence"]["prepared_state_evidence"]["with_matching_state_evidence"] == 3
+    assert audit["claim_evidence"]["prepared_state_evidence"]["state_available_rate"] == 0.75
     assert audit["blocked_claims"]["answer_accuracy"] == [
         "run_type is retrieval/answerability, not answer generation"
     ]
@@ -223,9 +241,10 @@ def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path:
     assert audit["warnings"] == []
     assert audit["raw_output_count"] == 20
     assert "`longmemeval_v2_prepared_split_readiness`" in markdown
+    assert "Prepared State Evidence" in markdown
 
 
-def test_claim_audit_warns_when_longmemeval_v2_metric_boundary_is_missing(tmp_path: Path) -> None:
+def test_claim_audit_warns_when_longmemeval_v2_prepared_notes_are_missing(tmp_path: Path) -> None:
     experiment = _write_experiment(
         tmp_path,
         run_type="longmemeval_v2_prepared_answer_support_pilot",
@@ -240,7 +259,8 @@ def test_claim_audit_warns_when_longmemeval_v2_metric_boundary_is_missing(tmp_pa
 
     assert "longmemeval_v2_prepared_split_readiness" in audit["supported_claims"]
     assert audit["warnings"] == [
-        "LongMemEval-V2 prepared pilot metric_boundary is missing or unexpected"
+        "LongMemEval-V2 prepared pilot metric_boundary is missing or unexpected",
+        "LongMemEval-V2 prepared pilot state_evidence_summary_path is missing or unreadable",
     ]
 
 

@@ -30,7 +30,10 @@ from adamem.convert import (
     load_question_ids,
 )
 from adamem.experiments import experiment_record, write_experiment_record
-from adamem.lme_v2 import write_longmemeval_v2_prepared_split_validation
+from adamem.lme_v2 import (
+    write_longmemeval_v2_prepared_split_validation,
+    write_longmemeval_v2_prepared_state_evidence_audit,
+)
 from adamem.llm import LLMClient, build_client
 
 
@@ -186,6 +189,15 @@ def run_longmemeval_v2_prepared_pilot(
     if not validation["summary"].get("valid"):
         raise ValueError(f"LongMemEval-V2 prepared split validation failed: {validation['summary_path']}")
 
+    started = time.perf_counter()
+    state_evidence = write_longmemeval_v2_prepared_state_evidence_audit(
+        split_records,
+        haystack,
+        trajectories,
+        output / "state_evidence",
+    )
+    timings["state_evidence_seconds"] = time.perf_counter() - started
+
     dataset = output / "longmemeval_v2_prepared.answer.adamem.jsonl"
     started = time.perf_counter()
     case_count = convert_longmemeval_v2_file(
@@ -224,6 +236,8 @@ def run_longmemeval_v2_prepared_pilot(
             "split_records": str(split_records),
             "validation_summary_path": validation["summary_path"],
             "validation_report_path": validation["report_path"],
+            "state_evidence_summary_path": state_evidence["summary_path"],
+            "state_evidence_report_path": state_evidence["report_path"],
             "answer_model_required": False,
             "judge_model_required": False,
             "metric_boundary": "retrieval answer-string support, not final generated answer accuracy",
@@ -242,6 +256,7 @@ def run_longmemeval_v2_prepared_pilot(
         "cases": case_count,
         "dataset": str(dataset),
         "validation": validation,
+        "state_evidence": state_evidence,
         "answer": answer_outputs,
         "timings": {key: round(value, 4) for key, value in timings.items()},
     }

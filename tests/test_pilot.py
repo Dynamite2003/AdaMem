@@ -225,6 +225,7 @@ def test_longmemeval_v2_prepared_pilot_runs_validation_conversion_and_retrieval(
                 "split": "transfer",
                 "selection_group": "dynamic-environment",
                 "question_type": "dynamic-environment",
+                "inferred_state_slots": ["runtime.*.status"],
             }),
             json.dumps({
                 "id": "q_static",
@@ -249,11 +250,14 @@ def test_longmemeval_v2_prepared_pilot_runs_validation_conversion_and_retrieval(
 
     assert summary["cases"] == 2
     assert summary["validation"]["summary"]["valid"] is True
+    assert summary["state_evidence"]["summary"]["with_expected_state_slots"] == 1
+    assert summary["state_evidence"]["summary"]["with_matching_state_evidence"] == 1
     assert Path(summary["dataset"]).exists()
     assert Path(summary["answer"]["records_path"]).name == "longmemeval_v2_prepared.answer.records.jsonl"
     assert experiment["run_type"] == "longmemeval_v2_prepared_answer_support_pilot"
     assert experiment["notes"]["metric_boundary"] == "retrieval answer-string support, not final generated answer accuracy"
     assert experiment["notes"]["validation_summary_path"] == summary["validation"]["summary_path"]
+    assert experiment["notes"]["state_evidence_summary_path"] == summary["state_evidence"]["summary_path"]
     assert summary["answer"]["summary"]["by_baseline"]["semantic_only"]["total"] == 2
 
 

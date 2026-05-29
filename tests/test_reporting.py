@@ -226,6 +226,20 @@ def _write_stale_retrieval_diagnostic_experiment(tmp_path: Path) -> Path:
 
 def _write_lme_v2_prepared_experiment(tmp_path: Path) -> Path:
     records_path = tmp_path / "lme_v2_prepared.records.jsonl"
+    state_evidence_path = tmp_path / "lme_v2_prepared.state_evidence.summary.json"
+    state_evidence_path.write_text(
+        json.dumps({
+            "total_questions": 1,
+            "with_expected_state_slots": 1,
+            "with_matching_state_evidence": 1,
+            "without_matching_state_evidence": 0,
+            "state_available_rate": 1.0,
+            "matching_state_evidence_candidate_total": 1,
+            "questions_with_missing_trajectories": 0,
+            "missing_trajectory_total": 0,
+        }),
+        encoding="utf-8",
+    )
     records = []
     for baseline in ["semantic_only", "semantic_state_readout"]:
         records.append({
@@ -292,6 +306,7 @@ def _write_lme_v2_prepared_experiment(tmp_path: Path) -> Path:
                 "ground_truth_evaluation_use": "query_metadata_only",
                 "metric_boundary": "retrieval answer-string support, not final generated answer accuracy",
                 "validation_summary_path": "validation/longmemeval_v2_prepared_validation.summary.json",
+                "state_evidence_summary_path": state_evidence_path.name,
             },
             "commit": "abc123",
         }),

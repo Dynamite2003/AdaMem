@@ -54,6 +54,12 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
             supported.append("retrieval_answer_string_support_diagnostics")
             if notes.get("metric_boundary") != "retrieval answer-string support, not final generated answer accuracy":
                 warnings.append("LongMemEval-V2 prepared pilot metric_boundary is missing or unexpected")
+            state_evidence = _load_state_evidence_summary(experiment_path, notes, warnings=warnings)
+            if state_evidence:
+                supported.append("prepared_state_evidence_audit")
+                claim_evidence["prepared_state_evidence"] = state_evidence
+            else:
+                warnings.append("LongMemEval-V2 prepared pilot state_evidence_summary_path is missing or unreadable")
         else:
             supported.append("answerability_diagnostics")
         retrieval_evidence = _retrieval_claim_evidence(experiment, claim_records)
@@ -149,6 +155,15 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
         lines.append(f"- {warning}")
     claim_evidence = audit.get("claim_evidence") or {}
     retrieval = claim_evidence.get("retrieval_transfer")
+    state_evidence = claim_evidence.get("prepared_state_evidence")
+    if state_evidence:
+        lines.append("")
+        lines.append("## Prepared State Evidence")
+        lines.append(f"- Questions: `{state_evidence['total_questions']}`")
+        lines.append(f"- Expected-state questions: `{state_evidence['with_expected_state_slots']}`")
+        lines.append(f"- With matching evidence: `{state_evidence['with_matching_state_evidence']}`")
+        lines.append(f"- Without matching evidence: `{state_evidence['without_matching_state_evidence']}`")
+        lines.append(f"- State-available rate: `{state_evidence['state_available_rate']:.2%}`")
     if retrieval:
         lines.append("")
         lines.append("## Claim Evidence")
@@ -218,6 +233,40 @@ def _load_claim_records(
         if warnings is not None:
             warnings.append(f"could not load claim records from notes.records_path: {exc}")
         return []
+
+
+def _load_state_evidence_summary(
+    experiment_path: Path,
+    notes: dict[str, Any],
+    *,
+    warnings: list[str] | None,
+) -> dict[str, Any]:
+    summary_path = notes.get("state_evidence_summary_path")
+    if not summary_path:
+        return {}
+    path = _resolve_records_path(experiment_path, str(summary_path))
+    if path is None:
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        if warnings is not None:
+            warnings.append(f"could not load state evidence summary: {exc}")
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        "total_questions": int(payload.get("total_questions") or 0),
+        "with_expected_state_slots": int(payload.get("with_expected_state_slots") or 0),
+        "with_matching_state_evidence": int(payload.get("with_matching_state_evidence") or 0),
+        "without_matching_state_evidence": int(payload.get("without_matching_state_evidence") or 0),
+        "state_available_rate": float(payload.get("state_available_rate") or 0.0),
+        "matching_state_evidence_candidate_total": int(
+            payload.get("matching_state_evidence_candidate_total") or 0
+        ),
+        "questions_with_missing_trajectories": int(payload.get("questions_with_missing_trajectories") or 0),
+        "missing_trajectory_total": int(payload.get("missing_trajectory_total") or 0),
+    }
 
 
 def _retrieval_claim_evidence(

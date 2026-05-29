@@ -214,9 +214,9 @@ Latest text-only transfer split:
   selected trajectory record contains `answer`, `eval_function`, or `question`
   label fields.
 - API-free prepared-split pilot support runs validation, exact split
-  conversion, and retrieval answer-string support in one command. Its output is
-  a debugging and transfer-readiness artifact, not an end-to-end answer model
-  result.
+  conversion, state-evidence audit, and retrieval answer-string support in one
+  command. Its output is a debugging and transfer-readiness artifact, not an
+  end-to-end answer model result.
 - Prepared state-evidence audit support checks whether selected trajectory
   runtime text contains deterministic state patches matching each selected
   question's routed state slots. Use this before API-backed transfer runs so
@@ -245,8 +245,10 @@ Claim boundary:
   answer accuracy or SOTA evidence.
 - `adamem.claims` and `adamem.reporting` recognize prepared-pilot experiment
   records as `longmemeval_v2_prepared_split_readiness` plus
-  `retrieval_answer_string_support_diagnostics`, while still blocking answer
-  accuracy and SOTA claims.
+  `retrieval_answer_string_support_diagnostics`. When the pilot has a
+  `state_evidence_summary_path`, claim audit also records
+  `prepared_state_evidence_audit`, while still blocking answer accuracy and
+  SOTA claims.
 - Answers and evaluator strings are query-only metadata; trajectory
   observations must remain free of answer labels.
 
