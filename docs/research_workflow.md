@@ -643,7 +643,10 @@ Completed API-free foundations:
   prepared-split readiness and retrieval answer-string support diagnostics,
   not as answer accuracy. When a prepared-pilot experiment includes
   `state_evidence_summary_path`, the audit also records the selected split's
-  state-available question count and state-evidence candidate count.
+  state-available question count and state-evidence candidate count. When
+  case records include `failure_attributions`, the audit also records
+  attribution counts and representative examples as mechanism error-analysis
+  evidence, not as answer-accuracy or SOTA evidence.
 - `adamem.reporting`, a report-bundle command that combines `adamem.tables`
   and `adamem.claims` for one experiment JSON and writes paper tables, claim
   audit files, and a manifest. If the input is a directory, it batches every
@@ -656,7 +659,9 @@ Completed API-free foundations:
   no-regression counts, and top failure-attribution counts for paper-track
   screening. Each row includes a `readiness_gate` such as `diagnostic_ready`,
   `answer_candidate`, `sota_candidate`, or `needs_attention`, plus explicit
-  reasons so paper scripts can filter results without parsing prose.
+  reasons so paper scripts can filter results without parsing prose. Mechanism
+  error-analysis claims count as diagnostic-ready only when the usual scope,
+  warning, and raw-record gates pass.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records

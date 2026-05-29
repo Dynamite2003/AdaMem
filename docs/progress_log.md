@@ -2421,3 +2421,24 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `151 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 claim audit failure-attribution evidence
+
+- Extended `adamem.claims` so experiment audits summarize case-level
+  `failure_attributions` when raw outputs or sidecar records include them.
+- Added `failure_attribution_error_analysis` as a supported claim for
+  retrieval/diagnostic artifacts with attribution evidence.
+- Claim-audit Markdown now includes `Failure Attribution Evidence`, with
+  record count, attribution counts, top attribution, and compact
+  representative examples.
+- Batch claim-matrix gating now treats `_analysis` claims as diagnostic claims
+  once record, warning, and dataset-scope gates pass.
+- Purpose:
+  - Make attribution taxonomy results visible in the paper-claim audit path,
+    while still blocking answer-accuracy and SOTA claims for retrieval-only
+    artifacts.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py -q` -> `20 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `152 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

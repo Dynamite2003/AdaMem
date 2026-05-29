@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from adamem.compare import paired_comparison_summary
+from adamem.error_taxonomy import attribution_counts
 from adamem.tables import load_benchmark_records
 
 
@@ -107,6 +108,10 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         warnings.append("experiment commit is missing")
     if not experiment.get("dataset"):
         warnings.append("experiment dataset is missing")
+    attribution_evidence = _failure_attribution_claim_evidence(claim_records)
+    if attribution_evidence:
+        claim_evidence["failure_attributions"] = attribution_evidence
+        supported.append("failure_attribution_error_analysis")
     supported = list(dict.fromkeys(supported))
 
     return {
@@ -199,6 +204,26 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
                 f"resolved `{summary['corrected_forbidden_records']}`, "
                 f"unresolved `{summary['unresolved_forbidden_records']}`"
             )
+    attribution = claim_evidence.get("failure_attributions")
+    if attribution:
+        lines.append("")
+        lines.append("## Failure Attribution Evidence")
+        lines.append(f"- Records: `{attribution['records']}`")
+        lines.append(
+            "- Top attribution: "
+            f"`{attribution['top_failure_attribution']}` "
+            f"(`{attribution['top_failure_attribution_count']}`)"
+        )
+        for label, count in attribution.get("failure_attributions", {}).items():
+            lines.append(f"- Attribution: `{label}` count `{count}`")
+        for label, examples in attribution.get("examples_by_failure_attribution", {}).items():
+            for example in examples:
+                lines.append(
+                    "- Example: "
+                    f"`{label}` baseline `{example.get('baseline') or '?'}`, "
+                    f"case `{example.get('case_id') or '?'}`, "
+                    f"query `{example.get('query_id') or '?'}`"
+                )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -391,6 +416,61 @@ def _retrieval_claim_evidence(
     if not evidence["supported_claims"]:
         return {}
     return evidence
+
+
+def _failure_attribution_claim_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:
+    records_with_attributions = [
+        record for record in records if record.get("failure_attributions")
+    ]
+    if not records_with_attributions:
+        return {}
+    counts = attribution_counts(records_with_attributions)
+    top_label = ""
+    top_count = 0
+    if counts:
+        top_label, top_count = next(iter(counts.items()))
+    return {
+        "records": len(records_with_attributions),
+        "failure_attributions": counts,
+        "top_failure_attribution": top_label,
+        "top_failure_attribution_count": top_count,
+        "examples_by_failure_attribution": _examples_by_failure_attribution(
+            records_with_attributions
+        ),
+    }
+
+
+def _examples_by_failure_attribution(
+    records: list[dict[str, Any]],
+    *,
+    max_examples: int = 2,
+) -> dict[str, list[dict[str, Any]]]:
+    examples: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        for attribution in record.get("failure_attributions") or []:
+            bucket = examples.setdefault(str(attribution), [])
+            if len(bucket) >= max_examples:
+                continue
+            bucket.append({
+                "baseline": record.get("baseline"),
+                "case_id": record.get("case_id"),
+                "query_id": record.get("query_id"),
+                "failure_modes": list(record.get("failure_modes") or []),
+                "top_retrieved": _top_retrieved(record),
+            })
+    return examples
+
+
+def _top_retrieved(record: dict[str, Any]) -> str:
+    retrieved = record.get("retrieved") or record.get("retrieved_texts") or []
+    if not isinstance(retrieved, list) or not retrieved:
+        return ""
+    first = retrieved[0]
+    if isinstance(first, dict):
+        text = first.get("text") or first.get("content") or first.get("memory") or ""
+    else:
+        text = str(first)
+    return str(text)[:240]
 
 
 def _premise_correction_baselines(

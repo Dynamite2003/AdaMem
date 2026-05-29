@@ -227,6 +227,16 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
             "warnings": ["ground_truth_runtime_use is not explicitly forbidden"],
             "claim_evidence": {},
         },
+        {
+            "experiment": "failure_analysis.experiment.json",
+            "run_type": "jsonl_retrieval_benchmark",
+            "dataset": "dataset.jsonl",
+            "raw_output_count": 5,
+            "supported_claims": ["failure_attribution_error_analysis"],
+            "blocked_claims": {"answer_accuracy": ["not generation"]},
+            "warnings": [],
+            "claim_evidence": {},
+        },
     ])
 
     by_name = {Path(row["experiment"]).name: row for row in rows}
@@ -240,6 +250,7 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
         "no_case_level_or_raw_records",
         "unclassified_experiment",
     ]
+    assert by_name["failure_analysis.experiment.json"]["readiness_gate"] == "diagnostic_ready"
 
 
 def test_claim_matrix_flattens_failure_attribution_evidence() -> None:

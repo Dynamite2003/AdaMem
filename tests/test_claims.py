@@ -163,6 +163,60 @@ def test_claim_audit_supports_unknown_current_trace_resolution(tmp_path: Path) -
     assert "Unknown-current" in markdown
 
 
+def test_claim_audit_summarizes_failure_attribution_evidence(tmp_path: Path) -> None:
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="jsonl_retrieval_benchmark",
+        baseline_names=["semantic_only", "semantic_state_readout"],
+        notes={
+            "ground_truth_runtime_use": "forbidden",
+            "ground_truth_evaluation_use": "query_metadata_only",
+        },
+        raw_outputs=[
+            {
+                "baseline": "semantic_state_readout",
+                "case_id": "case-1",
+                "query_id": "q1",
+                "passed": False,
+                "failure_modes": ["expected_support_missing"],
+                "failure_attributions": [
+                    "state_authority_absent_or_extraction_failure"
+                ],
+                "retrieved": ["old location evidence"],
+            },
+            {
+                "baseline": "semantic_only",
+                "case_id": "case-2",
+                "query_id": "q2",
+                "passed": False,
+                "failure_modes": ["no_retrieval"],
+                "failure_attributions": ["retrieval_failure"],
+                "retrieved": [],
+            },
+        ],
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+    attribution = audit["claim_evidence"]["failure_attributions"]
+
+    assert "failure_attribution_error_analysis" in audit["supported_claims"]
+    assert attribution["records"] == 2
+    assert attribution["top_failure_attribution"] == "retrieval_failure"
+    assert attribution["top_failure_attribution_count"] == 1
+    assert attribution["failure_attributions"] == {
+        "retrieval_failure": 1,
+        "state_authority_absent_or_extraction_failure": 1,
+    }
+    assert (
+        attribution["examples_by_failure_attribution"][
+            "state_authority_absent_or_extraction_failure"
+        ][0]["top_retrieved"]
+        == "old location evidence"
+    )
+    assert "Failure Attribution Evidence" in markdown
+
+
 def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path: Path) -> None:
     records = tmp_path / "lme_v2.records.jsonl"
     state_evidence = tmp_path / "state_evidence.summary.json"

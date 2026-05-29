@@ -238,6 +238,9 @@ Current implementation:
 - Reports include representative examples for each attribution, making it
   easier to manually verify whether the triage label is a real mechanism
   failure before using it in a paper table or discussion.
+- Claim audits surface attribution counts and compact representative examples
+  as `failure_attribution_error_analysis`, while still blocking answer
+  accuracy and SOTA claims when the run has only retrieval diagnostics.
 - Markdown failure reports aggregate records by failure mode, baseline, STALE
   dimension, stale type, and representative examples.
 

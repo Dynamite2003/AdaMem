@@ -248,6 +248,7 @@ def _has_diagnostic_claim(supported: set[str]) -> bool:
         claim.endswith("_diagnostics")
         or claim.endswith("_readiness")
         or claim.endswith("_audit")
+        or claim.endswith("_analysis")
         or claim.endswith("_resolution")
         or claim.endswith("_no_regression")
         or claim.endswith("_transfer")
