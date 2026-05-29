@@ -78,16 +78,27 @@ Current implementation:
 - The method audit checks four directory-level requirements: raw retrieval
   reference, mainstream memory approximation, proposed state-aware method, and
   mechanism ablation coverage.
+- Baseline registry entries now record source/provenance metadata, including
+  whether a mainstream baseline is an API-free local approximation rather than
+  an official or faithful reproduction.
+- Method coverage reports `sota_baseline_reproduction_ready`,
+  `baseline_reproduction_gaps`, and API-free mainstream approximations so
+  A-MEM, Zep/Graphiti, and Mem0-inspired local controls are not mistaken for
+  strong baseline reproductions.
 - It separately flags named mechanism evidence for state readout, dependency
   propagation, source adjudication, premise correction, LLM state extraction,
   and trajectory-step readout.
-- `paper_readiness.json/md` includes method coverage completeness and method
-  gaps alongside benchmark and model-robustness gates.
+- `paper_readiness.json/md` includes method coverage completeness, method
+  gaps, and baseline-reproduction gaps alongside benchmark and model-robustness
+  gates.
 
 Required next evidence:
 
 - Run STALE answer/judge experiments with the full method matrix, not only the
   best current configuration.
+- Replace or validate the API-free A-MEM, Zep/Graphiti, and Mem0
+  approximations against official implementations or faithful reimplementations
+  before making SOTA-style claims.
 - Treat missing named mechanism ablations as a paper-table gap until the result
   directory explains why a mechanism is out of scope for that benchmark.
 

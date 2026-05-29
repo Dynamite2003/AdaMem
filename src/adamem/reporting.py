@@ -18,6 +18,11 @@ from adamem.compare import paired_comparison_markdown, paired_comparison_summary
 from adamem.error_taxonomy import attribution_counts, attribution_counts_by_baseline
 from adamem.tables import load_benchmark_records, paper_table_markdown, paper_table_summary
 
+SOTA_BASELINE_REPRODUCTION_STATUSES = {
+    "official_reproduction",
+    "faithful_reimplementation",
+}
+
 
 def write_experiment_bundle(
     experiment_path: str | Path,
@@ -409,6 +414,28 @@ def method_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, An
         category: sorted(names)
         for category, names in sorted(categories.items())
     }
+    baseline_provenance = {
+        name: {
+            "category": specs[name].category,
+            **specs[name].provenance_dict(),
+        }
+        for name in baseline_names
+    }
+    reproduction_status_counts = _count_values(
+        item["implementation_status"] for item in baseline_provenance.values()
+    )
+    mainstream_names = sorted(category_lists.get("mainstream_approximation") or [])
+    mainstream_approximations = [
+        name for name in mainstream_names
+        if baseline_provenance[name]["implementation_status"] == "api_free_approximation"
+    ]
+    official_or_faithful_mainstream = [
+        name for name in mainstream_names
+        if baseline_provenance[name]["implementation_status"] in SOTA_BASELINE_REPRODUCTION_STATUSES
+    ]
+    baseline_reproduction_gaps: list[str] = []
+    if mainstream_names and not official_or_faithful_mainstream:
+        baseline_reproduction_gaps.append("official_or_faithful_mainstream_reproduction")
     required_groups = {
         "raw_retrieval_reference": _category_present(categories, {"raw_turn_retrieval"}),
         "mainstream_memory_approximation": _category_present(categories, {"mainstream_approximation"}),
@@ -461,6 +488,13 @@ def method_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, An
             category: len(names)
             for category, names in category_lists.items()
         },
+        "baseline_provenance": baseline_provenance,
+        "reproduction_status_counts": reproduction_status_counts,
+        "mainstream_approximation_names": mainstream_names,
+        "mainstream_api_free_approximations": mainstream_approximations,
+        "official_or_faithful_mainstream_reproductions": official_or_faithful_mainstream,
+        "sota_baseline_reproduction_ready": bool(official_or_faithful_mainstream),
+        "baseline_reproduction_gaps": baseline_reproduction_gaps,
         "required_groups": required_groups,
         "mechanism_flags": mechanism_flags,
         "missing_requirements": missing_requirements,
@@ -483,6 +517,21 @@ def method_coverage_markdown(summary: dict[str, Any]) -> str:
         "Missing requirements: "
         + (", ".join(f"`{item}`" for item in missing) if missing else "`none`")
     )
+    reproduction_gaps = summary.get("baseline_reproduction_gaps") or []
+    lines.append(
+        "SOTA baseline reproduction ready: "
+        f"`{bool(summary.get('sota_baseline_reproduction_ready'))}`"
+    )
+    lines.append(
+        "Baseline reproduction gaps: "
+        + (", ".join(f"`{item}`" for item in reproduction_gaps) if reproduction_gaps else "`none`")
+    )
+    approximations = summary.get("mainstream_api_free_approximations") or []
+    if approximations:
+        lines.append(
+            "API-free mainstream approximations: "
+            + ", ".join(f"`{item}`" for item in approximations)
+        )
     lines.append("")
     lines.append("## Required Groups")
     for group, present in (summary.get("required_groups") or {}).items():
@@ -504,6 +553,21 @@ def method_coverage_markdown(summary: dict[str, Any]) -> str:
         lines.append("- `<none>`")
     for category, names in categories.items():
         lines.append(f"- `{category}`: {', '.join(f'`{name}`' for name in names)}")
+    provenance = summary.get("baseline_provenance") or {}
+    if provenance:
+        lines.append("")
+        lines.append("## Baseline Provenance")
+        lines.append("| baseline | status | source | note |")
+        lines.append("| --- | --- | --- | --- |")
+        for name, info in provenance.items():
+            source = str(info.get("source_name") or "-")
+            url = str(info.get("source_url") or "")
+            if url:
+                source = f"[{source}]({url})"
+            lines.append(
+                f"| `{name}` | `{info.get('implementation_status') or '<missing>'}` | "
+                f"{source} | {info.get('reproduction_note') or ''} |"
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -545,6 +609,16 @@ def paper_readiness_summary(
             method_coverage.get("missing_named_mechanism_ablations") or []
         ),
         "method_categories": dict(method_coverage.get("category_counts") or {}),
+        "sota_baseline_reproduction_ready": bool(
+            method_coverage.get("sota_baseline_reproduction_ready")
+        ),
+        "baseline_reproduction_gaps": list(method_coverage.get("baseline_reproduction_gaps") or []),
+        "baseline_reproduction_status_counts": dict(
+            method_coverage.get("reproduction_status_counts") or {}
+        ),
+        "mainstream_api_free_approximations": list(
+            method_coverage.get("mainstream_api_free_approximations") or []
+        ),
     }
 
 
@@ -559,6 +633,10 @@ def paper_readiness_markdown(summary: dict[str, Any]) -> str:
     )
     lines.append(f"Benchmark coverage complete: `{bool(summary.get('benchmark_coverage_complete'))}`")
     lines.append(f"Method coverage complete: `{bool(summary.get('method_coverage_complete'))}`")
+    lines.append(
+        "SOTA baseline reproduction ready: "
+        f"`{bool(summary.get('sota_baseline_reproduction_ready'))}`"
+    )
     lines.append("")
     lines.append("## Gates")
     for gate, count in (summary.get("gate_counts") or {}).items():
@@ -598,6 +676,18 @@ def paper_readiness_markdown(summary: dict[str, Any]) -> str:
         lines.append("")
         lines.append("## Missing Named Mechanism Ablations")
         for item in missing_mechanisms:
+            lines.append(f"- `{item}`")
+    reproduction_gaps = summary.get("baseline_reproduction_gaps") or []
+    if reproduction_gaps:
+        lines.append("")
+        lines.append("## Baseline Reproduction Gaps")
+        for item in reproduction_gaps:
+            lines.append(f"- `{item}`")
+    approximations = summary.get("mainstream_api_free_approximations") or []
+    if approximations:
+        lines.append("")
+        lines.append("## API-Free Mainstream Approximations")
+        for item in approximations:
             lines.append(f"- `{item}`")
     return "\n".join(lines) + "\n"
 

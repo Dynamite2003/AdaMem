@@ -339,11 +339,25 @@ def test_method_coverage_summary_tracks_paper_method_groups() -> None:
         "mechanism_ablation": True,
     }
     assert summary["missing_requirements"] == ["known_baseline_names_only"]
+    assert summary["baseline_provenance"]["a_mem_evolution"]["source_name"] == "A-MEM"
+    assert summary["baseline_provenance"]["a_mem_evolution"]["implementation_status"] == (
+        "api_free_approximation"
+    )
+    assert summary["reproduction_status_counts"]["api_free_approximation"] == 1
+    assert summary["mainstream_api_free_approximations"] == ["a_mem_evolution"]
+    assert summary["official_or_faithful_mainstream_reproductions"] == []
+    assert summary["sota_baseline_reproduction_ready"] is False
+    assert summary["baseline_reproduction_gaps"] == [
+        "official_or_faithful_mainstream_reproduction"
+    ]
     assert summary["mechanism_flags"]["state_readout"] is True
     assert summary["mechanism_flags"]["premise_correction"] is True
     assert summary["mechanism_flags"]["llm_state_extractor"] is False
     assert "custom_memory" in markdown
     assert "`proposed_state_aware_method`: `True`" in markdown
+    assert "SOTA baseline reproduction ready: `False`" in markdown
+    assert "`official_or_faithful_mainstream_reproduction`" in markdown
+    assert "[A-MEM](https://arxiv.org/abs/2502.12110)" in markdown
 
 
 def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() -> None:
@@ -411,6 +425,11 @@ def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() ->
     assert summary["complete_study_model_group_count"] == 1
     assert summary["benchmark_coverage_complete"] is True
     assert summary["method_coverage_complete"] is True
+    assert summary["sota_baseline_reproduction_ready"] is False
+    assert summary["baseline_reproduction_gaps"] == [
+        "official_or_faithful_mainstream_reproduction"
+    ]
+    assert summary["mainstream_api_free_approximations"] == ["a_mem_evolution"]
     assert summary["method_categories"] == {
         "mainstream_approximation": 1,
         "raw_turn_retrieval": 1,
@@ -423,6 +442,8 @@ def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() ->
     }
     assert "answer_candidate_with_model_coverage" in markdown
     assert "Method coverage complete: `True`" in markdown
+    assert "SOTA baseline reproduction ready: `False`" in markdown
+    assert "## Baseline Reproduction Gaps" in markdown
 
 
 def test_paper_next_steps_markdown_groups_actions() -> None:

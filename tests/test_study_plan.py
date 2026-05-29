@@ -268,6 +268,11 @@ def test_validate_paper_study_plan_reports_placeholders_and_missing_paths(tmp_pa
     assert "replace_model_placeholders" in validation["missing_requirements"]
     assert "<answer_provider_a>:<answer_model_a>" in validation["placeholder_models"]
     assert validation["method_coverage_complete"] is True
+    assert validation["sota_baseline_reproduction_ready"] is False
+    assert validation["baseline_reproduction_gaps"] == [
+        "official_or_faithful_mainstream_reproduction"
+    ]
+    assert "a_mem_evolution" in validation["mainstream_api_free_approximations"]
     assert validation["command_count"] == 11
     assert validation["command_stage_counts"]["data_prep"] == 2
     assert validation["reporting_command_present"] is True

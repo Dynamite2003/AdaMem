@@ -11,9 +11,21 @@ class BaselineSpec:
     category: str
     description: str
     config: AdaMemConfig
+    source_name: str = "AdaMem"
+    source_url: str = ""
+    implementation_status: str = "adamem_native"
+    reproduction_note: str = "Project-native method or local control."
 
     def config_dict(self) -> dict[str, object]:
         return asdict(self.config)
+
+    def provenance_dict(self) -> dict[str, str]:
+        return {
+            "source_name": self.source_name,
+            "source_url": self.source_url,
+            "implementation_status": self.implementation_status,
+            "reproduction_note": self.reproduction_note,
+        }
 
 
 def baseline_registry() -> dict[str, BaselineSpec]:
@@ -76,6 +88,13 @@ def baseline_registry() -> dict[str, BaselineSpec]:
                 "use_auto_links": True,
                 "use_memory_evolution": True,
             }),
+            source_name="A-MEM",
+            source_url="https://arxiv.org/abs/2502.12110",
+            implementation_status="api_free_approximation",
+            reproduction_note=(
+                "Approximates memory evolution locally; replace with or validate against "
+                "the official implementation before SOTA-style claims."
+            ),
         ),
         BaselineSpec(
             name="zep_temporal_kg",
@@ -91,6 +110,13 @@ def baseline_registry() -> dict[str, BaselineSpec]:
                 "use_temporal_kg_memory": True,
                 "use_temporal_kg_readout": True,
             }),
+            source_name="Zep/Graphiti",
+            source_url="https://arxiv.org/abs/2501.13956",
+            implementation_status="api_free_approximation",
+            reproduction_note=(
+                "Approximates temporal KG validity and readout locally; replace with or "
+                "validate against Graphiti/Zep before SOTA-style claims."
+            ),
         ),
         BaselineSpec(
             name="mem0_extraction",
@@ -105,6 +131,13 @@ def baseline_registry() -> dict[str, BaselineSpec]:
                 "use_salient_memory_only": True,
                 "use_salient_memory_readout": True,
             }),
+            source_name="Mem0",
+            source_url="https://arxiv.org/abs/2504.19413",
+            implementation_status="api_free_approximation",
+            reproduction_note=(
+                "Approximates salient extraction and compact readout locally; replace "
+                "with or validate against official Mem0 before SOTA-style claims."
+            ),
         ),
         BaselineSpec(
             name="trajectory_step_readout",
@@ -327,8 +360,14 @@ def select_baselines(
 def baseline_report(specs: dict[str, BaselineSpec] | None = None) -> str:
     specs = specs or baseline_registry()
     lines = ["# AdaMem Baseline Registry", ""]
-    lines.append("| name | category | description |")
-    lines.append("| --- | --- | --- |")
+    lines.append("| name | category | implementation | source | description |")
+    lines.append("| --- | --- | --- | --- | --- |")
     for spec in specs.values():
-        lines.append(f"| {spec.name} | {spec.category} | {spec.description} |")
+        source = spec.source_name
+        if spec.source_url:
+            source = f"[{source}]({spec.source_url})"
+        lines.append(
+            f"| {spec.name} | {spec.category} | {spec.implementation_status} | "
+            f"{source} | {spec.description} |"
+        )
     return "\n".join(lines) + "\n"

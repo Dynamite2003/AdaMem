@@ -750,10 +750,13 @@ Completed API-free foundations:
   state-aware method, and mechanism ablations. It also flags missing named
   mechanisms such as state readout, dependency propagation, source
   adjudication, premise correction, LLM state extraction, and trajectory-step
-  readout. `paper_readiness.json` and `paper_readiness.md` summarize
+  readout. The same method audit records baseline provenance and separates
+  API-free mainstream approximations from official or faithful reproductions,
+  so SOTA-style claims remain blocked until strong baselines are actually
+  reproduced. `paper_readiness.json` and `paper_readiness.md` summarize
   directory-level gate counts, top next actions, complete vs incomplete
-  study-level model coverage, benchmark coverage gaps, and method coverage
-  gaps.
+  study-level model coverage, benchmark coverage gaps, method coverage gaps,
+  and baseline-reproduction gaps.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records

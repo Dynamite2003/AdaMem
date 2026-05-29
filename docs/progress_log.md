@@ -3295,3 +3295,40 @@ to a paper-facing claim and evaluation gate.
     `stale_answer_openai_gpt_a_gemini_gemini_j` reported providers
     `gemini,openai`, env vars `GEMINI_API_KEY,OPENAI_API_KEY`, and both new
     fields were present.
+
+### 2026-05-30 baseline provenance and reproduction gate
+
+- Added baseline provenance metadata to the registry:
+  - source name and URL
+  - implementation status
+  - reproduction note
+- Marked the current A-MEM, Zep/Graphiti, and Mem0 baselines as API-free
+  approximations rather than official or faithful reproductions.
+- Extended method coverage and paper readiness artifacts with:
+  - `baseline_provenance`
+  - `reproduction_status_counts`
+  - `sota_baseline_reproduction_ready`
+  - `baseline_reproduction_gaps`
+  - API-free mainstream approximation lists
+- Extended paper-study validation/Markdown to expose the same SOTA baseline
+  reproduction boundary before API pilots are launched.
+- Purpose:
+  - Keep SOTA claims blocked until mainstream memory baselines are reproduced
+    with official implementations or defensible faithful reimplementations.
+  - Preserve the usefulness of local API-free approximations as engineering
+    controls without overstating them as strong published baselines.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_experiments.py tests/test_reporting.py -q` -> `19 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_experiments.py tests/test_reporting.py tests/test_study_plan.py -q` -> `56 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `197 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI reporting smoke on an A-MEM/state batch reported
+    `sota_baseline_reproduction_ready=False`,
+    `baseline_reproduction_gaps=official_or_faithful_mainstream_reproduction`,
+    and `mainstream_api_free_approximations=a_mem_evolution`.
+  - CLI smoke-study validation reported
+    `sota_baseline_reproduction_ready=False`,
+    `baseline_reproduction_gaps=official_or_faithful_mainstream_reproduction`,
+    and mainstream approximations
+    `a_mem_evolution,mem0_extraction,zep_temporal_kg`.

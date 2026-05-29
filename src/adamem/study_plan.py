@@ -858,6 +858,13 @@ def validate_paper_study_plan(
         "method_missing_named_mechanism_ablations": list(
             method_coverage.get("missing_named_mechanism_ablations") or []
         ),
+        "sota_baseline_reproduction_ready": bool(
+            method_coverage.get("sota_baseline_reproduction_ready")
+        ),
+        "baseline_reproduction_gaps": list(method_coverage.get("baseline_reproduction_gaps") or []),
+        "mainstream_api_free_approximations": list(
+            method_coverage.get("mainstream_api_free_approximations") or []
+        ),
         "command_count": len(commands),
         "command_stage_counts": command_stages,
         "reporting_command_present": reporting_command_present,
@@ -944,6 +951,20 @@ def paper_study_validation_markdown(validation: dict[str, Any]) -> str:
         "- Missing named mechanism ablations: "
         + (", ".join(f"`{item}`" for item in mechanism_gaps) if mechanism_gaps else "`none`")
     )
+    lines.append(
+        "- SOTA baseline reproduction ready: "
+        f"`{bool(validation.get('sota_baseline_reproduction_ready'))}`"
+    )
+    reproduction_gaps = validation.get("baseline_reproduction_gaps") or []
+    lines.append(
+        "- Baseline reproduction gaps: "
+        + (", ".join(f"`{item}`" for item in reproduction_gaps) if reproduction_gaps else "`none`")
+    )
+    approximations = validation.get("mainstream_api_free_approximations") or []
+    lines.append(
+        "- API-free mainstream approximations: "
+        + (", ".join(f"`{item}`" for item in approximations) if approximations else "`none`")
+    )
     lines.append("")
     lines.append("## Commands")
     lines.append(f"- Total: `{int(validation.get('command_count') or 0)}`")
@@ -989,6 +1010,15 @@ def paper_study_plan_markdown(plan: dict[str, Any]) -> str:
     lines.append(f"- Complete required groups: `{bool(coverage.get('complete'))}`")
     missing = coverage.get("missing_requirements") or []
     lines.append("- Missing requirements: " + (", ".join(f"`{item}`" for item in missing) if missing else "`none`"))
+    lines.append(
+        "- SOTA baseline reproduction ready: "
+        f"`{bool(coverage.get('sota_baseline_reproduction_ready'))}`"
+    )
+    reproduction_gaps = coverage.get("baseline_reproduction_gaps") or []
+    lines.append(
+        "- Baseline reproduction gaps: "
+        + (", ".join(f"`{item}`" for item in reproduction_gaps) if reproduction_gaps else "`none`")
+    )
     mechanisms = coverage.get("mechanism_flags") or {}
     for name, present in mechanisms.items():
         lines.append(f"- `{name}`: `{bool(present)}`")
