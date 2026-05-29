@@ -163,6 +163,87 @@ def test_claim_audit_supports_unknown_current_trace_resolution(tmp_path: Path) -
     assert "Unknown-current" in markdown
 
 
+def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path: Path) -> None:
+    records = tmp_path / "lme_v2.records.jsonl"
+    rows = []
+    for index in range(10):
+        rows.append(
+            _retrieval_record(
+                "semantic_only",
+                f"q{index}",
+                evidence=index % 2 == 0,
+            )
+        )
+        rows.append(
+            _retrieval_record(
+                "semantic_state_readout",
+                f"q{index}",
+                evidence=index % 2 == 0,
+            )
+        )
+    records.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="longmemeval_v2_prepared_answer_support_pilot",
+        baseline_names=["semantic_only", "semantic_state_readout"],
+        notes={
+            "ground_truth_runtime_use": "forbidden",
+            "ground_truth_evaluation_use": "query_metadata_only",
+            "records_path": "lme_v2.records.jsonl",
+            "metric_boundary": "retrieval answer-string support, not final generated answer accuracy",
+            "answer_model_required": False,
+            "judge_model_required": False,
+            "validation_summary_path": "validation/longmemeval_v2_prepared_validation.summary.json",
+        },
+        baseline_configs={
+            "semantic_state_readout": {
+                "use_state_memory": True,
+                "use_state_readout": True,
+            },
+        },
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+
+    assert "retrieval_diagnostics" in audit["supported_claims"]
+    assert "longmemeval_v2_prepared_split_readiness" in audit["supported_claims"]
+    assert "retrieval_answer_string_support_diagnostics" in audit["supported_claims"]
+    assert "answerability_diagnostics" not in audit["supported_claims"]
+    assert "paired_retrieval_no_regression" in audit["supported_claims"]
+    assert audit["blocked_claims"]["answer_accuracy"] == [
+        "run_type is retrieval/answerability, not answer generation"
+    ]
+    assert audit["blocked_claims"]["sota"] == [
+        "no final answer model and judge model evaluation"
+    ]
+    assert audit["warnings"] == []
+    assert audit["raw_output_count"] == 20
+    assert "`longmemeval_v2_prepared_split_readiness`" in markdown
+
+
+def test_claim_audit_warns_when_longmemeval_v2_metric_boundary_is_missing(tmp_path: Path) -> None:
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="longmemeval_v2_prepared_answer_support_pilot",
+        baseline_names=["semantic_only", "semantic_state_readout"],
+        notes={
+            "ground_truth_runtime_use": "forbidden",
+            "ground_truth_evaluation_use": "query_metadata_only",
+        },
+    )
+
+    audit = audit_experiment(experiment)
+
+    assert "longmemeval_v2_prepared_split_readiness" in audit["supported_claims"]
+    assert audit["warnings"] == [
+        "LongMemEval-V2 prepared pilot metric_boundary is missing or unexpected"
+    ]
+
+
 def test_claim_audit_marks_mock_answer_generation_as_plumbing(tmp_path: Path) -> None:
     experiment = _write_experiment(
         tmp_path,

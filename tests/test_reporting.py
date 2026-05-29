@@ -70,6 +70,28 @@ def test_write_experiment_bundle_supports_stale_retrieval_diagnostics(tmp_path: 
     assert "premise correction hit" in table
 
 
+def test_write_experiment_bundle_supports_longmemeval_v2_prepared_pilot(tmp_path: Path) -> None:
+    experiment = _write_lme_v2_prepared_experiment(tmp_path)
+    output_dir = tmp_path / "lme-v2-bundle"
+
+    manifest = write_experiment_bundle(
+        experiment,
+        output_dir,
+        group_fields=["question_type", "selection_group"],
+    )
+
+    assert manifest["record_kind"] == "retrieval"
+    assert "longmemeval_v2_prepared_split_readiness" in manifest["supported_claims"]
+    assert "answer_accuracy" in manifest["blocked_claims"]
+    assert "table_error" not in manifest
+    artifacts = manifest["artifacts"]
+    assert Path(artifacts["claim_audit_markdown"]).exists()
+    assert Path(artifacts["paper_tables_markdown"]).exists()
+    assert Path(artifacts["paired_comparison_markdown"]).exists()
+    audit = Path(artifacts["claim_audit_markdown"]).read_text(encoding="utf-8")
+    assert "`retrieval_answer_string_support_diagnostics`" in audit
+
+
 def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     experiment_a = _write_answer_generation_experiment(tmp_path, stem="generation_a")
     experiment_b = _write_answer_generation_experiment(tmp_path, stem="generation_b")
@@ -194,6 +216,82 @@ def _write_stale_retrieval_diagnostic_experiment(tmp_path: Path) -> Path:
                 "ground_truth_runtime_use": "forbidden",
                 "answer_model_required": False,
                 "judge_model_required": False,
+            },
+            "commit": "abc123",
+        }),
+        encoding="utf-8",
+    )
+    return experiment
+
+
+def _write_lme_v2_prepared_experiment(tmp_path: Path) -> Path:
+    records_path = tmp_path / "lme_v2_prepared.records.jsonl"
+    records = []
+    for baseline in ["semantic_only", "semantic_state_readout"]:
+        records.append({
+            "baseline": baseline,
+            "case_id": "q-dynamic",
+            "query_id": "q-dynamic",
+            "query": "Is the staging build runner online?",
+            "passed": True,
+            "expected": ["online"],
+            "matched": ["online"],
+            "missing": [],
+            "expected_evidence": [],
+            "evidence_support_matched": False,
+            "answer_keywords": ["online"],
+            "missing_answer_keywords": [],
+            "answer_keyword_recall": 1.0,
+            "answer_keyword_matched": True,
+            "answer_keyword_support_matched": True,
+            "answer_basis": "",
+            "basis_missing_answer_keywords": ["online"],
+            "basis_answer_keyword_recall": 0.0,
+            "basis_answer_keyword_support_matched": False,
+            "retrieved": ["The staging build runner status is online."],
+            "trace": [],
+            "failure_modes": [],
+            "state_retrieval_count": 0,
+            "retrieved_state_slots": [],
+            "expected_state_slots": [],
+            "unexpected_state_slots": [],
+            "state_slot_matched": False,
+            "state_sensitive": False,
+            "state_available": False,
+            "state_readout_expected": False,
+            "graph_retrieval_count": 0,
+            "graph_evidence_hits": [],
+            "graph_evidence_hit_count": 0,
+            "metadata": {
+                "question_type": "dynamic-environment",
+                "selection_group": "dynamic-environment",
+            },
+        })
+    records_path.write_text(
+        "\n".join(json.dumps(record) for record in records) + "\n",
+        encoding="utf-8",
+    )
+    experiment = tmp_path / "lme_v2_prepared.experiment.json"
+    experiment.write_text(
+        json.dumps({
+            "run_name": "longmemeval_v2_prepared_answer",
+            "run_type": "longmemeval_v2_prepared_answer_support_pilot",
+            "dataset": "results/lme/longmemeval_v2_prepared.answer.adamem.jsonl",
+            "baseline_names": ["semantic_only", "semantic_state_readout"],
+            "baseline_configs": {
+                "semantic_state_readout": {
+                    "use_state_memory": True,
+                    "use_state_readout": True,
+                }
+            },
+            "results": {},
+            "raw_outputs": [],
+            "notes": {
+                "records_path": records_path.name,
+                "ground_truth_runtime_use": "forbidden",
+                "ground_truth_evaluation_use": "query_metadata_only",
+                "metric_boundary": "retrieval answer-string support, not final generated answer accuracy",
+                "validation_summary_path": "validation/longmemeval_v2_prepared_validation.summary.json",
             },
             "commit": "abc123",
         }),

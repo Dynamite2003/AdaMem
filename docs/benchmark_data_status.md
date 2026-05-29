@@ -232,6 +232,10 @@ Claim boundary:
 - The prepared pilot's answer-string support metric only asks whether retrieved
   memory contains the reference answer string. It must not be reported as final
   answer accuracy or SOTA evidence.
+- `adamem.claims` and `adamem.reporting` recognize prepared-pilot experiment
+  records as `longmemeval_v2_prepared_split_readiness` plus
+  `retrieval_answer_string_support_diagnostics`, while still blocking answer
+  accuracy and SOTA claims.
 - Answers and evaluator strings are query-only metadata; trajectory
   observations must remain free of answer labels.
 

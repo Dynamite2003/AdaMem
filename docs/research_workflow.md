@@ -50,6 +50,7 @@ PYTHONPATH=src python -m adamem.lme_v2 trajectory-manifest --split-records resul
 PYTHONPATH=src python -m adamem.lme_v2 extract-trajectories --trajectory-ids results/longmemeval_v2_trajectory_manifest/longmemeval_v2_split_trajectory_ids.jsonl --trajectories data/longmemeval-v2/trajectories.jsonl --output-dir data/longmemeval-v2/text_transfer_60 --json
 PYTHONPATH=src python -m adamem.lme_v2 validate-prep --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --questions data/longmemeval-v2/questions.jsonl --haystack data/longmemeval-v2/haystacks/lme_v2_small.json --trajectories data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl --output-dir results/longmemeval_v2_text_transfer_60_validation --json
 PYTHONPATH=src python -m adamem.pilot lme-v2-prepared --questions data/longmemeval-v2/questions.jsonl --trajectories data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl --haystack data/longmemeval-v2/haystacks/lme_v2_small.json --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --output-dir results/longmemeval_v2_text_transfer_60_pilot --baselines semantic_only semantic_state_readout semantic_state_premise_correction --top-k 8 --json
+PYTHONPATH=src python -m adamem.reporting results/longmemeval_v2_text_transfer_60_pilot/longmemeval_v2_prepared.answer.experiment.json --output-dir results/longmemeval_v2_text_transfer_60_bundle --group-fields question_type selection_group --json
 PYTHONPATH=src python -m adamem.convert longmemeval-v2 data/longmemeval-v2/questions.jsonl data/longmemeval-v2/trajectories.jsonl data/longmemeval-v2/haystacks/lme_v2_small.json /tmp/longmemeval_v2_small.adamem.jsonl --expected answer --top-k 8 --limit-per-type 5 --max-trajectories-per-question 20
 PYTHONPATH=src python -m adamem.convert longmemeval-v2 data/longmemeval-v2/questions.jsonl data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl data/longmemeval-v2/haystacks/lme_v2_small.json /tmp/longmemeval_v2_text_transfer_60.adamem.jsonl --question-ids-file results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --expected answer --top-k 8
 PYTHONPATH=src python -m adamem.convert ama data/ama_bench.jsonl benchmarks/ama_bench.adamem.jsonl --expected answer --top-k 8
@@ -90,6 +91,9 @@ Outputs:
   exact-split conversion, retrieval answer-string support records, Markdown
   report, and experiment JSON. This is a retrieval support diagnostic, not
   generated answer accuracy.
+- LongMemEval-V2 prepared-pilot report bundle with claim audit, grouped paper
+  tables, paired comparison, and an explicit block on answer-accuracy/SOTA
+  claims.
 - Notes on any regression before new work begins.
 
 Done when:
@@ -585,7 +589,9 @@ Completed API-free foundations:
 - `adamem.claims`, a claim/evidence audit command for experiment JSON files.
   It reports which paper claims an artifact can support, which claims are
   blocked, ground-truth runtime-use notes, provider settings, and embedded or
-  sidecar record counts.
+  sidecar record counts. It recognizes LongMemEval-V2 prepared pilots as
+  prepared-split readiness and retrieval answer-string support diagnostics,
+  not as answer accuracy.
 - `adamem.reporting`, a report-bundle command that combines `adamem.tables`
   and `adamem.claims` for one experiment JSON and writes paper tables, claim
   audit files, and a manifest. If the input is a directory, it batches every

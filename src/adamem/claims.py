@@ -41,13 +41,21 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
     if runtime_use != "forbidden":
         warnings.append("ground_truth_runtime_use is not explicitly forbidden")
 
-    if run_type in {
+    retrieval_run_types = {
         "jsonl_retrieval_benchmark",
         "ama_public_answerability_pilot",
         "ama_public_evidence_pilot",
-    }:
+        "longmemeval_v2_prepared_answer_support_pilot",
+    }
+    if run_type in retrieval_run_types:
         supported.append("retrieval_diagnostics")
-        supported.append("answerability_diagnostics")
+        if run_type == "longmemeval_v2_prepared_answer_support_pilot":
+            supported.append("longmemeval_v2_prepared_split_readiness")
+            supported.append("retrieval_answer_string_support_diagnostics")
+            if notes.get("metric_boundary") != "retrieval answer-string support, not final generated answer accuracy":
+                warnings.append("LongMemEval-V2 prepared pilot metric_boundary is missing or unexpected")
+        else:
+            supported.append("answerability_diagnostics")
         retrieval_evidence = _retrieval_claim_evidence(experiment, claim_records)
         if retrieval_evidence:
             claim_evidence["retrieval_transfer"] = retrieval_evidence

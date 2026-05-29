@@ -2097,3 +2097,25 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest tests/test_pilot.py -q` -> `6 passed`
   - `PYTHONPATH=src python -m pytest -q` -> `138 passed`
   - `git diff --check` -> no issues
+
+### 2026-05-30 LongMemEval-V2 prepared claim audit
+
+- Extended `adamem.claims` so
+  `longmemeval_v2_prepared_answer_support_pilot` is no longer treated as an
+  unclassified experiment.
+- The audit now supports only narrow prepared-pilot claims:
+  - `longmemeval_v2_prepared_split_readiness`
+  - `retrieval_answer_string_support_diagnostics`
+- The same audit continues to block answer-accuracy and SOTA claims because
+  the pilot has no answer model, judge model, or official strong-baseline
+  reproduction.
+- Added a warning when the prepared-pilot experiment is missing the expected
+  `metric_boundary` note.
+- Added report-bundle coverage so `adamem.reporting` writes claim audit,
+  paper tables, and paired comparison for prepared-pilot experiment records.
+- Updated the research workflow and benchmark data status docs with the report
+  bundle command and claim boundary.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py -q` -> `14 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `141 passed`
+  - `git diff --check` -> no issues
