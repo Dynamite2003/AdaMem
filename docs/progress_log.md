@@ -3546,6 +3546,42 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `205 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 refined state failure attribution
+
+- Refined JSONL failure attribution to separate state-sensitive failures into
+  narrower paper-triage labels:
+  - `state_extraction_no_state`
+  - `state_extraction_missing_expected_slot`
+  - `state_extraction_missing_active_expected_slot`
+  - `state_readout_failure`
+  - `state_routing_failure`
+  - `premise_correction_failure`
+  - `stale_adjudication_failure`
+- Kept the older umbrella label
+  `state_authority_absent_or_extraction_failure` for compatibility with
+  existing claim/reporting tests and historical experiment records.
+- Purpose:
+  - Make API-free and later API-backed transfer runs better at separating
+    observation-side state extraction failures from readout/routing/adjudication
+    failures.
+  - Support paper error analysis without overclaiming that a machine label alone
+    proves the causal failure.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_failure_attributions_separate_state_extraction_and_readout_failures -q`
+    -> `1 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_benchmark_failure_summary_groups_by_metadata tests/test_eval.py::test_jsonl_failure_attributions_separate_state_extraction_and_readout_failures tests/test_claims.py::test_claim_audit_summarizes_failure_attribution_evidence -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py tests/test_claims.py tests/test_reporting.py -q`
+    -> `61 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `206 passed`
+  - `python -m compileall -q src` -> no issues
+  - Re-ran focused attribution test after formatting cleanup:
+    `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_failure_attributions_separate_state_extraction_and_readout_failures -q`
+    -> `1 passed`
+  - Re-ran full suite after formatting cleanup:
+    `PYTHONPATH=src python -m pytest -q` -> `206 passed`
+  - `python -m compileall -q src` -> no issues
   - `PYTHONPATH=src python -m pytest tests/test_eval.py -q` -> `29 passed`
   - CLI trace smoke on `benchmarks/unknown_current_state_transfer.jsonl`
     confirmed `unknown_beverage_premise_resistance` correction metadata includes

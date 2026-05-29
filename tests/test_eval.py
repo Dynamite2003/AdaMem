@@ -981,6 +981,70 @@ def test_jsonl_benchmark_failure_summary_groups_by_metadata() -> None:
     assert summary["failure_modes"]["state_readout_missing"] == 9
 
 
+def test_jsonl_failure_attributions_separate_state_extraction_and_readout_failures() -> None:
+    missing_slot_case = MemoryQACase(
+        id="missing_expected_state_slot",
+        observations=[
+            ObservationSpec(content="I relocated to Boston for a new job."),
+        ],
+        queries=[
+            QuerySpec(
+                id="missing_beverage_state",
+                query="What drink should I order for the user?",
+                expected_substrings=["tea"],
+                top_k=1,
+                metadata={
+                    "dimension": "implicit_policy_adaptation",
+                    "state_slot": "preference.beverage",
+                },
+            )
+        ],
+    )
+    readout_disabled_case = MemoryQACase(
+        id="readout_disabled_state_slot",
+        observations=[
+            ObservationSpec(content="My favorite drink is coffee."),
+        ],
+        queries=[
+            QuerySpec(
+                id="beverage_state_hidden",
+                query="What drink should I order for the user?",
+                expected_substrings=["coffee"],
+                top_k=0,
+                metadata={
+                    "dimension": "implicit_policy_adaptation",
+                    "state_slot": "preference.beverage",
+                },
+            )
+        ],
+    )
+
+    results = run_benchmark(
+        [missing_slot_case],
+        {
+            "state_readout": baseline_registry()["state_readout"].config,
+        },
+    ) + run_benchmark(
+        [readout_disabled_case],
+        {
+            "state_memory_no_readout": AdaMemConfig(
+                use_state_memory=True,
+                use_state_readout=False,
+            ),
+        },
+    )
+    records = benchmark_case_records(results)
+    by_query = {record["query_id"]: record for record in records}
+
+    missing_slot = by_query["missing_beverage_state"]["failure_attributions"]
+    readout_failure = by_query["beverage_state_hidden"]["failure_attributions"]
+
+    assert "state_extraction_missing_expected_slot" in missing_slot
+    assert "state_authority_absent_or_extraction_failure" in missing_slot
+    assert "state_readout_failure" in readout_failure
+    assert "state_extraction_missing_expected_slot" not in readout_failure
+
+
 def test_jsonl_benchmark_metadata_diagnostics_include_evidence_and_answerability() -> None:
     case = MemoryQACase(
         id="ama_grouped",

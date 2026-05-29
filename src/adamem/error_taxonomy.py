@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -13,6 +14,14 @@ def jsonl_failure_attributions(record: dict[str, Any]) -> list[str]:
     expected_state = bool(record.get("expected_state_slots"))
     state_available = bool(record.get("state_readout_expected"))
     state_count = int(record.get("state_memory_count") or 0)
+    expected_slot_present = _expected_slot_present(
+        record.get("state_slots") or [],
+        record,
+    )
+    active_expected_slot_present = _expected_slot_present(
+        record.get("active_state_slots") or [],
+        record,
+    )
 
     if "no_retrieval" in modes:
         attributions.append("retrieval_failure")
@@ -24,17 +33,38 @@ def jsonl_failure_attributions(record: dict[str, Any]) -> list[str]:
         attributions.append("state_routing_failure")
     if "state_readout_missing" in modes:
         if state_count == 0:
+            attributions.append("state_extraction_no_state")
+            attributions.append("state_authority_absent_or_extraction_failure")
+        elif expected_state and not expected_slot_present:
+            attributions.append("state_extraction_missing_expected_slot")
+            attributions.append("state_authority_absent_or_extraction_failure")
+        elif expected_state and not active_expected_slot_present:
+            attributions.append("state_extraction_missing_active_expected_slot")
             attributions.append("state_authority_absent_or_extraction_failure")
         else:
             attributions.append("state_readout_failure")
     if "expected_support_missing" in modes:
         if state_available and expected_state and state_count == 0:
+            attributions.append("state_extraction_no_state")
+            attributions.append("state_authority_absent_or_extraction_failure")
+        elif state_available and expected_state and not expected_slot_present:
+            attributions.append("state_extraction_missing_expected_slot")
+            attributions.append("state_authority_absent_or_extraction_failure")
+        elif state_available and expected_state and not active_expected_slot_present:
+            attributions.append("state_extraction_missing_active_expected_slot")
             attributions.append("state_authority_absent_or_extraction_failure")
         elif state_available and expected_state and not record.get("state_slot_matched"):
             attributions.append("state_readout_failure")
         elif not attributions:
             attributions.append("retrieval_failure")
     if "forbidden_support_present" in modes:
+        if (
+            state_available
+            and expected_state
+            and active_expected_slot_present
+            and not int(record.get("premise_correction_count") or 0)
+        ):
+            attributions.append("premise_correction_failure")
         if state_count > 0:
             attributions.append("stale_adjudication_failure")
         else:
@@ -92,3 +122,22 @@ def attribution_counts_by_baseline(records: list[dict[str, Any]]) -> dict[str, d
 
 def _dedupe(items: list[str]) -> list[str]:
     return list(dict.fromkeys(items))
+
+
+def _expected_slot_present(slots: list[Any], record: dict[str, Any]) -> bool:
+    expected = [str(slot) for slot in record.get("expected_state_slots") or []]
+    if not expected:
+        return False
+    observed = [str(slot) for slot in slots]
+    return any(
+        _slot_matches(observed_slot, expected_slot)
+        for observed_slot in observed
+        for expected_slot in expected
+    )
+
+
+def _slot_matches(observed: str, expected: str) -> bool:
+    if observed == expected:
+        return True
+    pattern = "^" + re.escape(expected).replace("\\*", ".*") + "$"
+    return re.match(pattern, observed) is not None

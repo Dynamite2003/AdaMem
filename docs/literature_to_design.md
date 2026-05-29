@@ -389,6 +389,10 @@ Current implementation:
   `failure_attributions` derived from failure modes, state inventory, and trace
   fields. These are triage labels for paper error analysis, not final causal
   proof without representative case inspection.
+- JSONL attribution now separates no-state extraction failure, missing expected
+  state slot, missing active expected slot, state readout failure, state routing
+  failure, stale adjudication failure, and premise-correction failure while
+  preserving the older umbrella extraction label for compatibility.
 - Reports include representative examples for each attribution, making it
   easier to manually verify whether the triage label is a real mechanism
   failure before using it in a paper table or discussion.
@@ -400,9 +404,9 @@ Current implementation:
 
 Required next evidence:
 
-- Use the state inventory plus trace fields to categorize failures as
-  extraction, adjudication, routing, retrieval, readout, answer-model, or judge
-  ambiguity.
+- Validate the refined attribution categories on public STALE and transfer runs,
+  then manually audit representative cases before using category counts as paper
+  evidence.
 - Include representative failures in experiment records.
 
 ### 7. Causal Trajectory Evidence

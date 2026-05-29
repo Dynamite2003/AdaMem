@@ -656,10 +656,11 @@ Completed API-free foundations:
 - Failure-attribution taxonomy for JSONL retrieval records and STALE
   diagnostic records. Current categories are conservative labels such as
   `state_authority_absent_or_extraction_failure`, `state_readout_failure`,
-  `state_routing_failure`, `retrieval_failure`,
-  `stale_adjudication_failure`, `premise_correction_failure`, and
-  `ranking_failure`; use them as triage signals, not as final causal claims
-  without representative case inspection.
+  `state_extraction_no_state`, `state_extraction_missing_expected_slot`,
+  `state_extraction_missing_active_expected_slot`, `state_routing_failure`,
+  `retrieval_failure`, `stale_adjudication_failure`,
+  `premise_correction_failure`, and `ranking_failure`; use them as triage
+  signals, not as final causal claims without representative case inspection.
 - Representative examples by failure attribution in JSONL and STALE diagnostic
   reports, so paper error analysis can inspect concrete cases for each
   machine-labeled attribution category.
