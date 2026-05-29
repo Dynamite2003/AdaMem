@@ -518,7 +518,8 @@ Completed API-free foundations:
 - `adamem.answer_eval`, a mockable answer-generation evaluation path for
   AdaMem JSONL cases. It separates runtime answer generation from evaluation
   scoring, supports deterministic substring smoke tests and LLM-judge scoring,
-  and records prompts/raw outputs in experiment JSON.
+  records prompts/raw outputs in experiment JSON, and reports grouped answer
+  accuracy by metadata fields such as AMA `question_type`.
 - `--max-cases` and `--experiment-output` support for `--dataset` runs, so
   converted public benchmark pilots can be recorded without API keys.
 - STALE selection flags `--stale-types` and `--limit-per-stale-type`, so

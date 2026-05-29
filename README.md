@@ -316,6 +316,9 @@ PYTHONPATH=src python -m adamem.answer_eval --dataset benchmarks/tiny_memory_qa.
 This command is a harness smoke test, not a benchmark result. It fixes the
 answer prompt, scorer interface, raw-output record format, and experiment JSON
 notes before real answer and judge providers are plugged in.
+Answer reports and experiment diagnostics include grouped accuracy breakdowns
+for metadata such as AMA `question_type`, so end-to-end answer scoring can be
+reported by A/B/C/D once real answer and judge providers are available.
 
 The public AMA pilot can also run this answer-generation stage directly:
 
@@ -326,7 +329,8 @@ PYTHONPATH=src python -m adamem.pilot ama-public --limit 1 --source results/ama_
 Stage outputs use explicit names such as `ama_public_1.answer.records.jsonl`,
 `ama_public_1.evidence.records.jsonl`, and
 `ama_public_1.generation.records.jsonl` so retrieval diagnostics and answer
-scoring cannot overwrite one another.
+scoring cannot overwrite one another. The generation report includes grouped
+answer accuracy tables such as `By question_type`.
 
 The `trajectory_step_readout` baseline is a narrow trajectory-memory ablation:
 when a query explicitly mentions `Step N` or a short step range, it authorizes

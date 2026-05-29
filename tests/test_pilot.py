@@ -86,6 +86,7 @@ def test_ama_public_pilot_can_skip_evidence_mode(tmp_path: Path) -> None:
             "trajectory": [{"turn_idx": 1, "action": "left", "observation": "The agent moved left."}],
             "qa_pairs": [{
                 "question_uuid": "q1",
+                "type": "A",
                 "question": "What happened at Step 1?",
                 "answer": "The agent moved left.",
             }],
@@ -118,6 +119,7 @@ def test_ama_public_pilot_can_run_answer_generation_stage(tmp_path: Path) -> Non
             "trajectory": [{"turn_idx": 1, "action": "left", "observation": "The agent moved left."}],
             "qa_pairs": [{
                 "question_uuid": "q1",
+                "type": "A",
                 "question": "What happened at Step 1?",
                 "answer": "The agent moved left.",
             }],
@@ -139,8 +141,9 @@ def test_ama_public_pilot_can_run_answer_generation_stage(tmp_path: Path) -> Non
 
     generation = summary["answer_generation"]
     assert generation is not None
-    assert generation["summary"]["trajectory_step_readout"]["correct"] == 1
-    assert generation["summary"]["trajectory_step_readout"]["total"] == 1
+    assert generation["summary"]["by_baseline"]["trajectory_step_readout"]["correct"] == 1
+    assert generation["summary"]["by_baseline"]["trajectory_step_readout"]["total"] == 1
+    assert generation["summary"]["by_metadata"]["question_type"]["A"]["trajectory_step_readout"]["correct"] == 1
     assert Path(summary["answer"]["records_path"]).name == "ama_public_1.answer.records.jsonl"
     assert Path(generation["records_path"]).name == "ama_public_1.generation.records.jsonl"
     assert Path(generation["records_path"]).exists()

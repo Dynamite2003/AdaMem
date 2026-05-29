@@ -143,6 +143,21 @@ extraction on those true state cases.
     insufficiency answer.
   - Interpretation: this is still a plumbing smoke test, not an answer-quality
     benchmark.
+- Added grouped answer-generation diagnostics:
+  - `answer_failure_summary` now aggregates end-to-end answer records by
+    baseline and metadata fields such as `question_type`, `dimension`,
+    `state_slot`, and `abstention`.
+  - `answer_report` now includes `By question_type` / related grouped answer
+    accuracy tables when metadata is available.
+  - AMA pilot generation experiments now store the grouped summary in
+    `diagnostics.failure_summary` and write grouped Markdown reports.
+- Re-ran the AMA pilot answer-generation smoke:
+  - Generation records path:
+    `/tmp/adamem_ama_answer_generation_smoke/ama_public_1.generation.records.jsonl`
+  - Grouped generation report included `A`, `B`, `C`, and `D` question-type
+    rows.
+  - Because the answer provider was a fixed mock insufficiency answer, grouped
+    accuracy was `0/12`; this validates reporting only, not method quality.
 
 ## Completed Work
 

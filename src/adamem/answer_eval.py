@@ -16,6 +16,8 @@ from adamem.manager import AdaMem
 from adamem.schema import MemoryItem
 
 
+DEFAULT_GROUP_FIELDS = ("question_type", "dimension", "state_slot", "abstention")
+
 ANSWER_SYSTEM = (
     "You are a careful assistant grounded only in the provided memory excerpts. "
     "Use the excerpts to answer the user question. If the excerpts are "
@@ -225,15 +227,90 @@ def answer_case_records(results: list[AnswerBenchmarkResult]) -> list[dict[str, 
     return records
 
 
-def answer_report(results: list[AnswerBenchmarkResult]) -> str:
+def answer_failure_summary(
+    records: list[dict[str, Any]],
+    *,
+    group_fields: tuple[str, ...] = DEFAULT_GROUP_FIELDS,
+) -> dict[str, Any]:
+    baseline_order = list(dict.fromkeys(str(record["baseline"]) for record in records))
+    summary: dict[str, Any] = {
+        "total_records": len(records),
+        "by_baseline": {},
+        "by_metadata": {},
+    }
+    for baseline in baseline_order:
+        subset = [record for record in records if record["baseline"] == baseline]
+        summary["by_baseline"][baseline] = _aggregate_answer_records(subset)
+    for field_name in group_fields:
+        values = sorted({_metadata_group_value(record["metadata"], field_name) for record in records})
+        if values == ["<missing>"]:
+            continue
+        field_summary: dict[str, Any] = {}
+        for value in values:
+            value_subset = [
+                record
+                for record in records
+                if _metadata_group_value(record["metadata"], field_name) == value
+            ]
+            field_summary[value] = {
+                baseline: _aggregate_answer_records([
+                    record for record in value_subset if record["baseline"] == baseline
+                ])
+                for baseline in baseline_order
+                if any(record["baseline"] == baseline for record in value_subset)
+            }
+        summary["by_metadata"][field_name] = field_summary
+    return summary
+
+
+def answer_report(
+    results_or_records: list[AnswerBenchmarkResult] | list[dict[str, Any]],
+    *,
+    group_fields: tuple[str, ...] = DEFAULT_GROUP_FIELDS,
+) -> str:
+    if results_or_records and isinstance(results_or_records[0], AnswerBenchmarkResult):
+        records = answer_case_records(results_or_records)  # type: ignore[arg-type]
+    else:
+        records = list(results_or_records)  # type: ignore[assignment]
+    summary = answer_failure_summary(records, group_fields=group_fields)
     lines = ["# AdaMem Answer Evaluation", ""]
     lines.append("| baseline | correct | accuracy |")
     lines.append("| --- | ---: | ---: |")
-    for result in results:
+    for baseline, aggregate in summary["by_baseline"].items():
         lines.append(
-            f"| {result.name} | {result.n_correct}/{result.n_total} | {result.accuracy:.2%} |"
+            f"| {baseline} | {aggregate['correct']}/{aggregate['total']} | "
+            f"{aggregate['accuracy']:.2%} |"
         )
+    lines.append("")
+    for field_name, field_summary in summary["by_metadata"].items():
+        lines.append(f"## By {field_name}")
+        lines.append("| value | baseline | correct | accuracy |")
+        lines.append("| --- | --- | ---: | ---: |")
+        for value, by_baseline in field_summary.items():
+            for baseline, aggregate in by_baseline.items():
+                lines.append(
+                    f"| {value} | {baseline} | {aggregate['correct']}/{aggregate['total']} | "
+                    f"{aggregate['accuracy']:.2%} |"
+                )
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _aggregate_answer_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(records)
+    correct = sum(1 for record in records if record["correct"])
+    return {
+        "correct": correct,
+        "total": total,
+        "accuracy": correct / total if total else 0.0,
+    }
+
+
+def _metadata_group_value(metadata: dict[str, Any], field_name: str) -> str:
+    value = metadata.get(field_name)
+    if value is None or value == "":
+        return "<missing>"
+    return str(value)
 
 
 def _run_case(
@@ -404,6 +481,7 @@ def main(argv: list[str] | None = None) -> None:
         raw_outputs=raw_outputs,
     )
     records = answer_case_records(results)
+    summary = answer_failure_summary(records)
     if args.records_output:
         _write_jsonl(args.records_output, records)
     if args.experiment_output:
@@ -413,7 +491,8 @@ def main(argv: list[str] | None = None) -> None:
             dataset=args.dataset,
             split_or_case_limit=str(args.max_cases) if args.max_cases is not None else None,
             baselines=specs,
-            results=[asdict(result) for result in results],
+            results=summary["by_baseline"],
+            diagnostics={"failure_summary": summary},
             prompts={
                 "answer_system": ANSWER_SYSTEM,
                 "answer_template": ANSWER_TEMPLATE,
@@ -440,7 +519,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.json:
         print(json.dumps([asdict(result) for result in results], ensure_ascii=False, indent=2))
     else:
-        print(answer_report(results))
+        print(answer_report(records))
 
 
 def _build_cli_client(provider: str, *, model: str, mock_response: str) -> LLMClient:

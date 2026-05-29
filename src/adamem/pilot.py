@@ -12,6 +12,7 @@ from adamem.answer_eval import (
     LLMAnswerScorer,
     SubstringAnswerScorer,
     answer_case_records,
+    answer_failure_summary,
     answer_report,
     run_answer_benchmark,
 )
@@ -283,21 +284,13 @@ def _run_answer_generation_pilot(
     )
     benchmark_seconds = time.perf_counter() - started
     records = answer_case_records(results)
+    summary = answer_failure_summary(records)
 
     records_path = _artifact_path(output_prefix, ".records.jsonl")
     report_path = _artifact_path(output_prefix, ".report.md")
     experiment_path = _artifact_path(output_prefix, ".experiment.json")
     _write_jsonl(records_path, records)
-    _write_text(report_path, answer_report(results))
-
-    aggregate = {
-        result.name: {
-            "correct": result.n_correct,
-            "total": result.n_total,
-            "accuracy": result.accuracy,
-        }
-        for result in results
-    }
+    _write_text(report_path, answer_report(records))
     notes = {
         "source": source,
         "top_k": top_k,
@@ -316,7 +309,8 @@ def _run_answer_generation_pilot(
         dataset=dataset,
         split_or_case_limit=f"limit={limit}",
         baselines=specs,
-        results=aggregate,
+        results=summary["by_baseline"],
+        diagnostics={"failure_summary": summary},
         raw_outputs=raw_outputs if include_raw_outputs else [],
         notes=notes,
     )
@@ -325,7 +319,7 @@ def _run_answer_generation_pilot(
         "records_path": str(records_path),
         "report_path": str(report_path),
         "experiment_path": str(experiment_path),
-        "summary": aggregate,
+        "summary": summary,
     }
 
 

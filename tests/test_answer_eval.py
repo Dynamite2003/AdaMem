@@ -7,6 +7,7 @@ from adamem.answer_eval import (
     LLMAnswerScorer,
     SubstringAnswerScorer,
     answer_case_records,
+    answer_failure_summary,
     answer_report,
     main,
     run_answer_benchmark,
@@ -43,7 +44,16 @@ def test_run_answer_benchmark_with_substring_scorer(tmp_path: Path) -> None:
     records = answer_case_records(results)
     assert records[0]["correct"] is True
     assert records[1]["correct"] is False
+    records[0]["metadata"] = {"question_type": "A"}
+    records[1]["metadata"] = {"question_type": "B"}
+    summary = answer_failure_summary(records, group_fields=("question_type",))
+    assert summary["by_baseline"]["semantic_only"]["correct"] == 1
+    assert summary["by_metadata"]["question_type"]["A"]["semantic_only"]["accuracy"] == 1.0
+    assert summary["by_metadata"]["question_type"]["B"]["semantic_only"]["accuracy"] == 0.0
     assert "| semantic_only | 1/2 | 50.00% |" in answer_report(results)
+    grouped_report = answer_report(records, group_fields=("question_type",))
+    assert "## By question_type" in grouped_report
+    assert "| A | semantic_only | 1/1 | 100.00% |" in grouped_report
 
 
 def test_llm_answer_scorer_records_judge_prompt() -> None:
@@ -93,6 +103,8 @@ def test_answer_eval_cli_writes_records_and_experiment(tmp_path: Path) -> None:
     assert experiment["run_type"] == "jsonl_answer_generation_benchmark"
     assert experiment["notes"]["ground_truth_runtime_use"] == "forbidden"
     assert experiment["notes"]["ground_truth_evaluation_use"] == "answer_scorer_only"
+    assert experiment["results"]["semantic_only"]["total"] == 2
+    assert "failure_summary" in experiment["diagnostics"]
     assert experiment["raw_outputs"][0]["answer_prompt"]
 
 
