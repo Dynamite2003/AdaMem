@@ -1904,3 +1904,27 @@ to a paper-facing claim and evaluation gate.
 - Added test coverage:
   - `test_unknown_current_transfer_fixture_favors_state_authority`
   - `test_state_unknown_current_handles_resource_workflow_and_runtime_slots`
+
+### 2026-05-30 unknown-current claim audit
+
+- Extended `adamem.claims` with a narrow
+  `unknown_current_trace_resolution` supported claim.
+- Claim gate:
+  - At least one retrieved trace must expose an unknown-current state record or
+    an unknown-current premise correction.
+  - At least one invalidated value must be counted as corrected/resolved.
+  - No unknown-current trace record may leave forbidden stale support
+    unresolved.
+- Re-ran claim audit on `/tmp/unknown_current_experiment.json`:
+  - Supported: `retrieval_diagnostics`, `answerability_diagnostics`,
+    `premise_correction_trace_resolution`,
+    `unknown_current_trace_resolution`.
+  - Still blocked: `answer_accuracy` and `sota`.
+  - Unknown-current evidence:
+    `semantic_state_adjudication` had `5` unknown-current state records,
+    `5` resolved invalidated values, and `0` unresolved values;
+    `semantic_state_premise_correction` had `1` unknown-current state record,
+    `4` unknown-current correction records, `5` resolved invalidated values,
+    and `0` unresolved values.
+- Added unit coverage:
+  - `test_claim_audit_supports_unknown_current_trace_resolution`

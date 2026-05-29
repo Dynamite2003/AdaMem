@@ -160,6 +160,15 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
                 f"items `{summary['correction_items']}`, "
                 f"unresolved forbidden `{summary['unresolved_forbidden_records']}`"
             )
+        for baseline, summary in retrieval.get("unknown_current", {}).items():
+            lines.append(
+                "- Unknown-current: "
+                f"`{baseline}` records `{summary['records']}`, "
+                f"state records `{summary['unknown_current_records']}`, "
+                f"correction records `{summary['unknown_current_correction_records']}`, "
+                f"resolved `{summary['corrected_forbidden_records']}`, "
+                f"unresolved `{summary['unresolved_forbidden_records']}`"
+            )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -215,6 +224,7 @@ def _retrieval_claim_evidence(
         "paired_metric": None,
         "paired_no_regression": [],
         "premise_correction": {},
+        "unknown_current": {},
     }
 
     try:
@@ -255,6 +265,19 @@ def _retrieval_claim_evidence(
             and summary["unresolved_forbidden_records"] == 0
         ):
             evidence["supported_claims"].append("premise_correction_trace_resolution")
+
+    for baseline in _unknown_current_baselines(records):
+        baseline_records = [record for record in records if str(record.get("baseline")) == baseline]
+        if not baseline_records:
+            continue
+        summary = _unknown_current_summary(baseline_records)
+        evidence["unknown_current"][baseline] = summary
+        if (
+            summary["unknown_current_records"] + summary["unknown_current_correction_records"] > 0
+            and summary["corrected_forbidden_records"] > 0
+            and summary["unresolved_forbidden_records"] == 0
+        ):
+            evidence["supported_claims"].append("unknown_current_trace_resolution")
 
     evidence["supported_claims"] = list(dict.fromkeys(evidence["supported_claims"]))
     if not evidence["supported_claims"]:
@@ -309,6 +332,69 @@ def _premise_correction_summary(records: list[dict[str, Any]]) -> dict[str, int]
         "corrected_forbidden_records": corrected_forbidden_records,
         "unresolved_forbidden_records": unresolved_forbidden_records,
     }
+
+
+def _unknown_current_baselines(records: list[dict[str, Any]]) -> list[str]:
+    return list(
+        dict.fromkeys(
+            str(record.get("baseline"))
+            for record in records
+            if _record_has_unknown_current(record)
+        )
+    )
+
+
+def _unknown_current_summary(records: list[dict[str, Any]]) -> dict[str, int]:
+    unknown_current_records = 0
+    unknown_current_correction_records = 0
+    corrected_forbidden_records = 0
+    unresolved_forbidden_records = 0
+    for record in records:
+        has_state = _record_has_unknown_current_state(record)
+        has_correction = _record_has_unknown_current_correction(record)
+        if has_state:
+            unknown_current_records += 1
+        if has_correction:
+            unknown_current_correction_records += 1
+        if has_state or has_correction:
+            if record.get("corrected_forbidden"):
+                corrected_forbidden_records += 1
+            if record.get("present_forbidden"):
+                unresolved_forbidden_records += 1
+    return {
+        "records": len(records),
+        "unknown_current_records": unknown_current_records,
+        "unknown_current_correction_records": unknown_current_correction_records,
+        "corrected_forbidden_records": corrected_forbidden_records,
+        "unresolved_forbidden_records": unresolved_forbidden_records,
+    }
+
+
+def _record_has_unknown_current(record: dict[str, Any]) -> bool:
+    return (
+        _record_has_unknown_current_state(record)
+        or _record_has_unknown_current_correction(record)
+    )
+
+
+def _record_has_unknown_current_state(record: dict[str, Any]) -> bool:
+    for item in record.get("trace") or []:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("state_status") == "unknown_current":
+            return True
+    return False
+
+
+def _record_has_unknown_current_correction(record: dict[str, Any]) -> bool:
+    for item in record.get("trace") or []:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("current_value") == "unknown-current":
+            return True
+    return False
 
 
 def _looks_like_stale_dataset(experiment: dict[str, Any]) -> bool:

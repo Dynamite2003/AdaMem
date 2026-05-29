@@ -439,6 +439,9 @@ Done when:
 
 - Results are reproducible from saved configs.
 - Claims are supported by ablations and diagnostics.
+- Mechanism-only claims such as `unknown_current_trace_resolution` remain
+  clearly separated from answer accuracy and SOTA until public benchmark and
+  answer/judge evidence exists.
 - Limitations are clear.
 
 ## Phase 7: Paper Assembly

@@ -329,6 +329,7 @@ No claim should be made until the matching gate is satisfied.
 | "Reduces stale evidence exposure" | Retrieval diagnostics on STALE with case-level traces and no runtime use of STALE labels. |
 | "Improves current-state use" | End-to-end answer accuracy on STALE plus retrieval diagnostics showing current evidence or state readout availability. |
 | "Handles premise resistance" | Per-dimension STALE results where Dimension 2 improves without simply suppressing all memory. |
+| "Resolves invalidated-without-replacement state" | Trace-level retrieval records showing unknown-current state readout or correction, resolved invalidated-value mentions, and zero unresolved stale support. This is a mechanism claim until validated on public benchmark cases. |
 | "Handles implicit policy adaptation" | Dimension 3 improvement plus evidence that relevant current state is routed even when the query does not mention old or new belief text. |
 | "Generalizes" | At least one non-STALE benchmark or adapted task, preferably LongMemEval, AMA-Bench, or LongMemEval-V2-style dynamic state tracking. |
 | "SOTA" | Reproduction of strong official baselines under documented answer model, judge model, prompts, split, top-k, and cost settings. |

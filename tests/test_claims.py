@@ -100,6 +100,69 @@ def test_claim_audit_supports_paired_retrieval_no_regression(tmp_path: Path) -> 
     assert "No-regression pair" in markdown
 
 
+def test_claim_audit_supports_unknown_current_trace_resolution(tmp_path: Path) -> None:
+    records = tmp_path / "unknown.records.jsonl"
+    rows = [
+        _unknown_current_record(
+            "semantic_state_adjudication",
+            "q1",
+            kind="state",
+            corrected_forbidden=["Seattle"],
+        ),
+        _unknown_current_record(
+            "semantic_state_premise_correction",
+            "q1",
+            kind="state_correction",
+            corrected_forbidden=["Seattle"],
+            premise_correction_count=1,
+        ),
+    ]
+    records.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="jsonl_retrieval_benchmark",
+        baseline_names=[
+            "semantic_state_adjudication",
+            "semantic_state_premise_correction",
+        ],
+        notes={
+            "ground_truth_runtime_use": "forbidden",
+            "ground_truth_evaluation_use": "expected_substrings_only",
+            "records_path": "unknown.records.jsonl",
+        },
+        baseline_configs={
+            "semantic_state_premise_correction": {
+                "use_state_premise_correction": True,
+            },
+        },
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+    transfer = audit["claim_evidence"]["retrieval_transfer"]
+
+    assert "unknown_current_trace_resolution" in audit["supported_claims"]
+    assert "premise_correction_trace_resolution" in audit["supported_claims"]
+    assert transfer["unknown_current"]["semantic_state_adjudication"] == {
+        "records": 1,
+        "unknown_current_records": 1,
+        "unknown_current_correction_records": 0,
+        "corrected_forbidden_records": 1,
+        "unresolved_forbidden_records": 0,
+    }
+    assert transfer["unknown_current"]["semantic_state_premise_correction"] == {
+        "records": 1,
+        "unknown_current_records": 0,
+        "unknown_current_correction_records": 1,
+        "corrected_forbidden_records": 1,
+        "unresolved_forbidden_records": 0,
+    }
+    assert "Unknown-current" in markdown
+
+
 def test_claim_audit_marks_mock_answer_generation_as_plumbing(tmp_path: Path) -> None:
     experiment = _write_experiment(
         tmp_path,
@@ -214,3 +277,43 @@ def _retrieval_record(
     if premise_correction_count is not None:
         record["premise_correction_count"] = premise_correction_count
     return record
+
+
+def _unknown_current_record(
+    baseline: str,
+    query_id: str,
+    *,
+    kind: str,
+    corrected_forbidden: list[str],
+    premise_correction_count: int = 0,
+) -> dict:
+    metadata = {
+        "state_slot": "location",
+        "state_value": "unknown-current",
+        "state_status": "unknown_current",
+        "invalidated_state_value": "Seattle",
+    }
+    if kind == "state_correction":
+        metadata = {
+            "state_slot": "location",
+            "stale_value": "Seattle",
+            "current_value": "unknown-current",
+        }
+    return {
+        "baseline": baseline,
+        "case_id": "unknown",
+        "query_id": query_id,
+        "passed": True,
+        "expected_evidence": [],
+        "evidence_support_matched": False,
+        "present_forbidden": [],
+        "corrected_forbidden": corrected_forbidden,
+        "premise_correction_count": premise_correction_count,
+        "trace": [
+            {
+                "kind": kind,
+                "content": "Current user location: unknown-current.",
+                "metadata": metadata,
+            }
+        ],
+    }
