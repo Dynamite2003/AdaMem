@@ -68,6 +68,12 @@ Current implementation:
 - Derived state memories store `source_id`, `state_slot`, `state_value`, and
   `memory_key`.
 - Older state values for the same slot are superseded and marked stale.
+- `StatePatch` now distinguishes concrete active values from
+  `unknown_current` invalidations. This covers observations that only say an
+  old state is no longer valid, without hallucinating a replacement value.
+- Unknown-current records keep `invalidated_state_value`, so Premise
+  Resistance queries can still be corrected when they presuppose the invalid
+  old value.
 
 Required next evidence:
 
@@ -146,9 +152,12 @@ Current implementation:
 - `use_state_premise_correction` emits an ephemeral `state_correction` result
   when a routed query mentions a stale value and an active value exists for the
   same slot.
+- The same path handles `unknown_current` active states: the memory layer can
+  say that a stale premise is invalid even when the current replacement value
+  is not known.
 - The correction result records `state_slot`, `stale_value`, `current_value`,
-  `source_state_id`, and `stale_state_id`, but is not persisted back into the
-  store.
+  `source_state_id`, and `stale_state_id` when a prior state record exists,
+  but is not persisted back into the store.
 - `semantic_state_premise_correction` isolates this mechanism on top of
   semantic-only state adjudication.
 - STALE retrieval diagnostics now report premise-correction opportunity rate,

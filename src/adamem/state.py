@@ -11,6 +11,8 @@ class StatePatch:
     value: str
     evidence: str
     subject: str = "user"
+    status: str = "active"
+    invalidates_value: str | None = None
 
     @property
     def key(self) -> str:
@@ -18,6 +20,15 @@ class StatePatch:
 
     @property
     def content(self) -> str:
+        if self.status == "unknown_current":
+            invalidated = (
+                f"\nInvalidated prior value: {self.invalidates_value}"
+                if self.invalidates_value else ""
+            )
+            return (
+                f"Current {self.subject} {self.slot}: unknown-current."
+                f"{invalidated}\nState evidence: {self.evidence}"
+            )
         return (
             f"Current {self.subject} {self.slot}: {self.value}.\n"
             f"State evidence: {self.evidence}"
@@ -69,6 +80,13 @@ LOCATION_PATTERNS = [
     re.compile(r"\b(?:my\s+)?(?:new\s+)?place\s+in\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
     re.compile(r"\brelocated\s+to\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
     re.compile(r"\bmoved\s+(?:into\s+a\s+place\s+in|to)\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
+]
+
+LOCATION_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(r"\b(?:i\s+)?no\s+longer\s+(?:live|am\s+based|am\s+staying)\s+in\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
+    re.compile(r"\b(?:i[’']?m|i am)\s+not\s+(?:based|staying|living)\s+in\s+([A-Z][A-Za-z .'-]{1,40})\s+anymore", re.I),
+    re.compile(r"\bmoved\s+out\s+of\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
+    re.compile(r"\bleft\s+([A-Z][A-Za-z .'-]{1,40})\b", re.I),
 ]
 
 LOCATION_STOP = {
@@ -381,6 +399,7 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
         return []
 
     patches: list[StatePatch] = []
+    location_added = False
     for pattern in LOCATION_PATTERNS:
         match = pattern.search(content)
         if not match:
@@ -388,7 +407,20 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
         value = _clean_location(match.group(1))
         if value:
             patches.append(StatePatch(slot="location", value=value, evidence=content))
+            location_added = True
             break
+    if not location_added:
+        invalidated_location = _extract_unknown_current_location(content)
+        if invalidated_location:
+            patches.append(
+                StatePatch(
+                    slot="location",
+                    value="unknown-current",
+                    evidence=content,
+                    status="unknown_current",
+                    invalidates_value=invalidated_location,
+                )
+            )
     beverage = _extract_beverage_value(content)
     if beverage:
         patches.append(StatePatch(slot="preference.beverage", value=beverage, evidence=content))
@@ -616,6 +648,17 @@ def _extract_beverage_value(content: str) -> str | None:
             continue
         value = _clean_state_value(match.group("value"))
         if _is_known_beverage(value):
+            return value
+    return None
+
+
+def _extract_unknown_current_location(content: str) -> str | None:
+    for pattern in LOCATION_UNKNOWN_CURRENT_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        value = _clean_location(match.group(1))
+        if value:
             return value
     return None
 

@@ -253,6 +253,10 @@ Current API-free state-aware baselines:
   ephemeral read-time correction when a query explicitly mentions a stale value
   for a routed current-state slot. This isolates Premise Resistance behavior
   from ordinary current-state readout.
+- `use_state_unknown_current`: state extraction can produce an active
+  `unknown_current` slot when new evidence invalidates an old value without
+  providing a replacement. This prevents the memory layer from continuing to
+  authorize stale values or hallucinating a new current value.
 - `semantic_state_propagation_adjudication`: semantic state adjudication plus
   typed dependency propagation for indirectly invalidated state slots.
 - `state_readout`: deterministic state extraction plus authorized current-state

@@ -29,7 +29,9 @@ API-free variant combines authorized state readout with query-scoped
 state-source adjudication. The deterministic state extractor now covers
 location, schedule availability, beverage preference, task status,
 health/dietary constraints, resource status, workflow/runbook rules, and
-runtime/tool status. The latest public-transfer diagnostic shows the next
+runtime/tool status, and can represent unknown-current invalidations when new
+evidence says an old state is no longer valid without naming a replacement.
+The latest public-transfer diagnostic shows the next
 method bottleneck clearly: state-sensitive query routing must be precise before
 state-readout metrics are meaningful. The first LongMemEval-S inferred-state
 run overcounted ordinary episodic questions as state queries; the router now
@@ -1849,3 +1851,27 @@ to a paper-facing claim and evaluation gate.
 - Validation:
   - `python -m pytest tests/test_claims.py -q`
   - `python -m pytest -q`
+
+### 2026-05-30 unknown-current state invalidation
+
+- Added an explicit unknown-current state status for observations that
+  invalidate an old state without giving a replacement value, for example
+  "I no longer live in Seattle."
+- Implementation details:
+  - `StatePatch` now carries `status` and optional `invalidates_value`.
+  - `AdaMemConfig.use_state_unknown_current` controls this behavior for
+    ablations.
+  - Derived state/KG/salient records store `state_status` and
+    `invalidated_state_value` when applicable.
+  - State-source adjudication marks the old source evidence stale when an
+    unknown-current record supersedes a concrete old state.
+  - Premise correction can now produce an ephemeral correction saying the old
+    premise is invalid even when the current replacement value is unknown.
+- Added tests:
+  - `test_state_unknown_current_invalidates_old_location_without_replacement`
+  - `test_state_unknown_current_can_be_disabled_for_ablation`
+  - `test_jsonl_benchmark_supports_unknown_current_state_correction`
+- Validation:
+  - `python -m pytest -q` -> `119 passed`
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_state_adjudication semantic_state_premise_correction`
+    kept both baselines at `7/7`.

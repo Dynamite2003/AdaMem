@@ -269,15 +269,20 @@ class AdaMem:
 
     def _observe_state_patches(self, source: MemoryItem) -> None:
         for patch in self.state_extractor(source.content, source.metadata):
+            if patch.status == "unknown_current" and not self.config.use_state_unknown_current:
+                continue
             metadata = {
                 "derived": True,
                 "source_id": source.id,
                 "memory_key": patch.key,
                 "state_slot": patch.slot,
                 "state_value": patch.value,
+                "state_status": patch.status,
                 "subject": patch.subject,
                 "keywords": [patch.slot, patch.value],
             }
+            if patch.invalidates_value:
+                metadata["invalidated_state_value"] = patch.invalidates_value
             state_item = MemoryItem(
                 content=patch.content,
                 kind="state",
@@ -313,6 +318,8 @@ class AdaMem:
         if source.kind in {"state", "kg_fact"} or source.metadata.get("derived") is True:
             return
         for patch in self.state_extractor(source.content, source.metadata):
+            if patch.status == "unknown_current" and not self.config.use_state_unknown_current:
+                continue
             key = f"kg.{patch.subject}.{patch.slot}"
             metadata = {
                 "derived": True,
@@ -322,8 +329,11 @@ class AdaMem:
                 "kg_relation": patch.slot,
                 "kg_object": patch.value,
                 "state_slot": patch.slot,
+                "state_status": patch.status,
                 "keywords": [patch.subject, patch.slot, patch.value, "temporal", "kg"],
             }
+            if patch.invalidates_value:
+                metadata["invalidated_state_value"] = patch.invalidates_value
             kg_item = MemoryItem(
                 content=_temporal_kg_content(patch.subject, patch.slot, patch.value, patch.evidence),
                 kind="kg_fact",
@@ -362,6 +372,8 @@ class AdaMem:
         if source.kind in {"state", "kg_fact", "salient_fact"} or source.metadata.get("derived") is True:
             return
         for patch in self.state_extractor(source.content, source.metadata):
+            if patch.status == "unknown_current" and not self.config.use_state_unknown_current:
+                continue
             key = f"salient.{patch.subject}.{patch.slot}"
             metadata = {
                 "extracted": True,
@@ -371,8 +383,11 @@ class AdaMem:
                 "salient_slot": patch.slot,
                 "salient_value": patch.value,
                 "state_slot": patch.slot,
+                "state_status": patch.status,
                 "keywords": [patch.subject, patch.slot, patch.value, "memory", "fact"],
             }
+            if patch.invalidates_value:
+                metadata["invalidated_state_value"] = patch.invalidates_value
             salient_item = MemoryItem(
                 content=_salient_memory_content(patch.subject, patch.slot, patch.value, patch.evidence),
                 kind="salient_fact",
@@ -517,40 +532,99 @@ class AdaMem:
             )
             if active_state is None:
                 continue
-            current_value = str(active_state.metadata.get("state_value") or "").strip()
-            correction = MemoryItem(
-                content=(
-                    f"Premise correction: the query mentions stale {slot} "
-                    f"'{stale_value}', but the current value is '{current_value}'.\n"
-                    f"Current state basis: {active_state.content}"
-                ),
-                kind="state_correction",
-                importance=1.0,
-                confidence=active_state.confidence,
-                valid_from=active_state.valid_from,
-                metadata={
-                    "derived": True,
-                    "ephemeral": True,
+            corrections.append(
+                self._state_premise_correction_result(
+                    slot=slot,
+                    stale_value=stale_value,
+                    active_state=active_state,
+                    stale_state=stale_state,
+                    query_embedding=query_embedding,
+                    now=now,
+                )
+            )
+        corrected_keys = {
+            (
+                str(result.item.metadata.get("state_slot") or ""),
+                str(result.item.metadata.get("stale_value") or "").lower(),
+            )
+            for result in corrections
+        }
+        for active_state in active_states:
+            if active_state.metadata.get("state_status") != "unknown_current":
+                continue
+            slot = str(active_state.metadata.get("state_slot") or "")
+            if not state_slot_matches_query(slot, relevant_slots):
+                continue
+            stale_value = str(active_state.metadata.get("invalidated_state_value") or "").strip()
+            if not stale_value or not _contains_phrase(query_text, stale_value):
+                continue
+            key = (slot, stale_value.lower())
+            if key in corrected_keys:
+                continue
+            corrections.append(
+                self._state_premise_correction_result(
+                    slot=slot,
+                    stale_value=stale_value,
+                    active_state=active_state,
+                    stale_state=None,
+                    query_embedding=query_embedding,
+                    now=now,
+                )
+            )
+            corrected_keys.add(key)
+        return corrections
+
+    def _state_premise_correction_result(
+        self,
+        *,
+        slot: str,
+        stale_value: str,
+        active_state: MemoryItem,
+        stale_state: MemoryItem | None,
+        query_embedding: dict[str, float],
+        now: str | None,
+    ) -> MemoryResult:
+        current_value = str(active_state.metadata.get("state_value") or "").strip()
+        if active_state.metadata.get("state_status") == "unknown_current":
+            correction_line = (
+                f"Premise correction: the query mentions stale {slot} "
+                f"'{stale_value}', but the current value is unknown."
+            )
+        else:
+            correction_line = (
+                f"Premise correction: the query mentions stale {slot} "
+                f"'{stale_value}', but the current value is '{current_value}'."
+            )
+        metadata = {
+            "derived": True,
+            "ephemeral": True,
+            "state_slot": slot,
+            "stale_value": stale_value,
+            "current_value": current_value,
+            "source_state_id": active_state.id,
+        }
+        if stale_state is not None:
+            metadata["stale_state_id"] = stale_state.id
+        correction = MemoryItem(
+            content=f"{correction_line}\nCurrent state basis: {active_state.content}",
+            kind="state_correction",
+            importance=1.0,
+            confidence=active_state.confidence,
+            valid_from=active_state.valid_from,
+            metadata=metadata,
+            embedding=self.embedder(_embedding_text(
+                f"{slot} {stale_value} {current_value} premise correction",
+                {
                     "state_slot": slot,
                     "stale_value": stale_value,
                     "current_value": current_value,
-                    "source_state_id": active_state.id,
-                    "stale_state_id": stale_state.id,
                 },
-                embedding=self.embedder(_embedding_text(
-                    f"{slot} {stale_value} {current_value} premise correction",
-                    {
-                        "state_slot": slot,
-                        "stale_value": stale_value,
-                        "current_value": current_value,
-                    },
-                )),
-            )
-            result = self._score(correction, query_embedding, now=now, relation="state_premise_correction")
-            result.contributions["state_premise_correction"] = self.config.state_premise_correction_boost
-            result.score = sum(result.contributions.values())
-            corrections.append(result)
-        return corrections
+            )),
+        )
+        result = self._score(correction, query_embedding, now=now, relation="state_premise_correction")
+        result.contributions["state_premise_correction"] = self.config.state_premise_correction_boost
+        result.score = sum(result.contributions.values())
+        return result
 
     def _temporal_kg_readout(
         self,

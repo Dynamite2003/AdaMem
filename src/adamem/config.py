@@ -37,6 +37,7 @@ class AdaMemConfig:
     use_state_source_adjudication: bool = False
     use_state_readout_authorization: bool = True
     use_state_premise_correction: bool = False
+    use_state_unknown_current: bool = True
     use_temporal_kg_memory: bool = False
     use_temporal_kg_readout: bool = False
     use_salient_memory: bool = False

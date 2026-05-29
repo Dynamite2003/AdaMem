@@ -838,6 +838,47 @@ def test_jsonl_benchmark_treats_correction_text_as_resolved_forbidden_support() 
         assert "forbidden_support_present" not in record["failure_modes"]
 
 
+def test_jsonl_benchmark_supports_unknown_current_state_correction() -> None:
+    case = MemoryQACase(
+        id="unknown_current_state",
+        observations=[
+            ObservationSpec(content="[2026-01-01] user: I just moved into a place in Seattle."),
+            ObservationSpec(content="[2026-02-01] user: I no longer live in Seattle."),
+        ],
+        queries=[
+            QuerySpec(
+                id="unknown_location",
+                query="Since I'm in Seattle, recommend local events there.",
+                expected_substrings=["unknown-current"],
+                forbidden_substrings=["Seattle"],
+                top_k=1,
+                metadata={
+                    "dimension": "premise_resistance",
+                    "state_slot": "location",
+                },
+            )
+        ],
+    )
+
+    results = run_benchmark(
+        [case],
+        {
+            "semantic_state_premise_correction": (
+                baseline_registry()["semantic_state_premise_correction"].config
+            ),
+        },
+    )
+    records = benchmark_case_records(results)
+    record = records[0]
+
+    assert results[0].passed == 1
+    assert record["premise_correction_count"] == 1
+    assert record["corrected_forbidden"] == ["Seattle"]
+    assert record["present_forbidden"] == []
+    assert record["trace"][0]["metadata"]["current_value"] == "unknown-current"
+    assert "current value is unknown" in record["trace"][0]["content"]
+
+
 def test_jsonl_records_expose_state_pollution_metrics() -> None:
     case = MemoryQACase(
         id="state_pollution_boundary",

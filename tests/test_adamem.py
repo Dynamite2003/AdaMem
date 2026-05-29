@@ -460,6 +460,73 @@ def test_state_premise_correction_does_not_fire_without_stale_value() -> None:
     assert all(result.item.kind != "state_correction" for result in results)
 
 
+def test_state_unknown_current_invalidates_old_location_without_replacement() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+    old_source = mem.observe("[2026-01-01] user: I just moved into a place in Seattle.")
+    mem.observe("[2026-02-01] user: I no longer live in Seattle.")
+
+    states = [item for item in mem.store.all() if item.kind == "state"]
+    active_state = next(item for item in states if item.active)
+    old_state = next(item for item in states if not item.active)
+
+    assert old_state.metadata["state_value"] == "Seattle"
+    assert active_state.metadata["state_value"] == "unknown-current"
+    assert active_state.metadata["state_status"] == "unknown_current"
+    assert active_state.metadata["invalidated_state_value"] == "Seattle"
+    assert old_source.metadata["stale_state_slots"] == ["location"]
+
+    results = mem.retrieve("Since I'm in Seattle, recommend a coffee shop near me.", top_k=2)
+
+    assert results[0].item.kind == "state_correction"
+    assert results[0].item.metadata["stale_value"] == "Seattle"
+    assert results[0].item.metadata["current_value"] == "unknown-current"
+    assert "current value is unknown" in results[0].item.content
+    assert "Invalidated prior value: Seattle" in results[0].item.content
+
+
+def test_state_unknown_current_can_be_disabled_for_ablation() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_unknown_current=False,
+        )
+    )
+    mem.observe("[2026-01-01] user: I just moved into a place in Seattle.")
+    mem.observe("[2026-02-01] user: I no longer live in Seattle.")
+
+    states = [item for item in mem.store.all() if item.kind == "state"]
+
+    assert len(states) == 1
+    assert states[0].active
+    assert states[0].metadata["state_value"] == "Seattle"
+    assert all(item.metadata.get("state_status") != "unknown_current" for item in states)
+
+
 def test_state_readout_supports_implicit_policy_adaptation_query() -> None:
     without_readout = _state_isolation_memory(use_state_readout=False)
     with_readout = _state_isolation_memory(use_state_readout=True)
