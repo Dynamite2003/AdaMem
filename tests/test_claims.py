@@ -217,6 +217,36 @@ def test_claim_audit_summarizes_failure_attribution_evidence(tmp_path: Path) -> 
     assert "Failure Attribution Evidence" in markdown
 
 
+def test_claim_audit_records_baseline_coverage(tmp_path: Path) -> None:
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="jsonl_retrieval_benchmark",
+        baseline_names=[
+            "semantic_only",
+            "a_mem_evolution",
+            "semantic_state_adjudication",
+        ],
+        notes={
+            "ground_truth_runtime_use": "forbidden",
+            "ground_truth_evaluation_use": "query_metadata_only",
+        },
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+    coverage = audit["claim_evidence"]["baseline_coverage"]
+
+    assert "baseline_coverage_audit" in audit["supported_claims"]
+    assert coverage["complete"] is True
+    assert coverage["missing_groups"] == []
+    assert coverage["categories"] == {
+        "mainstream_approximation": ["a_mem_evolution"],
+        "raw_turn_retrieval": ["semantic_only"],
+        "state_aware_ablation": ["semantic_state_adjudication"],
+    }
+    assert "Baseline Coverage" in markdown
+
+
 def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path: Path) -> None:
     records = tmp_path / "lme_v2.records.jsonl"
     state_evidence = tmp_path / "state_evidence.summary.json"

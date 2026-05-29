@@ -2471,3 +2471,34 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `153 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 baseline coverage audit
+
+- Added claim-audit baseline coverage evidence.
+- Each experiment audit now records:
+  - number of known baselines
+  - baseline categories present
+  - unknown baseline names
+  - missing required paper baseline groups
+- Required groups are:
+  - `raw_retrieval_reference`
+  - `mainstream_memory_approximation`
+  - `adamem_or_state_ablation`
+- `baseline_coverage_audit` is only supported when all required groups are
+  present and no baseline name is unknown.
+- Batch claim-matrix rows now include:
+  - `baseline_coverage_complete`
+  - `baseline_category_count`
+  - `missing_baseline_groups`
+- `claim_matrix.md` now shows `baseline gaps`, and `paper_next_steps.md`
+  emits `add_missing_baseline_categories` when coverage is incomplete.
+- Purpose:
+  - Prevent answer-accuracy or SOTA discussions from silently relying on a
+    weak baseline set.
+  - Make mainstream approximation coverage an explicit paper gate before API
+    budget is spent.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py -q` -> `22 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `154 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

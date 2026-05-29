@@ -37,6 +37,32 @@ authorized readout before raw episodic memories.
 
 ## Candidate Contributions
 
+### 0. Paper-Grade Baseline Coverage Gate
+
+Hypothesis:
+
+SOTA-style claims are too easy to overstate when experiments compare only a
+single raw-retrieval baseline against the proposed mechanism. A paper-track run
+needs an explicit baseline-coverage audit before its result is treated as
+strong evidence.
+
+Current implementation:
+
+- Claim audits now summarize the baseline categories present in each
+  experiment.
+- The audit checks three required groups: raw retrieval reference, mainstream
+  memory approximation, and AdaMem/state ablation.
+- Batch claim matrices expose missing baseline groups and
+  `paper_next_steps.md` adds `add_missing_baseline_categories` when coverage is
+  incomplete.
+
+Required next evidence:
+
+- Use the coverage gate on full STALE and public transfer runs before
+  interpreting answer-accuracy candidates.
+- Replace API-free mainstream approximations with official implementations
+  where available, or document why a faithful local approximation is used.
+
 ### 1. Current-State Authority Layer
 
 Hypothesis:

@@ -199,6 +199,9 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "state_matching_questions": 3,
         "state_available_rate": 0.75,
         "paired_no_regression_count": 1,
+        "baseline_coverage_complete": False,
+        "baseline_category_count": 0,
+        "missing_baseline_groups": [],
         "failure_attribution_count": 0,
         "top_failure_attribution": None,
         "top_failure_attribution_count": 0,
@@ -218,7 +221,7 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
-    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs | top attribution |" in markdown
+    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | no-reg pairs | top attribution |" in markdown
 
 
 def test_paper_next_steps_markdown_groups_actions() -> None:
@@ -281,7 +284,13 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
             "supported_claims": ["failure_attribution_error_analysis"],
             "blocked_claims": {"answer_accuracy": ["not generation"]},
             "warnings": [],
-            "claim_evidence": {},
+            "claim_evidence": {
+                "baseline_coverage": {
+                    "complete": False,
+                    "category_count": 1,
+                    "missing_groups": ["mainstream_memory_approximation"],
+                },
+            },
         },
     ])
 
@@ -305,6 +314,9 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
         "classify_experiment_run_type",
     ]
     assert by_name["failure_analysis.experiment.json"]["readiness_gate"] == "diagnostic_ready"
+    assert "add_missing_baseline_categories" in (
+        by_name["failure_analysis.experiment.json"]["next_actions"]
+    )
 
 
 def test_claim_matrix_flattens_failure_attribution_evidence() -> None:

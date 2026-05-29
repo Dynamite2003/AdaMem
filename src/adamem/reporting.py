@@ -155,6 +155,7 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         evidence = manifest.get("claim_evidence") or {}
         state_evidence = evidence.get("prepared_state_evidence") or {}
         retrieval = evidence.get("retrieval_transfer") or {}
+        baseline_coverage = evidence.get("baseline_coverage") or {}
         dataset_scope = manifest.get("dataset_scope") or {}
         diagnostic = manifest.get("diagnostic_evidence") or {}
         top_attribution, top_attribution_count = _top_count(diagnostic.get("failure_attributions") or {})
@@ -175,6 +176,9 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "state_matching_questions": int(state_evidence.get("with_matching_state_evidence") or 0),
             "state_available_rate": float(state_evidence.get("state_available_rate") or 0.0),
             "paired_no_regression_count": len(retrieval.get("paired_no_regression") or []),
+            "baseline_coverage_complete": bool(baseline_coverage.get("complete")),
+            "baseline_category_count": int(baseline_coverage.get("category_count") or 0),
+            "missing_baseline_groups": list(baseline_coverage.get("missing_groups") or []),
             "failure_attribution_count": len(diagnostic.get("failure_attributions") or {}),
             "top_failure_attribution": top_attribution,
             "top_failure_attribution_count": top_attribution_count,
@@ -194,13 +198,13 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs | top attribution |",
-        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | no-reg pairs | top attribution |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- |",
     ]
     if not rows:
         lines.append(
             "| <none> | needs_attention | add_experiment_records | unknown | <none> | "
-            "0 | 0 | 0 | 0/0 | 0.00% | 0 | - |"
+            "0 | 0 | 0 | 0/0 | 0.00% | - | 0 | - |"
         )
         return "\n".join(lines) + "\n"
     for row in rows:
@@ -215,6 +219,7 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
             f"{row['supported_claim_count']} | {row['blocked_claim_count']} | "
             f"{row['warning_count']} | {matching}/{expected} | "
             f"{float(row.get('state_available_rate') or 0.0):.2%} | "
+            f"{_format_missing_baseline_groups(row)} | "
             f"{row['paired_no_regression_count']} | "
             f"{_format_top_attribution(row)} |"
         )
@@ -314,6 +319,8 @@ def _paper_next_actions(row: dict[str, Any]) -> list[str]:
         actions.append("audit_missing_state_evidence")
     if int(row.get("failure_attribution_count") or 0) > 0:
         actions.append("inspect_representative_failure_attributions")
+    if row.get("missing_baseline_groups"):
+        actions.append("add_missing_baseline_categories")
 
     if _has_diagnostic_claim(supported) and (
         "answer_accuracy" in blocked or "stale_answer_accuracy" in blocked
@@ -392,6 +399,13 @@ def _format_top_attribution(row: dict[str, Any]) -> str:
     if not attribution:
         return "-"
     return f"{attribution} ({int(row.get('top_failure_attribution_count') or 0)})"
+
+
+def _format_missing_baseline_groups(row: dict[str, Any]) -> str:
+    missing = [str(item) for item in row.get("missing_baseline_groups") or []]
+    if not missing:
+        return "-"
+    return ", ".join(missing)
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -6,9 +6,22 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from adamem.baselines import baseline_registry
 from adamem.compare import paired_comparison_summary
 from adamem.error_taxonomy import attribution_counts
 from adamem.tables import load_benchmark_records
+
+
+BASELINE_COVERAGE_GROUPS: dict[str, set[str]] = {
+    "raw_retrieval_reference": {"raw_turn_retrieval"},
+    "mainstream_memory_approximation": {"mainstream_approximation"},
+    "adamem_or_state_ablation": {
+        "adamem_ablation",
+        "state_aware",
+        "state_aware_ablation",
+        "state_extractor_ablation",
+    },
+}
 
 
 def audit_experiment(path: str | Path) -> dict[str, Any]:
@@ -108,6 +121,11 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         warnings.append("experiment commit is missing")
     if not experiment.get("dataset"):
         warnings.append("experiment dataset is missing")
+    baseline_coverage = _baseline_coverage_evidence(baselines)
+    if baseline_coverage:
+        claim_evidence["baseline_coverage"] = baseline_coverage
+        if baseline_coverage["complete"]:
+            supported.append("baseline_coverage_audit")
     attribution_evidence = _failure_attribution_claim_evidence(claim_records)
     if attribution_evidence:
         claim_evidence["failure_attributions"] = attribution_evidence
@@ -168,6 +186,25 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
     claim_evidence = audit.get("claim_evidence") or {}
     retrieval = claim_evidence.get("retrieval_transfer")
     state_evidence = claim_evidence.get("prepared_state_evidence")
+    baseline_coverage = claim_evidence.get("baseline_coverage")
+    if baseline_coverage:
+        lines.append("")
+        lines.append("## Baseline Coverage")
+        lines.append(f"- Baselines: `{baseline_coverage['baseline_count']}`")
+        lines.append(f"- Categories: `{baseline_coverage['category_count']}`")
+        lines.append(f"- Complete for paper audit: `{baseline_coverage['complete']}`")
+        if baseline_coverage.get("unknown_baselines"):
+            lines.append(
+                "- Unknown baselines: "
+                + ", ".join(f"`{name}`" for name in baseline_coverage["unknown_baselines"])
+            )
+        if baseline_coverage.get("missing_groups"):
+            lines.append(
+                "- Missing groups: "
+                + ", ".join(f"`{name}`" for name in baseline_coverage["missing_groups"])
+            )
+        for category, names in baseline_coverage.get("categories", {}).items():
+            lines.append(f"- Category `{category}`: {', '.join(f'`{name}`' for name in names)}")
     if state_evidence:
         lines.append("")
         lines.append("## Prepared State Evidence")
@@ -416,6 +453,33 @@ def _retrieval_claim_evidence(
     if not evidence["supported_claims"]:
         return {}
     return evidence
+
+
+def _baseline_coverage_evidence(baselines: list[str]) -> dict[str, Any]:
+    registry = baseline_registry()
+    categories: dict[str, list[str]] = {}
+    unknown: list[str] = []
+    for baseline in baselines:
+        spec = registry.get(baseline)
+        if spec is None:
+            unknown.append(baseline)
+            continue
+        categories.setdefault(spec.category, []).append(baseline)
+    missing_groups = [
+        group
+        for group, accepted_categories in BASELINE_COVERAGE_GROUPS.items()
+        if not accepted_categories.intersection(categories)
+    ]
+    return {
+        "baseline_count": len(baselines),
+        "known_baseline_count": len(baselines) - len(unknown),
+        "unknown_baselines": unknown,
+        "categories": dict(sorted(categories.items())),
+        "category_count": len(categories),
+        "required_groups": sorted(BASELINE_COVERAGE_GROUPS),
+        "missing_groups": missing_groups,
+        "complete": not unknown and not missing_groups,
+    }
 
 
 def _failure_attribution_claim_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:

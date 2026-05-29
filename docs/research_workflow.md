@@ -666,7 +666,11 @@ Completed API-free foundations:
   experiment to the next evidence step, such as rerunning on a public/full
   benchmark, exporting case-level records, inspecting representative failure
   attributions, running end-to-end answer/judge evaluation, or adding strong
-  baselines and judge robustness.
+  baselines and judge robustness. Claim audits also record baseline coverage
+  across required paper groups: a raw retrieval reference, at least one
+  mainstream memory approximation, and an AdaMem/state ablation. Missing
+  groups appear in `claim_matrix` and trigger `add_missing_baseline_categories`
+  in `paper_next_steps.md`.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records
