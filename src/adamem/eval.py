@@ -35,6 +35,7 @@ from adamem.state import (
     STATE_EXTRACTOR_TEMPLATE,
     StateExtractor,
 )
+from adamem.state_diagnostics import state_memory_inventory
 
 
 @dataclass(slots=True)
@@ -432,6 +433,7 @@ def run_stale_benchmark(
                     time.sleep(request_delay)
                 correct = _parse_judge(judge_raw)
                 leak = _detect_stale_leak(retrieved_texts, query.metadata)
+                state_inventory = state_memory_inventory(mem.store.all())
                 if raw_outputs is not None:
                     raw_outputs.append(
                         {
@@ -449,6 +451,7 @@ def run_stale_benchmark(
                             "judge_raw": judge_raw,
                             "judge_correct": correct,
                             "stale_leak": leak,
+                            **state_inventory,
                             "retrieved": [
                                 {
                                     "rank": index,

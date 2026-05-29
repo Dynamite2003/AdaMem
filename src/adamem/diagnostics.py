@@ -8,6 +8,7 @@ from adamem.config import AdaMemConfig
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem, MemoryResult
 from adamem.state import StateExtractor
+from adamem.state_diagnostics import state_memory_inventory
 from adamem.text import tokenize
 
 
@@ -104,6 +105,12 @@ class StaleQueryDiagnostic:
     adjudicated_old_supports: int
     old_supports: int
     max_old_support_staleness: float
+    state_memory_count: int
+    active_state_count: int
+    stale_state_count: int
+    unknown_current_state_count: int
+    active_state_slots: list[str] = field(default_factory=list)
+    stale_state_slots: list[str] = field(default_factory=list)
     trace: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -204,6 +211,7 @@ def diagnose_stale_query(
         if item.superseded_by is not None or item.staleness >= 0.5
     ]
     max_staleness = max((item.staleness for item in old_supports), default=0.0)
+    state_inventory = state_memory_inventory(stored_items)
 
     return StaleQueryDiagnostic(
         case_id=case_id,
@@ -227,6 +235,12 @@ def diagnose_stale_query(
         adjudicated_old_supports=len(adjudicated),
         old_supports=len(old_supports),
         max_old_support_staleness=max_staleness,
+        state_memory_count=state_inventory["state_memory_count"],
+        active_state_count=state_inventory["active_state_count"],
+        stale_state_count=state_inventory["stale_state_count"],
+        unknown_current_state_count=state_inventory["unknown_current_state_count"],
+        active_state_slots=state_inventory["active_state_slots"],
+        stale_state_slots=state_inventory["stale_state_slots"],
         trace=[
             {
                 "rank": index,
@@ -327,6 +341,12 @@ def diagnostic_case_records(
                 "old_supports": query.old_supports,
                 "adjudicated_old_supports": query.adjudicated_old_supports,
                 "max_old_support_staleness": round(query.max_old_support_staleness, 4),
+                "state_memory_count": query.state_memory_count,
+                "active_state_count": query.active_state_count,
+                "stale_state_count": query.stale_state_count,
+                "unknown_current_state_count": query.unknown_current_state_count,
+                "active_state_slots": query.active_state_slots,
+                "stale_state_slots": query.stale_state_slots,
             }
             if include_trace:
                 record["trace"] = query.trace

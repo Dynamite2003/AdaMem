@@ -2302,3 +2302,36 @@ to a paper-facing claim and evaluation gate.
     `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_llm_state_adjudication --state-extractor-provider mock --state-extractor-mock-response '{"patches":[{"slot":"location","value":"Boston","status":"active"}]}' --max-cases 1 --experiment-output $tmpdir/llm_extractor.experiment.json --json`
     wrote `state_extractor_provider=mock`, `state_extractor_name=llm_json`,
     and `state_extractor_system` prompt metadata.
+
+### 2026-05-30 state-memory inventory diagnostics
+
+- Added `adamem.state_diagnostics` with a shared state-memory inventory helper.
+- JSONL benchmark query records now include:
+  - `state_memory_count`
+  - `active_state_count`
+  - `stale_state_count`
+  - `unknown_current_state_count`
+  - `state_slots`
+  - `active_state_slots`
+  - `stale_state_slots`
+  - `unknown_current_state_slots`
+- JSONL benchmark summaries and Markdown reports now include
+  `state_memory_inventory`, including records with state memory, max state
+  count, max active/stale count, and active slots by baseline.
+- STALE retrieval diagnostic records now include the same inventory fields, and
+  STALE LLM-judge raw outputs include the inventory snapshot for each query.
+- Purpose:
+  - Separate state extraction failures from readout, routing, adjudication, and
+    answer-model failures in future paper error analysis.
+  - Make LLM extractor ablations auditable without inspecting the private
+    in-memory store after each run.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_benchmark_failure_summary_groups_by_metadata tests/test_stale.py::test_retrieval_diagnostics_separate_current_and_stale_evidence tests/test_stale.py::test_diagnostic_case_records_export_failures tests/test_tables.py -q` -> `15 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py tests/test_stale.py tests/test_tables.py tests/test_reporting.py -q` -> `63 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `150 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke:
+    `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only state_readout --max-cases 1 --benchmark-cases-output /tmp/adamem_state_inventory_records.jsonl --benchmark-report-output /tmp/adamem_state_inventory_report.md --json`
+    wrote `state_memory_count=0` for `semantic_only`, active state slots for
+    `state_readout`, and a `State Memory Inventory` report section.

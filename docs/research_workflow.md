@@ -589,6 +589,11 @@ Completed API-free foundations:
 - JSONL benchmark evidence-support diagnostics, including an `Evidence Support`
   Markdown table and case-level `graph_evidence_hits` for causal trajectory
   audits.
+- State-memory inventory diagnostics in JSONL records, JSONL reports, STALE
+  diagnostic case records, and STALE LLM-judge raw outputs. These expose
+  derived state count, active/stale state count, unknown-current count, and
+  active/stale slots without using benchmark labels, which separates extractor
+  failures from readout/adjudication failures.
 - `trajectory_step_readout`, a narrow step-aware trajectory retrieval
   ablation. It authorizes matching `Step N` or short step-range memories by
   trajectory metadata and is useful for separating step evidence recall from

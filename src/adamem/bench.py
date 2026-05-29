@@ -11,6 +11,7 @@ from adamem.config import AdaMemConfig
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem
 from adamem.state import StateExtractor, state_slot_matches_query
+from adamem.state_diagnostics import state_inventory_aggregate, state_memory_inventory
 
 
 @dataclass(slots=True)
@@ -55,6 +56,7 @@ class QueryEvalResult:
     forbidden_substrings: list[str]
     trace: list[dict[str, Any]]
     metadata: dict[str, Any] = field(default_factory=dict)
+    state_inventory: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -146,6 +148,7 @@ def benchmark_failure_summary(
         "evidence_support": {},
         "answerability": {},
         "paper_metrics": {},
+        "state_memory_inventory": {},
         "pairwise_vs_first_baseline": {},
         "diagnostics_by_metadata": {},
     }
@@ -155,6 +158,7 @@ def benchmark_failure_summary(
         summary["by_baseline"][baseline] = _aggregate_records(subset)
         summary["state_readout_exposure"][baseline] = _state_exposure_aggregate(subset)
         summary["unknown_current"][baseline] = _unknown_current_aggregate(subset)
+        summary["state_memory_inventory"][baseline] = state_inventory_aggregate(subset)
         summary["premise_correction"][baseline] = _premise_correction_aggregate(subset)
         summary["evidence_support"][baseline] = _evidence_support_aggregate(subset)
         summary["answerability"][baseline] = _answerability_aggregate(subset)
@@ -322,6 +326,20 @@ def benchmark_failure_report(
             )
         lines.append("")
 
+    inventory = summary.get("state_memory_inventory", {})
+    if inventory:
+        lines.append("## State Memory Inventory")
+        lines.append("| baseline | records with state | max state | max active | max stale | active slots |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | --- |")
+        for baseline, aggregate in inventory.items():
+            active_slots = ", ".join(aggregate.get("active_state_slots") or []) or "-"
+            lines.append(
+                f"| {baseline} | {aggregate['records_with_state_memory']}/{aggregate['records']} | "
+                f"{aggregate['max_state_memory_count']} | {aggregate['max_active_state_count']} | "
+                f"{aggregate['max_stale_state_count']} | {active_slots} |"
+            )
+        lines.append("")
+
     evidence = summary.get("evidence_support", {})
     if evidence:
         lines.append("## Evidence Support")
@@ -475,6 +493,7 @@ def _run_query(case_id: str, mem: AdaMem, query: QuerySpec) -> QueryEvalResult:
         forbidden_substrings=query.forbidden_substrings,
         trace=trace,
         metadata=dict(query.metadata),
+        state_inventory=state_memory_inventory(mem.store.all()),
     )
 
 
@@ -556,6 +575,7 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
         failure_modes.append("state_readout_slot_mismatch")
     if not state_sensitive and state_retrieval_count > 0:
         failure_modes.append("state_readout_unmarked_exposure")
+    state_inventory = dict(query.state_inventory)
     return {
         "baseline": baseline,
         "case_id": query.case_id,
@@ -598,6 +618,7 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
         "state_sensitive": state_sensitive,
         "state_available": state_available,
         "state_readout_expected": state_readout_expected,
+        **state_inventory,
     }
 
 

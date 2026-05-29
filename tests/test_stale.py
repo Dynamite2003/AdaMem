@@ -293,6 +293,9 @@ def test_retrieval_diagnostics_separate_current_and_stale_evidence(tmp_path: Pat
 
     assert results["delta_full"].old_support_adjudication_rate >= results["semantic_only"].old_support_adjudication_rate
     assert results["state_readout"].current_recall_rate > results["delta_full"].current_recall_rate
+    assert results["semantic_only"].queries[0].state_memory_count == 0
+    assert results["state_readout"].queries[0].active_state_count > 0
+    assert "location" in results["state_readout"].queries[0].active_state_slots
     report = diagnostics_report(list(results.values()))
     assert "current recall" in report
     assert "stale exposure" in report
@@ -345,6 +348,7 @@ def test_diagnostic_case_records_export_failures(tmp_path: Path) -> None:
     assert all(record["failure_modes"] for record in records)
     assert any("current_evidence_not_recalled" in record["failure_modes"] for record in records)
     assert any("trace" in record for record in records)
+    assert any(record["active_state_count"] > 0 for record in records if record["baseline"] == "state_readout")
 
 
 def test_diagnostic_failure_summary_groups_records(tmp_path: Path) -> None:

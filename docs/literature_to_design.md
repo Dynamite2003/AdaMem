@@ -226,13 +226,19 @@ Current implementation:
   coverage, current-before-stale, premise-old mention, and old-support
   adjudication.
 - Case-level records can be exported as JSONL.
+- State-memory inventory is exported for JSONL records, STALE diagnostic case
+  records, and STALE LLM-judge raw outputs. This records derived state counts,
+  active/stale state counts, unknown-current counts, and active/stale slots,
+  which helps distinguish extraction failures from readout or adjudication
+  failures.
 - Markdown failure reports aggregate records by failure mode, baseline, STALE
   dimension, stale type, and representative examples.
 
 Required next evidence:
 
-- Categorize failures as extraction, adjudication, routing, retrieval, readout,
-  answer-model, or judge ambiguity.
+- Use the state inventory plus trace fields to categorize failures as
+  extraction, adjudication, routing, retrieval, readout, answer-model, or judge
+  ambiguity.
 - Include representative failures in experiment records.
 
 ### 7. Causal Trajectory Evidence
