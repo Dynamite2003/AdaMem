@@ -242,6 +242,30 @@ def test_plan_fingerprint_detects_saved_plan_edits(tmp_path: Path) -> None:
     assert plan_fingerprint(plan) != original
     assert validation["recorded_plan_fingerprint"] == original
     assert validation["plan_fingerprint_matches_recorded"] is False
+    assert validation["execution_ready"] is False
+    assert "plan_fingerprint_matches_recorded" in validation["missing_requirements"]
+
+
+def test_run_study_plan_blocks_saved_plan_fingerprint_mismatch(tmp_path: Path) -> None:
+    plan = build_smoke_study_plan(output_dir=tmp_path / "study")
+    plan["commands"][0]["name"] = "edited"
+
+    try:
+        run_study_plan(plan, dry_run=True, log_path=tmp_path / "run.jsonl")
+    except ValueError as exc:
+        assert "plan_fingerprint_matches_recorded" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected stale recorded fingerprint to block execution")
+
+    summary = run_study_plan(
+        plan,
+        dry_run=True,
+        require_ready=False,
+        log_path=tmp_path / "allowed.records.jsonl",
+    )
+
+    assert summary["status"] == "dry_run"
+    assert summary["validation"]["plan_fingerprint_matches_recorded"] is False
 
 
 def test_run_study_plan_supports_dry_run_and_stage_filter(tmp_path: Path) -> None:
@@ -397,4 +421,36 @@ def test_study_plan_cli_can_run_saved_plan_without_regenerating(tmp_path: Path) 
     validation = json.loads((output_dir / "paper_study_validation.json").read_text(encoding="utf-8"))
     assert summary["status"] == "dry_run"
     assert summary["selected_command_count"] == 1
+    assert validation["execution_ready"] is True
+
+
+def test_study_plan_cli_can_refresh_saved_plan_fingerprint(tmp_path: Path) -> None:
+    output_dir = tmp_path / "saved-refresh"
+    main([
+        "--profile",
+        "smoke",
+        "--output-dir",
+        str(output_dir),
+        "--json",
+    ])
+    plan_path = output_dir / "paper_study_plan.json"
+    data = json.loads(plan_path.read_text(encoding="utf-8"))
+    data["objective"] = "edited_after_review"
+    plan_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    before = validate_paper_study_plan(load_paper_study_plan(plan_path))
+    assert before["execution_ready"] is False
+    assert before["plan_fingerprint_matches_recorded"] is False
+
+    main([
+        "--plan",
+        str(plan_path),
+        "--refresh-fingerprint",
+        "--json",
+    ])
+
+    refreshed = load_paper_study_plan(plan_path)
+    validation = json.loads((output_dir / "paper_study_validation.json").read_text(encoding="utf-8"))
+    assert refreshed["plan_fingerprint"] == plan_fingerprint(refreshed)
+    assert validation["plan_fingerprint_matches_recorded"] is True
     assert validation["execution_ready"] is True

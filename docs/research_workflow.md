@@ -126,6 +126,11 @@ Outputs:
 - Saved or manually edited plans can be loaded with
   `--plan path/to/paper_study_plan.json`, then validated or run without
   regenerating the command matrix from CLI defaults.
+- Saved plans carry a recorded `plan_fingerprint`. If manual edits make the
+  recorded fingerprint stale, validation marks the plan not execution-ready and
+  `--run` blocks unless `--allow-not-ready` is explicitly used. After an
+  intentional review/edit, refresh the saved JSON with
+  `--plan path/to/paper_study_plan.json --refresh-fingerprint`.
 - Notes on any regression before new work begins.
 
 Done when:
@@ -809,7 +814,9 @@ Completed API-free foundations:
 Next API-free work:
 
 1. Prepare scripts so API-enabled pilot runs need only provider/model/key
-   settings.
+   settings. Intentional saved-plan edits should be followed by
+   `--refresh-fingerprint`; accidental fingerprint mismatch should be treated
+   as a reproducibility blocker.
 2. Run retrieval-only diagnostics on larger converted STALE data when available
    and extend the failure taxonomy with representative cases.
 3. Scale the public AMA-Bench trajectory pilot beyond the first 20 episodes

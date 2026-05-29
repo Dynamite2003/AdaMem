@@ -332,6 +332,19 @@ def load_paper_study_plan(path: str | Path) -> dict[str, Any]:
     return plan
 
 
+def refresh_plan_fingerprint(plan: dict[str, Any]) -> dict[str, Any]:
+    plan["plan_fingerprint"] = plan_fingerprint(plan)
+    return plan
+
+
+def refresh_saved_plan_fingerprint(path: str | Path) -> dict[str, Any]:
+    plan_path = Path(path)
+    plan = load_paper_study_plan(plan_path)
+    refresh_plan_fingerprint(plan)
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return plan
+
+
 def write_loaded_plan_artifacts(
     plan: dict[str, Any],
     *,
@@ -463,6 +476,9 @@ def validate_paper_study_plan(
     root_path = Path(root) if root is not None else Path.cwd()
     current_fingerprint = plan_fingerprint(plan)
     recorded_fingerprint = plan.get("plan_fingerprint")
+    fingerprint_matches_recorded = (
+        recorded_fingerprint is None or recorded_fingerprint == current_fingerprint
+    )
     datasets = plan.get("datasets") or {}
     data_sources = plan.get("data_sources") or {}
     prep_sources = _prep_sources_by_dataset(plan)
@@ -560,15 +576,15 @@ def validate_paper_study_plan(
         missing_requirements.append("reporting_command_present")
     if missing_env_vars:
         missing_requirements.append("provider_credentials_available")
+    if not fingerprint_matches_recorded:
+        missing_requirements.append("plan_fingerprint_matches_recorded")
 
     return {
         "schema_version": "adamem.paper_study_validation.v1",
         "plan_fingerprint": current_fingerprint,
         "recorded_plan_fingerprint": recorded_fingerprint,
         "plan_fingerprint_recorded": bool(recorded_fingerprint),
-        "plan_fingerprint_matches_recorded": (
-            recorded_fingerprint is None or recorded_fingerprint == current_fingerprint
-        ),
+        "plan_fingerprint_matches_recorded": fingerprint_matches_recorded,
         "execution_ready": not missing_requirements,
         "missing_requirements": missing_requirements,
         "dataset_checks": dataset_checks,
@@ -1252,6 +1268,11 @@ def main(argv: list[str] | None = None) -> None:
         description="Generate, validate, or run AdaMem paper-track study plans."
     )
     parser.add_argument("--plan", type=Path, help="Load an existing paper_study_plan.json instead of generating a new one.")
+    parser.add_argument(
+        "--refresh-fingerprint",
+        action="store_true",
+        help="With --plan, rewrite the saved JSON's recorded fingerprint after intentional manual edits.",
+    )
     parser.add_argument("--output-dir", type=Path, help="Artifact directory. Required when generating a new plan.")
     parser.add_argument("--profile", choices=["paper", "smoke"], default="paper")
     parser.add_argument("--stale-dataset", help="Defaults to OUTPUT_DIR/data/stale.adamem.jsonl")
@@ -1288,7 +1309,10 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         if args.plan:
-            plan = load_paper_study_plan(args.plan)
+            if args.refresh_fingerprint:
+                plan = refresh_saved_plan_fingerprint(args.plan)
+            else:
+                plan = load_paper_study_plan(args.plan)
             output_dir = args.output_dir or Path(str(plan.get("output_dir") or args.plan.parent))
             artifacts = write_loaded_plan_artifacts(
                 plan,
@@ -1297,6 +1321,8 @@ def main(argv: list[str] | None = None) -> None:
                 check_env=args.check_env,
             )
         else:
+            if args.refresh_fingerprint:
+                parser.error("--refresh-fingerprint requires --plan")
             if args.output_dir is None:
                 parser.error("--output-dir is required when generating a new plan")
             output_dir = args.output_dir

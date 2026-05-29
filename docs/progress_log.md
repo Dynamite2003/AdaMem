@@ -3000,3 +3000,30 @@ to a paper-facing claim and evaluation gate.
   - make recorded fingerprint mismatch an execution-readiness gate
   - add an explicit `--refresh-fingerprint` path for intentional manual edits
   - keep this as the first task tomorrow before running longer experiments
+
+### 2026-05-30 study plan fingerprint gate
+
+- Upgraded saved-plan fingerprint mismatch from a reported warning to an
+  execution-readiness gate.
+- Behavior:
+  - validation adds `plan_fingerprint_matches_recorded` to
+    `missing_requirements` when the current plan content differs from the
+    recorded fingerprint
+  - `run_study_plan` and CLI `--run` now block mismatched plans unless
+    `--allow-not-ready` is explicitly used
+  - `--plan PATH --refresh-fingerprint` rewrites the saved JSON fingerprint
+    after intentional manual review/edit, then regenerates validation artifacts
+- Purpose:
+  - Prevent accidental execution of an edited study plan whose recorded
+    fingerprint no longer identifies the actual command matrix.
+  - Keep future API-backed experiments traceable to exact saved-plan content
+    while still allowing intentional manual edits.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q` -> `19 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py tests/test_reporting.py tests/test_claims.py -q` -> `47 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `179 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke generated a saved plan, confirmed a manual edit blocks
+    `--run`, refreshed the fingerprint, then dry-ran the `diagnostic` stage
+    successfully.
