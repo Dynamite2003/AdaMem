@@ -2176,3 +2176,20 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `6 passed`
   - `PYTHONPATH=src python -m pytest -q` -> `143 passed`
   - `git diff --check` -> no issues
+
+### 2026-05-30 batch claim matrix
+
+- Added claim-matrix outputs to `adamem.reporting` batch mode:
+  - `claim_matrix.json`
+  - `claim_matrix.md`
+- The matrix flattens per-experiment claim evidence into rows with supported
+  claim count, blocked claim count, warning count, prepared state-evidence
+  coverage, state-available rate, and paired no-regression count.
+- Purpose:
+  - Make large result directories triageable after real benchmark/API runs.
+  - Let paper-facing scripts filter for runs that have state availability,
+    paired no-regression evidence, and no claim-audit warnings.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `7 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `144 passed`
+  - `git diff --check` -> no issues

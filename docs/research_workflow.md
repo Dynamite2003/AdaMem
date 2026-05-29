@@ -604,7 +604,10 @@ Completed API-free foundations:
   `*experiment.json` file into per-experiment sub-bundles and a top-level
   batch manifest. Bundle manifests include supported claims, blocked claims,
   claim evidence, and warnings so large experiment directories can be triaged
-  without opening every audit JSON.
+  without opening every audit JSON. Batch mode also writes `claim_matrix.json`
+  and `claim_matrix.md`, which flatten per-experiment claim evidence such as
+  state-evidence coverage and paired no-regression counts for paper-track
+  screening.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records

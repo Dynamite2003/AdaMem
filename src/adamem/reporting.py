@@ -127,10 +127,69 @@ def write_experiment_bundle_batch(
         "experiments": [manifest["experiment"] for manifest in manifests],
         "bundles": manifests,
     }
+    claim_matrix = claim_matrix_rows(manifests)
+    claim_matrix_json = output / "claim_matrix.json"
+    claim_matrix_md = output / "claim_matrix.md"
+    claim_matrix_json.write_text(json.dumps(claim_matrix, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    claim_matrix_md.write_text(claim_matrix_markdown(claim_matrix), encoding="utf-8")
+    batch_manifest["artifacts"] = {
+        "claim_matrix_json": str(claim_matrix_json),
+        "claim_matrix_markdown": str(claim_matrix_md),
+    }
     manifest_path = output / "batch_manifest.json"
     batch_manifest["manifest"] = str(manifest_path)
     manifest_path.write_text(json.dumps(batch_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return batch_manifest
+
+
+def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for manifest in manifests:
+        evidence = manifest.get("claim_evidence") or {}
+        state_evidence = evidence.get("prepared_state_evidence") or {}
+        retrieval = evidence.get("retrieval_transfer") or {}
+        rows.append({
+            "experiment": manifest.get("experiment"),
+            "run_type": manifest.get("run_type"),
+            "dataset": manifest.get("dataset"),
+            "record_kind": manifest.get("record_kind"),
+            "raw_output_count": int(manifest.get("raw_output_count") or 0),
+            "supported_claims": list(manifest.get("supported_claims") or []),
+            "blocked_claims": sorted((manifest.get("blocked_claims") or {}).keys()),
+            "warning_count": len(manifest.get("warnings") or []),
+            "warnings": list(manifest.get("warnings") or []),
+            "state_expected_questions": int(state_evidence.get("with_expected_state_slots") or 0),
+            "state_matching_questions": int(state_evidence.get("with_matching_state_evidence") or 0),
+            "state_available_rate": float(state_evidence.get("state_available_rate") or 0.0),
+            "paired_no_regression_count": len(retrieval.get("paired_no_regression") or []),
+            "supported_claim_count": len(manifest.get("supported_claims") or []),
+            "blocked_claim_count": len(manifest.get("blocked_claims") or {}),
+        })
+    return rows
+
+
+def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
+    lines = [
+        "# AdaMem Claim Matrix",
+        "",
+        "| experiment | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    if not rows:
+        lines.append("| <none> | <none> | 0 | 0 | 0 | 0/0 | 0.00% | 0 |")
+        return "\n".join(lines) + "\n"
+    for row in rows:
+        experiment = Path(str(row.get("experiment") or "<missing>")).name
+        expected = int(row.get("state_expected_questions") or 0)
+        matching = int(row.get("state_matching_questions") or 0)
+        lines.append(
+            f"| {experiment} | {row.get('run_type') or '<missing>'} | "
+            f"{row['supported_claim_count']} | {row['blocked_claim_count']} | "
+            f"{row['warning_count']} | {matching}/{expected} | "
+            f"{float(row.get('state_available_rate') or 0.0):.2%} | "
+            f"{row['paired_no_regression_count']} |"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> None:

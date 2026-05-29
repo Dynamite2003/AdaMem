@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from adamem.reporting import main, write_experiment_bundle, write_experiment_bundle_batch
+from adamem.reporting import claim_matrix_markdown, claim_matrix_rows, main, write_experiment_bundle, write_experiment_bundle_batch
 
 
 def test_write_experiment_bundle_for_answer_generation(tmp_path: Path) -> None:
@@ -97,6 +97,7 @@ def test_write_experiment_bundle_supports_longmemeval_v2_prepared_pilot(tmp_path
 def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     experiment_a = _write_answer_generation_experiment(tmp_path, stem="generation_a")
     experiment_b = _write_answer_generation_experiment(tmp_path, stem="generation_b")
+    experiment_c = _write_lme_v2_prepared_experiment(tmp_path)
     output_dir = tmp_path / "batch"
 
     manifest = write_experiment_bundle_batch(
@@ -105,15 +106,20 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
         group_fields=["question_type"],
     )
 
-    assert manifest["experiment_count"] == 2
-    assert manifest["experiments"] == [str(experiment_a), str(experiment_b)]
+    assert manifest["experiment_count"] == 3
+    assert manifest["experiments"] == [str(experiment_a), str(experiment_b), str(experiment_c)]
     assert Path(manifest["manifest"]).exists()
-    assert len(manifest["bundles"]) == 2
+    assert Path(manifest["artifacts"]["claim_matrix_json"]).exists()
+    assert Path(manifest["artifacts"]["claim_matrix_markdown"]).exists()
+    assert len(manifest["bundles"]) == 3
     for bundle in manifest["bundles"]:
-        assert bundle["record_kind"] == "answer_generation"
         assert "claim_evidence" in bundle
         assert "warnings" in bundle
         assert Path(bundle["artifacts"]["paper_tables_markdown"]).exists()
+    matrix = json.loads(Path(manifest["artifacts"]["claim_matrix_json"]).read_text(encoding="utf-8"))
+    by_name = {Path(row["experiment"]).name: row for row in matrix}
+    assert by_name["lme_v2_prepared.experiment.json"]["state_matching_questions"] == 1
+    assert by_name["lme_v2_prepared.experiment.json"]["state_available_rate"] == 1.0
 
 
 def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
@@ -132,6 +138,53 @@ def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
     manifest = json.loads((output_dir / "batch_manifest.json").read_text(encoding="utf-8"))
     assert manifest["experiment_count"] == 1
     assert manifest["bundles"][0]["record_kind"] == "answer_generation"
+    assert Path(manifest["artifacts"]["claim_matrix_markdown"]).exists()
+
+
+def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
+    rows = claim_matrix_rows([
+        {
+            "experiment": "a.experiment.json",
+            "run_type": "longmemeval_v2_prepared_answer_support_pilot",
+            "dataset": "dataset.jsonl",
+            "record_kind": "retrieval",
+            "raw_output_count": 20,
+            "supported_claims": ["retrieval_diagnostics", "prepared_state_evidence_audit"],
+            "blocked_claims": {"answer_accuracy": ["not generation"]},
+            "warnings": [],
+            "claim_evidence": {
+                "prepared_state_evidence": {
+                    "with_expected_state_slots": 4,
+                    "with_matching_state_evidence": 3,
+                    "state_available_rate": 0.75,
+                },
+                "retrieval_transfer": {
+                    "paired_no_regression": [{"candidate": "semantic_state_readout"}],
+                },
+            },
+        }
+    ])
+    markdown = claim_matrix_markdown(rows)
+
+    assert rows == [{
+        "experiment": "a.experiment.json",
+        "run_type": "longmemeval_v2_prepared_answer_support_pilot",
+        "dataset": "dataset.jsonl",
+        "record_kind": "retrieval",
+        "raw_output_count": 20,
+        "supported_claims": ["retrieval_diagnostics", "prepared_state_evidence_audit"],
+        "blocked_claims": ["answer_accuracy"],
+        "warning_count": 0,
+        "warnings": [],
+        "state_expected_questions": 4,
+        "state_matching_questions": 3,
+        "state_available_rate": 0.75,
+        "paired_no_regression_count": 1,
+        "supported_claim_count": 2,
+        "blocked_claim_count": 1,
+    }]
+    assert "3/4" in markdown
+    assert "75.00%" in markdown
 
 
 def _write_answer_generation_experiment(tmp_path: Path, *, stem: str = "generation") -> Path:
