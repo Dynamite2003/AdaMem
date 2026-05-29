@@ -63,6 +63,34 @@ Required next evidence:
 - Replace API-free mainstream approximations with official implementations
   where available, or document why a faithful local approximation is used.
 
+### 0a. Paper-Grade Method and Ablation Coverage Gate
+
+Hypothesis:
+
+A memory mechanism is not a paper contribution just because one configured
+system improves. A result directory should prove that the proposed state-aware
+method was compared against raw and mainstream references, and that named
+mechanisms can be isolated through ablations.
+
+Current implementation:
+
+- Batch report bundles write `method_coverage.json/md`.
+- The method audit checks four directory-level requirements: raw retrieval
+  reference, mainstream memory approximation, proposed state-aware method, and
+  mechanism ablation coverage.
+- It separately flags named mechanism evidence for state readout, dependency
+  propagation, source adjudication, premise correction, LLM state extraction,
+  and trajectory-step readout.
+- `paper_readiness.json/md` includes method coverage completeness and method
+  gaps alongside benchmark and model-robustness gates.
+
+Required next evidence:
+
+- Run STALE answer/judge experiments with the full method matrix, not only the
+  best current configuration.
+- Treat missing named mechanism ablations as a paper-table gap until the result
+  directory explains why a mechanism is out of scope for that benchmark.
+
 ### 0b. Model and Judge Robustness Gate
 
 Hypothesis:

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
+from adamem.baselines import baseline_registry
 from adamem.claims import (
     ANSWER_RUN_TYPES,
     MIN_ANSWER_MODELS_FOR_ROBUSTNESS,
@@ -141,10 +142,12 @@ def write_experiment_bundle_batch(
     claim_matrix = claim_matrix_rows(manifests)
     study_model_coverage = study_model_coverage_rows(manifests)
     benchmark_coverage = benchmark_coverage_summary(manifests)
+    method_coverage = method_coverage_summary(manifests)
     paper_readiness = paper_readiness_summary(
         claim_matrix,
         study_model_coverage,
         benchmark_coverage=benchmark_coverage,
+        method_coverage=method_coverage,
     )
     claim_matrix_json = output / "claim_matrix.json"
     claim_matrix_md = output / "claim_matrix.md"
@@ -153,6 +156,8 @@ def write_experiment_bundle_batch(
     study_model_md = output / "study_model_coverage.md"
     benchmark_json = output / "benchmark_coverage.json"
     benchmark_md = output / "benchmark_coverage.md"
+    method_json = output / "method_coverage.json"
+    method_md = output / "method_coverage.md"
     readiness_json = output / "paper_readiness.json"
     readiness_md = output / "paper_readiness.md"
     claim_matrix_json.write_text(json.dumps(claim_matrix, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -162,6 +167,8 @@ def write_experiment_bundle_batch(
     study_model_md.write_text(study_model_coverage_markdown(study_model_coverage), encoding="utf-8")
     benchmark_json.write_text(json.dumps(benchmark_coverage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     benchmark_md.write_text(benchmark_coverage_markdown(benchmark_coverage), encoding="utf-8")
+    method_json.write_text(json.dumps(method_coverage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    method_md.write_text(method_coverage_markdown(method_coverage), encoding="utf-8")
     readiness_json.write_text(json.dumps(paper_readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     readiness_md.write_text(paper_readiness_markdown(paper_readiness), encoding="utf-8")
     batch_manifest["artifacts"] = {
@@ -172,6 +179,8 @@ def write_experiment_bundle_batch(
         "study_model_coverage_markdown": str(study_model_md),
         "benchmark_coverage_json": str(benchmark_json),
         "benchmark_coverage_markdown": str(benchmark_md),
+        "method_coverage_json": str(method_json),
+        "method_coverage_markdown": str(method_md),
         "paper_readiness_json": str(readiness_json),
         "paper_readiness_markdown": str(readiness_md),
     }
@@ -377,13 +386,136 @@ def benchmark_coverage_markdown(summary: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def method_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    manifest_list = list(manifests)
+    specs = baseline_registry()
+    categories: dict[str, set[str]] = {}
+    unknown: set[str] = set()
+    for manifest in manifest_list:
+        for baseline in manifest.get("baselines") or []:
+            name = str(baseline)
+            spec = specs.get(name)
+            if spec is None:
+                unknown.add(name)
+                continue
+            categories.setdefault(spec.category, set()).add(name)
+
+    baseline_names = sorted(
+        name
+        for names in categories.values()
+        for name in names
+    )
+    category_lists = {
+        category: sorted(names)
+        for category, names in sorted(categories.items())
+    }
+    required_groups = {
+        "raw_retrieval_reference": _category_present(categories, {"raw_turn_retrieval"}),
+        "mainstream_memory_approximation": _category_present(categories, {"mainstream_approximation"}),
+        "proposed_state_aware_method": _category_present(categories, {"state_aware"}),
+        "mechanism_ablation": _category_present(
+            categories,
+            {
+                "adamem_ablation",
+                "state_aware_ablation",
+                "state_extractor_ablation",
+                "trajectory_memory_ablation",
+            },
+        ),
+    }
+    mechanism_flags = {
+        "state_readout": _baseline_present(category_lists, {"state_readout", "semantic_state_readout"}),
+        "state_dependency_propagation": _baseline_present(
+            category_lists,
+            {"state_propagation", "semantic_state_propagation", "semantic_state_propagation_adjudication"},
+        ),
+        "state_source_adjudication": _baseline_present(
+            category_lists,
+            {"semantic_state_adjudication", "semantic_state_propagation_adjudication"},
+        ),
+        "premise_correction": _baseline_present(
+            category_lists,
+            {"semantic_state_premise_correction", "semantic_llm_state_premise_correction"},
+        ),
+        "llm_state_extractor": _baseline_present(
+            category_lists,
+            {"semantic_llm_state_adjudication", "semantic_llm_state_premise_correction"},
+        ),
+        "trajectory_step_readout": _baseline_present(category_lists, {"trajectory_step_readout"}),
+    }
+    missing_requirements = [
+        group for group, present in required_groups.items() if not present
+    ]
+    missing_named_mechanism_ablations = [
+        name for name, present in mechanism_flags.items() if not present
+    ]
+    if unknown:
+        missing_requirements.append("known_baseline_names_only")
+    return {
+        "experiment_count": len(manifest_list),
+        "baseline_count": len(baseline_names) + len(unknown),
+        "known_baseline_count": len(baseline_names),
+        "unknown_baselines": sorted(unknown),
+        "categories": category_lists,
+        "category_counts": {
+            category: len(names)
+            for category, names in category_lists.items()
+        },
+        "required_groups": required_groups,
+        "mechanism_flags": mechanism_flags,
+        "missing_requirements": missing_requirements,
+        "missing_named_mechanism_ablations": missing_named_mechanism_ablations,
+        "complete": not missing_requirements,
+    }
+
+
+def method_coverage_markdown(summary: dict[str, Any]) -> str:
+    lines = ["# AdaMem Method Coverage", ""]
+    lines.append(f"Complete: `{bool(summary.get('complete'))}`")
+    lines.append(f"Known baselines: `{int(summary.get('known_baseline_count') or 0)}`")
+    unknown = summary.get("unknown_baselines") or []
+    lines.append(
+        "Unknown baselines: "
+        + (", ".join(f"`{item}`" for item in unknown) if unknown else "`none`")
+    )
+    missing = summary.get("missing_requirements") or []
+    lines.append(
+        "Missing requirements: "
+        + (", ".join(f"`{item}`" for item in missing) if missing else "`none`")
+    )
+    lines.append("")
+    lines.append("## Required Groups")
+    for group, present in (summary.get("required_groups") or {}).items():
+        lines.append(f"- `{group}`: `{bool(present)}`")
+    lines.append("")
+    lines.append("## Named Mechanisms")
+    for mechanism, present in (summary.get("mechanism_flags") or {}).items():
+        lines.append(f"- `{mechanism}`: `{bool(present)}`")
+    missing_mechanisms = summary.get("missing_named_mechanism_ablations") or []
+    if missing_mechanisms:
+        lines.append("")
+        lines.append("## Missing Named Mechanism Ablations")
+        for item in missing_mechanisms:
+            lines.append(f"- `{item}`")
+    lines.append("")
+    lines.append("## Categories")
+    categories = summary.get("categories") or {}
+    if not categories:
+        lines.append("- `<none>`")
+    for category, names in categories.items():
+        lines.append(f"- `{category}`: {', '.join(f'`{name}`' for name in names)}")
+    return "\n".join(lines) + "\n"
+
+
 def paper_readiness_summary(
     claim_rows: list[dict[str, Any]],
     study_model_rows: list[dict[str, Any]],
     *,
     benchmark_coverage: dict[str, Any] | None = None,
+    method_coverage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     benchmark_coverage = benchmark_coverage or {}
+    method_coverage = method_coverage or {}
     gate_counts = _count_values(row.get("readiness_gate") for row in claim_rows)
     action_counts = _next_action_counts(claim_rows)
     complete_studies = [row for row in study_model_rows if row.get("complete")]
@@ -407,6 +539,12 @@ def paper_readiness_summary(
         "benchmark_coverage_complete": bool(benchmark_coverage.get("complete")),
         "benchmark_missing_requirements": list(benchmark_coverage.get("missing_requirements") or []),
         "benchmark_families": dict(benchmark_coverage.get("benchmark_families") or {}),
+        "method_coverage_complete": bool(method_coverage.get("complete")),
+        "method_missing_requirements": list(method_coverage.get("missing_requirements") or []),
+        "method_missing_named_mechanism_ablations": list(
+            method_coverage.get("missing_named_mechanism_ablations") or []
+        ),
+        "method_categories": dict(method_coverage.get("category_counts") or {}),
     }
 
 
@@ -420,6 +558,7 @@ def paper_readiness_markdown(summary: dict[str, Any]) -> str:
         f"`{int(summary.get('study_model_group_count') or 0)}` total"
     )
     lines.append(f"Benchmark coverage complete: `{bool(summary.get('benchmark_coverage_complete'))}`")
+    lines.append(f"Method coverage complete: `{bool(summary.get('method_coverage_complete'))}`")
     lines.append("")
     lines.append("## Gates")
     for gate, count in (summary.get("gate_counts") or {}).items():
@@ -447,6 +586,18 @@ def paper_readiness_markdown(summary: dict[str, Any]) -> str:
         lines.append("")
         lines.append("## Benchmark Coverage Gaps")
         for item in missing_benchmarks:
+            lines.append(f"- `{item}`")
+    method_gaps = summary.get("method_missing_requirements") or []
+    if method_gaps:
+        lines.append("")
+        lines.append("## Method Coverage Gaps")
+        for item in method_gaps:
+            lines.append(f"- `{item}`")
+    missing_mechanisms = summary.get("method_missing_named_mechanism_ablations") or []
+    if missing_mechanisms:
+        lines.append("")
+        lines.append("## Missing Named Mechanism Ablations")
+        for item in missing_mechanisms:
             lines.append(f"- `{item}`")
     return "\n".join(lines) + "\n"
 
@@ -598,6 +749,14 @@ def _benchmark_family(manifest: dict[str, Any]) -> str:
     if "state-bench" in text or "state_bench" in text:
         return "state_bench"
     return "other"
+
+
+def _category_present(categories: dict[str, set[str]], required: set[str]) -> bool:
+    return any(category in categories and bool(categories[category]) for category in required)
+
+
+def _baseline_present(categories: dict[str, list[str]], names: set[str]) -> bool:
+    return any(name in names for baselines in categories.values() for name in baselines)
 
 
 def _paper_readiness_status(

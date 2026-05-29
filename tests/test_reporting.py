@@ -9,6 +9,8 @@ from adamem.reporting import (
     claim_matrix_markdown,
     claim_matrix_rows,
     main,
+    method_coverage_markdown,
+    method_coverage_summary,
     paper_next_steps_markdown,
     paper_readiness_markdown,
     paper_readiness_summary,
@@ -130,6 +132,8 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["study_model_coverage_markdown"]).exists()
     assert Path(manifest["artifacts"]["benchmark_coverage_json"]).exists()
     assert Path(manifest["artifacts"]["benchmark_coverage_markdown"]).exists()
+    assert Path(manifest["artifacts"]["method_coverage_json"]).exists()
+    assert Path(manifest["artifacts"]["method_coverage_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_readiness_json"]).exists()
     assert Path(manifest["artifacts"]["paper_readiness_markdown"]).exists()
     assert len(manifest["bundles"]) == 3
@@ -169,6 +173,7 @@ def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()
     assert Path(manifest["artifacts"]["study_model_coverage_markdown"]).exists()
     assert Path(manifest["artifacts"]["benchmark_coverage_markdown"]).exists()
+    assert Path(manifest["artifacts"]["method_coverage_markdown"]).exists()
     assert Path(manifest["artifacts"]["paper_readiness_markdown"]).exists()
 
 
@@ -306,6 +311,41 @@ def test_benchmark_coverage_summary_tracks_stale_and_transfer_scope() -> None:
     assert "Complete: `True`" in markdown
 
 
+def test_method_coverage_summary_tracks_paper_method_groups() -> None:
+    summary = method_coverage_summary([
+        {
+            "experiment": "stale.experiment.json",
+            "baselines": [
+                "semantic_only",
+                "a_mem_evolution",
+                "state_readout",
+                "semantic_state_premise_correction",
+            ],
+        },
+        {
+            "experiment": "unknown.experiment.json",
+            "baselines": ["custom_memory"],
+        },
+    ])
+    markdown = method_coverage_markdown(summary)
+
+    assert summary["experiment_count"] == 2
+    assert summary["known_baseline_count"] == 4
+    assert summary["unknown_baselines"] == ["custom_memory"]
+    assert summary["required_groups"] == {
+        "raw_retrieval_reference": True,
+        "mainstream_memory_approximation": True,
+        "proposed_state_aware_method": True,
+        "mechanism_ablation": True,
+    }
+    assert summary["missing_requirements"] == ["known_baseline_names_only"]
+    assert summary["mechanism_flags"]["state_readout"] is True
+    assert summary["mechanism_flags"]["premise_correction"] is True
+    assert summary["mechanism_flags"]["llm_state_extractor"] is False
+    assert "custom_memory" in markdown
+    assert "`proposed_state_aware_method`: `True`" in markdown
+
+
 def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() -> None:
     claim_rows = claim_matrix_rows([
         {
@@ -346,11 +386,23 @@ def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() ->
             "dataset_scope": {"scope": "benchmark_like", "claim_limited": False},
         },
     ])
+    method_coverage = method_coverage_summary([
+        {
+            "experiment": "stale.experiment.json",
+            "baselines": [
+                "semantic_only",
+                "a_mem_evolution",
+                "state_readout",
+                "semantic_state_premise_correction",
+            ],
+        }
+    ])
 
     summary = paper_readiness_summary(
         claim_rows,
         study_rows,
         benchmark_coverage=benchmark_coverage,
+        method_coverage=method_coverage,
     )
     markdown = paper_readiness_markdown(summary)
 
@@ -358,11 +410,19 @@ def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() ->
     assert summary["gate_counts"] == {"answer_candidate": 1}
     assert summary["complete_study_model_group_count"] == 1
     assert summary["benchmark_coverage_complete"] is True
+    assert summary["method_coverage_complete"] is True
+    assert summary["method_categories"] == {
+        "mainstream_approximation": 1,
+        "raw_turn_retrieval": 1,
+        "state_aware": 1,
+        "state_aware_ablation": 1,
+    }
     assert summary["top_next_actions"][0] == {
         "action": "add_strong_baselines_and_judge_robustness",
         "count": 1,
     }
     assert "answer_candidate_with_model_coverage" in markdown
+    assert "Method coverage complete: `True`" in markdown
 
 
 def test_paper_next_steps_markdown_groups_actions() -> None:

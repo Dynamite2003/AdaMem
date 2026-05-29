@@ -685,9 +685,16 @@ Completed API-free foundations:
   mode also writes `benchmark_coverage.json` and `benchmark_coverage.md`,
   which check whether a result directory covers the primary STALE benchmark,
   at least one transfer benchmark, and at least one public/full-scope
-  experiment. `paper_readiness.json` and `paper_readiness.md` summarize
+  experiment. Batch mode also writes `method_coverage.json` and
+  `method_coverage.md`, which check whether the directory includes a raw
+  retrieval reference, a mainstream memory approximation, the proposed
+  state-aware method, and mechanism ablations. It also flags missing named
+  mechanisms such as state readout, dependency propagation, source
+  adjudication, premise correction, LLM state extraction, and trajectory-step
+  readout. `paper_readiness.json` and `paper_readiness.md` summarize
   directory-level gate counts, top next actions, complete vs incomplete
-  study-level model coverage, and benchmark coverage gaps.
+  study-level model coverage, benchmark coverage gaps, and method coverage
+  gaps.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records

@@ -2685,3 +2685,42 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `159 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 method coverage audit
+
+- Extended batch `adamem.reporting` outputs with:
+  - `method_coverage.json`
+  - `method_coverage.md`
+- Method coverage summarizes:
+  - known and unknown baseline names
+  - baseline categories present in the result directory
+  - required paper method groups:
+    - raw retrieval reference
+    - mainstream memory approximation
+    - proposed state-aware method
+    - mechanism ablation
+  - named mechanism flags:
+    - state readout
+    - state dependency propagation
+    - state source adjudication
+    - premise correction
+    - LLM state extractor
+    - trajectory-step readout
+- `paper_readiness.json/md` now includes method coverage completeness,
+  missing method requirements, missing named mechanism ablations, and method
+  category counts.
+- Purpose:
+  - Make method-comparison completeness explicit at the directory level, not
+    only inside individual claim audits.
+  - Prevent a result folder with a promising best baseline from being mistaken
+    for contribution-level evidence before raw/mainstream/proposed/ablation
+    coverage is present.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `15 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py tests/test_claims.py -q` -> `28 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `160 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - Batch reporting smoke on `results/ama_public_20_full` wrote
+    `method_coverage.json`, `method_coverage.md`, and `paper_readiness.json`
+    into a temporary output directory.
