@@ -55,6 +55,7 @@ Suggested first ablations:
 - semantic + graph expansion
 - semantic + graph + delta supersession
 - full AdaMem scoring with MMR context packing
+- state-aware AdaMem with derived state memories and authorized state readout
 
 ## Synthetic Ablation
 
@@ -71,11 +72,70 @@ semantic_only       1/4
 semantic_importance 1/4
 semantic_temporal   2/4
 semantic_graph      2/4
+a_mem_evolution     2/4
+zep_temporal_kg     3/4
+mem0_extraction     0/4
 delta_graph         3/4
+delta_soft          3/4
+delta_propagation   3/4
+delta_full          3/4
 full                4/4
+state_memory        4/4
+semantic_state_readout 1/4
+semantic_state_propagation 1/4
+semantic_state_adjudication 1/4
+semantic_state_propagation_adjudication 1/4
+state_readout       4/4
+state_propagation   4/4
 ```
 
 This is not a substitute for LoCoMo, LongMemEval, or AMA-Bench, but it proves the local mechanisms are independently ablatable before paying for larger evaluations.
+
+## State-Aware Prototype
+
+AdaMem includes an early API-free state-aware prototype for STALE-style
+experiments. When enabled, it extracts narrow typed user state updates such as
+current location, beverage preference, schedule availability, and task status
+from observations, writes derived `state` memories, supersedes older state
+values, and can surface current state before raw episodic evidence for
+state-sensitive queries.
+
+Derived `state` memories are hidden from ordinary direct retrieval by default
+and enter results through an authorized readout path only. This keeps state
+summaries from polluting generic public benchmark retrieval while preserving a
+clean ablation switch for the boundary.
+
+The `semantic_state_adjudication` baseline additionally marks raw evidence
+behind replaced state values and filters that evidence only for queries routed
+to the same state slot. This is intentionally narrower than the global
+adjudication filter: historical queries can still retrieve old episodes, while
+current-state queries avoid stale raw support.
+
+This prototype is intentionally narrow and deterministic. It is meant to test
+the research hypothesis before spending API budget, not to replace a robust LLM
+extractor. The extractor is pluggable so API-enabled or domain-specific
+extractors can be evaluated under the same memory/readout mechanism.
+
+The `state_propagation` baseline additionally tests typed dependency
+propagation: for example, a changed location can invalidate dependent local
+state such as `local.*` records and their source evidence.
+
+The `a_mem_evolution` baseline is an API-free approximation of A-MEM-style
+agentic memory notes. It adds deterministic note keywords, dynamic links, and
+write-time memory evolution over raw episodes. It is a mainstream-design
+comparison, not AdaMem's proposed state-authority mechanism.
+
+The `zep_temporal_kg` baseline is an API-free approximation of Zep/Graphiti-
+style temporal KG memory. It writes temporal fact edges from extracted state,
+invalidates old edges when a relation changes, and exposes active KG facts for
+state-sensitive queries. It intentionally does not perform AdaMem's raw-source
+adjudication, so it can test whether temporal KG readout alone is enough.
+
+The `mem0_extraction` baseline is an API-free approximation of Mem0-style
+compact memory extraction and update. It keeps raw observations only as audit
+sources, retrieves extracted compact facts, and replaces older facts for the
+same slot. It tests whether a compact extraction-only memory is sufficient
+without raw-evidence retrieval plus query-scoped adjudication.
 
 ## JSONL Benchmark Adapter
 
@@ -83,6 +143,7 @@ Run a retrieval-support ablation over a thin JSONL format:
 
 ```bash
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/tiny_memory_qa.jsonl
+PYTHONPATH=src python -m adamem.eval --dataset benchmarks/tiny_memory_qa.jsonl --baselines semantic_only full --max-cases 1 --experiment-output results/tiny_memory_qa_smoke.json
 ```
 
 Each line is one memory episode:
@@ -107,3 +168,98 @@ By default, LoCoMo evaluation checks whether retrieved context contains the anno
 On the first official LoCoMo sample (`--limit 1`, `--top-k 8`), the current default full configuration retrieves 52/152 evidence supports versus 50/152 for semantic-only. This is a smoke test, not a SOTA claim.
 
 See [docs/design.md](docs/design.md) for the research notes and experiment plan.
+
+## Research Workflow
+
+For paper-track development, use [docs/research_workflow.md](docs/research_workflow.md)
+as the phase checklist and keep [docs/progress_log.md](docs/progress_log.md)
+updated after meaningful design decisions, experiments, implementation changes,
+or scope changes.
+
+Use [docs/literature_to_design.md](docs/literature_to_design.md) to keep
+mechanism ideas tied to real papers, baseline gaps, hypotheses, and evaluation
+gates.
+
+Useful API-free commands:
+
+```bash
+python -m pytest
+PYTHONPATH=src python -m adamem.eval --list-baselines
+PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl
+PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 1 --experiment-output results/dynamic_state_transfer_smoke.json
+PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json benchmarks/longmemeval_s.adamem.jsonl
+PYTHONPATH=src python -m adamem.eval --dataset benchmarks/longmemeval_s.adamem.jsonl --baselines semantic_only semantic_state_readout semantic_state_propagation full state_readout state_propagation --max-cases 20 --experiment-output results/longmemeval_transfer_pilot.json
+PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10
+PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60.adamem.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 60 --benchmark-cases-output results/longmemeval_s_balanced_60_state_adjudication_records.jsonl --benchmark-report-output results/longmemeval_s_balanced_60_state_adjudication_report.md --experiment-output results/longmemeval_s_balanced_60_state_adjudication_pilot.json
+PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_audit_probe.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --state-audit-output results/longmemeval_s_balanced_60_state_audit_candidates.jsonl --state-audit-summary-output results/longmemeval_s_balanced_60_state_audit_summary.json
+PYTHONPATH=src python -m adamem.convert ama data/ama_bench.jsonl benchmarks/ama_bench.adamem.jsonl --expected answer --top-k 8
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 2 --experiment-output results/stale_mini_state_adjudication_diagnostics.json --diagnostic-cases-output results/stale_mini_state_adjudication_cases.jsonl --diagnostic-report-output results/stale_mini_state_adjudication_report.md
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale.adamem.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication state_readout --stale-types T1 T2 --limit-per-stale-type 10 --experiment-output results/stale_balanced20_state_adjudication_diagnostics.json --diagnostic-cases-output results/stale_balanced20_state_adjudication_cases.jsonl --diagnostic-report-output results/stale_balanced20_state_adjudication_report.md
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --experiment-output results/stale_diagnostics_smoke.json
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl --diagnostic-report-output results/stale_failure_report.md
+PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output results/stale_pilot_mock.json
+```
+
+When API keys are available, replace the mock providers with real answer and
+judge providers. `--experiment-output` records prompts, raw model outputs,
+retrieved traces, configs, model settings, command, and commit for audit.
+Use `--stale-types` and `--limit-per-stale-type` on converted STALE JSONL to
+run reproducible T1/T2-balanced pilots before scaling to all 400 cases.
+For `--dataset` runs, `--experiment-output` records retrieval-support
+pass/fail results, query metadata, retrieved text, trace data, configs,
+command, and commit without requiring answer or judge models. Use `--baselines`
+to run a focused subset of canonical baseline names during public benchmark
+pilots. Use `--benchmark-cases-output` and `--benchmark-report-output` to write
+per-query retrieval records and grouped failure reports for error analysis.
+JSONL reports include a `State Readout Exposure` table so state-summary
+insertion and unmarked-query exposure can be audited separately from support
+accuracy. The same records include expected/retrieved state slots and failure
+modes for missing state readout, slot mismatch, and unmarked state exposure.
+They also include a `Paper Metrics` table with support accuracy, net delta,
+state-slot match, missing readout, slot mismatch, and unmarked state exposure.
+
+`benchmarks/dynamic_state_transfer.jsonl` is a local non-STALE smoke fixture for
+schedule, task status, preference, health/dietary, resource, workflow/runbook,
+and runtime/tool state. It is useful for development but does not establish
+transfer to public benchmarks.
+
+The `longmemeval` converter targets the official cleaned LongMemEval schema.
+It keeps answer/evidence labels evaluation-only and does not write
+`answer_session_ids` or `has_answer` into observation metadata.
+
+For state-authority diagnostics on LongMemEval-style public transfer runs, add
+`--infer-state-slots` during conversion. This annotates query metadata from the
+query text only, so reports can measure state-readout match/missing rates
+without leaking answer or evidence labels into runtime memory. Treat these
+inferred labels as diagnostic candidates, not ground truth; precision-audit the
+marked queries before using state-readout rates as paper evidence.
+
+For paper-facing public-transfer subsets, use the manual audit path instead of
+raw inferred labels:
+
+```bash
+PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_audit_probe.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --state-audit-output results/longmemeval_s_balanced_60_state_audit_candidates.jsonl --state-audit-summary-output results/longmemeval_s_balanced_60_state_audit_summary.json
+PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_manual_audit.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --state-audit-input results/longmemeval_s_balanced_60_state_audit_reviewed.jsonl
+```
+
+The reviewed JSONL must mark accepted records with `is_state_sensitive: true`.
+Rejected or unreviewed records are ignored. Add `state_available: false` when
+the query needs current state but the haystack does not contain a reliable
+current-state record; these cases are reported separately from missing readout
+failures. Candidate records include `state_evidence_candidates` extracted from
+the haystack without answer or evidence labels, which helps reviewers justify
+`state_available` decisions.
+
+Use `--state-audit-summary-output` before manual review to estimate whether the
+converted benchmark has enough state-available cases. The current LongMemEval-S
+full-file audit yields only 14 query-state candidates and 0 deterministic
+state-evidence candidates, so it should be treated as a broad retrieval
+no-regression check rather than the main public state-transfer benchmark.
+
+The `ama` converter accepts AMA-Bench-style JSON or JSONL agent trajectories.
+It emits actions, observations, and environment-state snapshots as runtime
+observations, links action results through `cause_labels`, and keeps answers or
+evidence labels query-only. This prepares API-free tests of whether causal
+trajectory structure helps beyond raw similarity retrieval.

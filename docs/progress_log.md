@@ -20,10 +20,26 @@ Primary method direction:
 
 ## Current Phase
 
-Phase 1 from `docs/research_workflow.md`: Evaluation Harness Hardening.
+Phase 1 and Phase 3 from `docs/research_workflow.md`: Evaluation Harness
+Hardening plus the first state-aware method prototype.
 
-The next high-value task is to make retrieval diagnostics and experiment
-records trustworthy before API-enabled answer/judge runs.
+Retrieval diagnostics, stable baseline configs, experiment records, and a
+deterministic state-aware prototype are now available. The current best
+API-free variant combines authorized state readout with query-scoped
+state-source adjudication. The deterministic state extractor now covers
+location, schedule availability, beverage preference, task status,
+health/dietary constraints, resource status, workflow/runbook rules, and
+runtime/tool status. The latest public-transfer diagnostic shows the next
+method bottleneck clearly: state-sensitive query routing must be precise before
+state-readout metrics are meaningful. The first LongMemEval-S inferred-state
+run overcounted ordinary episodic questions as state queries; the router now
+uses word-boundary matching and slot-specific intent gates. The full
+LongMemEval-S audit now produces only 14 query-state candidates and 0
+deterministic state-evidence candidates, so LongMemEval-S should be treated as
+a broad retrieval no-regression check rather than the main state-available
+transfer benchmark. The next high-value task is to build or select a reliable
+public state-sensitive transfer subset, then improve observation-side state
+extraction on those true state cases.
 
 ## Confirmed Project Constraints
 
@@ -37,6 +53,833 @@ records trustworthy before API-enabled answer/judge runs.
 - Breaking API changes are allowed when useful, but must be documented.
 
 ## Completed Work
+
+### 2026-05-29
+
+- Added `src/adamem/diagnostics.py` for API-free STALE retrieval diagnostics.
+- Added `src/adamem/baselines.py` for stable baseline names, categories,
+  descriptions, and runnable configs.
+- Added `src/adamem/state.py` as the first deterministic state-aware memory
+  prototype. It extracts user location updates without API calls or STALE
+  labels, writes derived `state` memory items, supersedes older state values,
+  and supports current-state readout for location-sensitive queries.
+- Extended `src/adamem/state.py` beyond location:
+  - Added typed `preference.beverage` extraction.
+  - Added typed `schedule.availability` extraction.
+  - Added dynamic `task.*.status` extraction for task or project status
+    updates such as blocked, completed, resolved, pending, paused, and
+    cancelled.
+  - Added slot-aware readout routing so location and preference states are not
+    mixed for unrelated queries.
+  - Added wildcard state readout matching so dynamic slots such as
+    `task.checkout_migration.status` can be retrieved by status-oriented
+    queries without enumerating every task name.
+  - Added a pluggable `state_extractor` hook to `AdaMem`, preserving the same
+    memory/readout mechanism for future LLM or domain extractors.
+- Added state-slot dependency propagation:
+  - New `use_state_dependency_propagation` config flag.
+  - New `state_propagation` baseline.
+  - Initial topology invalidates `local.*`, `commute.*`,
+    `schedule.local.*`, and `timezone.*` state slots when the active location
+    changes.
+  - Dependent state source evidence is also marked stale so raw episode
+    retrieval cannot bypass the state authority layer.
+- Added `src/adamem/experiments.py` for JSON experiment records with schema
+  version, command, commit, dataset, baseline configs, diagnostics, prompts,
+  raw outputs, and notes.
+- Added `docs/literature_to_design.md` to connect current memory papers and
+  SOTA-style systems to AdaMem's design hypotheses, contribution candidates,
+  baseline requirements, and evaluation gates.
+- Added `benchmarks/dynamic_state_transfer.jsonl` as a non-STALE dynamic-state
+  transfer smoke fixture. It covers schedule availability, task status, and
+  beverage preference without using STALE labels or judge metadata.
+- Added LongMemEval converter support:
+  - `PYTHONPATH=src python -m adamem.convert longmemeval INPUT OUTPUT`
+  - Supports official fields `question_id`, `question_type`, `question`,
+    `answer`, `question_date`, `haystack_session_ids`, `haystack_dates`,
+    `haystack_sessions`, and `answer_session_ids`.
+  - Stores answers and evidence session ids only on query metadata /
+    expected-substring fields for evaluation.
+  - Does not write `answer_session_ids` or turn-level `has_answer` labels into
+    observation metadata, so runtime retrieval cannot use those ground-truth
+    evidence labels.
+- Added JSONL retrieval benchmark experiment recording:
+  - `PYTHONPATH=src python -m adamem.eval --dataset INPUT --max-cases N --experiment-output OUTPUT`
+  - Records baseline configs, aggregate retrieval-support results, per-query
+    pass/fail checks, query metadata, retrieved text, trace data, command,
+    commit, dataset path, case limit, and notes that no answer or judge model
+    is required.
+  - This gives local fixtures and converted public benchmark pilots the same
+    audit trail style as STALE diagnostics and STALE LLM-judge runs.
+- Added focused baseline selection:
+  - `PYTHONPATH=src python -m adamem.eval --baselines semantic_only state_readout ...`
+  - Applies to baseline listing, JSONL retrieval benchmarks, STALE
+    diagnostics, and STALE LLM-judge runs.
+  - Preserves canonical baseline names and requested order in reports and
+    experiment records, making small public-benchmark pilots practical.
+- Added per-query metadata propagation for JSONL benchmark results. This keeps
+  fields such as LongMemEval `question_type` and local `dimension` available in
+  retrieval traces for later breakdowns and error analysis.
+- Added state readout authorization boundary:
+  - New `use_state_readout_authorization` config flag, enabled by default.
+  - Derived `state` memories are hidden from ordinary direct retrieval and can
+    enter results through authorized state readout only.
+  - The flag can be disabled for explicit ablations that test uncontrolled
+    state-memory exposure.
+  - Task-status routing now requires state/status intent terms such as
+    `status`, `resolved`, `blocked`, or `pending`; generic project-count
+    questions no longer trigger `task.*.status` readout.
+- Added semantic-only state-aware ablations:
+  - `semantic_state_readout`: semantic-only retrieval plus deterministic state
+    extraction and authorized current-state readout.
+  - `semantic_state_propagation`: `semantic_state_readout` plus typed state
+    dependency propagation.
+  - These isolate the state mechanism from default full AdaMem scoring.
+- Added JSONL retrieval failure analysis:
+  - `--benchmark-cases-output` writes per-query records with missing expected
+    support, present forbidden support, failure modes, retrieved text, trace
+    data, query metadata, and baseline name.
+  - `--benchmark-report-output` writes a Markdown report grouped by metadata
+    fields such as LongMemEval `question_type`, local `dimension`, state slot,
+    and abstention.
+  - JSONL experiment records now include a `failure_summary` diagnostic for
+    retrieval-support runs.
+- Added pairwise JSONL retrieval comparison diagnostics:
+  - The first requested baseline is treated as the reference.
+  - Each later baseline records common query count, gained passes, lost passes,
+    net delta, both-pass count, both-fail count, and the same comparison broken
+    down by metadata fields such as `question_type` and `dimension`.
+  - Markdown reports include a `Pairwise Vs <baseline>` table.
+- Added balanced LongMemEval conversion support:
+  - `--question-types ...` filters official LongMemEval samples by
+    `question_type`.
+  - `--limit-per-type N` keeps at most `N` examples per question type, enabling
+    small public benchmark pilots that are not biased toward the first
+    sequential examples.
+- Added CLI support:
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2`
+  - `PYTHONPATH=src python -m adamem.eval --list-baselines`
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 1 --experiment-output /tmp/adamem-diagnostic-record.json`
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output /tmp/adamem_stale_failures.jsonl`
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output /tmp/adamem_cases.jsonl --diagnostic-report-output /tmp/adamem_failure_report.md --experiment-output /tmp/adamem_diag_record.json`
+- Added tests for stricter STALE signal matching and retrieval diagnostics.
+- Added diagnostic failure-case export for API-free STALE runs. Each record
+  includes baseline, case/query ids, dimension, stale type, failure modes,
+  current/stale rank signals, old-support adjudication counts, and optional
+  retrieved traces.
+- Added diagnostic failure report aggregation for paper-style error analysis:
+  - Counts by failure mode, baseline, STALE dimension, and stale type.
+  - Counts for analysis flags such as stale premise correction opportunities.
+  - Failure-mode-by-baseline table.
+  - Representative examples per failure mode.
+  - Failure summary stored in experiment records when
+    `--experiment-output` is used.
+- Added STALE LLM-judge pilot recording:
+  - `--stale ... --experiment-output ...` now writes a JSON experiment record.
+  - Records include baseline configs, aggregate results, answer/judge prompt
+    templates, per-query answer prompts, judge prompts, raw answer outputs, raw
+    judge outputs, retrieved traces, model/provider settings, top-k,
+    max-context chars, request delay, command, and commit.
+  - Runtime ground-truth use remains forbidden; judge ground-truth use is
+    explicitly recorded as allowed.
+- Added tests for the baseline registry and experiment record writer.
+- Added harder state-aware unit tests mapped to STALE dimensions:
+  - State Resolution: stale city question should surface current location.
+  - Premise Resistance: stale Seattle premise should be overridden by current
+    Boston state.
+  - Implicit Policy Adaptation: nearby-place query should receive current
+    location even without naming old or new state.
+  These tests deliberately disable importance, recency, temporal, graph, MMR,
+  and confidence scoring to isolate the `state_readout` mechanism.
+- Added non-location state tests:
+  - Beverage preference readout surfaces current tea preference without
+    surfacing current location.
+  - Schedule availability readout surfaces meeting availability without
+    surfacing beverage state.
+  - Dynamic task status readout supersedes blocked with resolved for the same
+    task slot.
+  - Custom extractor can inject a domain-specific state slot through the
+    pluggable extractor hook.
+- Added dynamic-state transfer adapter test:
+  - `semantic_only` fails the local fixture.
+  - `state_readout` and `state_propagation` pass all dynamic state queries.
+  - This is a local smoke check only, not a public benchmark or paper claim.
+- Added LongMemEval converter test:
+  - Converts a toy `knowledge-update` instance to AdaMem JSONL.
+  - Checks answer/evidence labels remain evaluation-only and do not enter
+    observation metadata.
+  - Checks the converted case can run through the JSONL benchmark adapter.
+- Added indirect invalidation test:
+  - A custom extractor writes `location` and `local.gym` state.
+  - Moving from Seattle to Boston supersedes the location and invalidates the
+    Seattle gym state plus its source evidence only when dependency propagation
+    is enabled.
+- Ran deterministic local tests:
+  - `python -m pytest`
+  - Result: `37 passed`.
+- Re-ran deterministic local tests after JSONL experiment-record support:
+  - `python -m pytest`
+  - Result: `39 passed`.
+- Re-ran deterministic local tests after baseline filtering, query metadata
+  traces, and official LongMemEval-S pilot workflow:
+  - `python -m pytest`
+  - Result: `42 passed`.
+- Re-ran deterministic local tests after JSONL failure reports and balanced
+  LongMemEval conversion:
+  - `python -m pytest`
+  - Result: `44 passed`.
+- Re-ran deterministic local tests after state readout authorization boundary
+  and semantic-state ablations:
+  - `python -m pytest`
+  - Result: `47 passed`.
+- Re-ran deterministic local tests after pairwise JSONL benchmark diagnostics
+  and scaled LongMemEval-S pilot:
+  - `python -m pytest`
+  - Result: `48 passed`.
+- Ran converter smoke checks after adding LongMemEval sampling options:
+  - `PYTHONPATH=src python -m adamem.convert locomo benchmarks/locomo_mini.json /tmp/locomo_mini_smoke.jsonl`
+  - Result: `wrote 1 cases`.
+  - `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_ku2.adamem.jsonl --question-types knowledge-update --limit-per-type 2`
+  - Result: `wrote 2 LongMemEval cases`.
+- Ran failure-case export smoke test:
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output /tmp/adamem_stale_failures.jsonl --experiment-output /tmp/adamem_stale_diag_with_cases.json`
+  - Result: diagnostics report succeeded and wrote `54` case-level failure
+    records for paper-style error analysis.
+- Ran failure report smoke test:
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output /tmp/adamem_cases.jsonl --diagnostic-report-output /tmp/adamem_failure_report.md --experiment-output /tmp/adamem_diag_record.json`
+  - Result: Markdown report grouped `54` diagnostic records. The largest
+    failure modes on the mini fixture were `current_evidence_not_recalled`
+    (`50` records), `old_support_not_fully_adjudicated` (`36` records),
+    `stale_evidence_exposed` (`15` records), and
+    `stale_ranked_before_current` (`2` records).
+- Ran STALE LLM-judge mock pilot:
+  - `PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --answer-model ignored --judge-provider mock --judge-model ignored --max-cases 1 --top-k 4 --experiment-output /tmp/adamem_stale_pilot_mock.json`
+  - Result: command completed and wrote prompts, raw outputs, retrieved traces,
+    baseline configs, model settings, command, and commit into the experiment
+    record. Mock correctness is not meaningful; this is a harness smoke test
+    only.
+- Ran dynamic-state transfer smoke:
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl`
+  - Result: `state_readout` and `state_propagation` scored `3/3`; `full`
+    scored `1/3`; `semantic_only` scored `0/3`. This supports continued
+    testing of current-state readout beyond location, but it is not a
+    generalization claim because the fixture is local and small.
+- Ran dynamic-state transfer experiment-record smoke:
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --max-cases 1 --experiment-output /tmp/adamem_dynamic_transfer_record.json`
+  - Result: command completed and wrote a `jsonl_retrieval_benchmark` record
+    with all stable baselines, configs, retrieval-support results, per-query
+    retrieved text, and trace data. `--max-cases 1` limits cases, not queries;
+    the current fixture has one case with three queries.
+- Ran LongMemEval converter smoke:
+  - Created a toy official-schema LongMemEval JSON under `/tmp`.
+  - `PYTHONPATH=src python -m adamem.convert longmemeval /tmp/longmemeval_toy.json /tmp/longmemeval_toy.adamem.jsonl --expected evidence --top-k 3`
+  - `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_toy.adamem.jsonl`
+  - Result: conversion and evaluation completed. This validates adapter shape,
+    not transfer performance on official LongMemEval.
+- Ran official LongMemEval-S retrieval pilot:
+  - Downloaded `longmemeval_s_cleaned.json` from the official Hugging Face
+    dataset `xiaowu0162/longmemeval-cleaned` into ignored local `data/`.
+  - File size: `265M`.
+  - SHA256 / Hugging Face linked ETag:
+    `d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442`.
+  - Converted the first 5 cases:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_5.adamem.jsonl --expected evidence --top-k 8 --limit 5`
+  - Ran focused retrieval-support pilot:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_5.adamem.jsonl --baselines semantic_only full state_readout state_propagation --max-cases 5 --experiment-output results/longmemeval_s_5_retrieval_pilot.json`
+  - Result: `semantic_only` scored `3/5`; `full`, `state_readout`, and
+    `state_propagation` each scored `1/5`.
+  - Interpretation: the current state-aware prototype does not yet transfer to
+    general LongMemEval-S retrieval; this is useful negative evidence showing
+    that the narrow deterministic slots are insufficient for public benchmark
+    generality. It is a retrieval diagnostic only, not an end-to-end answer
+    accuracy result.
+- Inspected official LongMemEval-S question type distribution:
+  - Total: `500`.
+  - `multi-session`: `133`.
+  - `temporal-reasoning`: `133`.
+  - `knowledge-update`: `78`.
+  - `single-session-user`: `70`.
+  - `single-session-assistant`: `56`.
+  - `single-session-preference`: `30`.
+- Ran balanced LongMemEval-S retrieval pilot:
+  - Converted 2 examples per LongMemEval-S `question_type`, 12 cases total:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_12.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 2`
+  - Ran focused baselines and wrote grouped reports:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_12.adamem.jsonl --baselines semantic_only full state_readout state_propagation --max-cases 12 --benchmark-cases-output results/longmemeval_s_balanced_12_records.jsonl --benchmark-report-output results/longmemeval_s_balanced_12_report.md --experiment-output results/longmemeval_s_balanced_12_pilot.json`
+  - Result: `semantic_only` scored `9/12`; `full`, `state_readout`, and
+    `state_propagation` each scored `1/12`.
+  - Breakdown: `semantic_only` scored `2/2` on `knowledge-update`,
+    `single-session-preference`, and `temporal-reasoning`; `1/2` on
+    `multi-session`, `single-session-assistant`, and `single-session-user`.
+    State-aware baselines only scored `1/2` on `single-session-user` and `0/2`
+    on all other question types.
+  - Interpretation: this is stronger negative transfer evidence. Current state
+    readout likely pollutes generic LongMemEval retrieval because it activates
+    for broad state-like cues and injects unrelated derived state memories. The
+    next method iteration should introduce a stricter state-readout
+    authorization boundary and preserve raw semantic retrieval behavior for
+    non-state-sensitive public benchmark questions.
+- Implemented and evaluated the state readout authorization boundary:
+  - Dynamic-state fixture command:
+    `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_propagation state_readout --max-cases 1`
+  - Dynamic-state result: `semantic_only` scored `0/3`; `semantic_state_readout`,
+    `semantic_state_propagation`, and `state_readout` each scored `3/3`.
+  - Balanced LongMemEval-S command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_12.adamem.jsonl --baselines semantic_only semantic_state_readout semantic_state_propagation full state_readout state_propagation --max-cases 12 --benchmark-cases-output results/longmemeval_s_auth_boundary_records.jsonl --benchmark-report-output results/longmemeval_s_auth_boundary_report.md --experiment-output results/longmemeval_s_auth_boundary_pilot.json`
+  - Balanced LongMemEval-S result: `semantic_only`, `semantic_state_readout`,
+    and `semantic_state_propagation` each scored `9/12`; `full`,
+    `state_readout`, and `state_propagation` each scored `1/12`.
+  - Interpretation: the clean semantic-state ablations preserve local
+    dynamic-state gains without degrading the balanced LongMemEval-S retrieval
+    pilot relative to semantic-only. The result does not yet prove generality,
+    but it resolves the earlier state-pollution failure mode and gives a more
+    defensible ablation path for larger public runs.
+- Ran scaled balanced LongMemEval-S retrieval pilot:
+  - Converted 10 examples per LongMemEval-S `question_type`, 60 cases total:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10`
+  - Ran semantic-only and semantic-state ablations:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60.adamem.jsonl --baselines semantic_only semantic_state_readout semantic_state_propagation --max-cases 60 --benchmark-cases-output results/longmemeval_s_balanced_60_semantic_state_records.jsonl --benchmark-report-output results/longmemeval_s_balanced_60_semantic_state_report.md --experiment-output results/longmemeval_s_balanced_60_semantic_state_pilot.json`
+  - Result: `semantic_only`, `semantic_state_readout`, and
+    `semantic_state_propagation` each scored `40/60`.
+  - Pairwise result against `semantic_only`: both semantic-state baselines had
+    `common_total=60`, `gained_passes=0`, `lost_passes=0`, `net_delta=0`,
+    `both_pass=40`, and `both_fail=20`.
+  - Per-type result for `semantic_state_readout`: `knowledge-update` `8/10`,
+    `multi-session` `4/10`, `single-session-assistant` `4/10`,
+    `single-session-preference` `9/10`, `single-session-user` `7/10`, and
+    `temporal-reasoning` `8/10`.
+  - Interpretation: on this 60-case retrieval-support pilot, the authorization
+    boundary preserves semantic-only public retrieval exactly while retaining
+    dynamic-state gains on the local fixture. This supports continued
+    development of the mechanism, but remains retrieval-level evidence only.
+- Ran STALE mini retrieval diagnostics for semantic-state ablations:
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only semantic_state_readout semantic_state_propagation state_readout state_propagation --max-cases 2 --experiment-output results/stale_mini_semantic_state_diagnostics.json`
+  - Result: `semantic_state_readout` and `semantic_state_propagation` reached
+    `100%` current recall versus `0%` for `semantic_only`, but kept `33.33%`
+    stale exposure and `0%` old-support adjudication. `state_readout` and
+    `state_propagation` reached `100%` current recall, `0%` stale exposure, and
+    `100%` old-support adjudication on this mini fixture.
+  - Interpretation: semantic-state readout solves current-state availability
+    without public retrieval degradation, but stale exposure/adjudication still
+    requires additional mechanisms.
+- Implemented query-scoped state-source adjudication:
+  - Added `use_state_source_adjudication` to `AdaMemConfig`.
+  - When a state slot value is replaced, the old state record is superseded and
+    its raw source evidence is marked with `stale_state_slots`.
+  - Retrieval filters that stale raw evidence only when the query routes to the
+    same state slot and an active replacement state exists. This avoids using
+    the global adjudication filter, which would also suppress historical
+    queries.
+  - Added canonical baselines `semantic_state_adjudication` and
+    `semantic_state_propagation_adjudication`.
+  - Updated deterministic state extraction to handle curly apostrophes in
+    contractions such as `I’ve`, which occurred in STALE mini user text.
+- Evaluated state-source adjudication:
+  - Dynamic-state command:
+    `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 1`
+  - Dynamic-state result: `semantic_only` scored `0/3`; all three
+    semantic-state variants scored `3/3`.
+  - STALE mini diagnostics command:
+    `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 2 --experiment-output results/stale_mini_state_adjudication_diagnostics.json --diagnostic-cases-output results/stale_mini_state_adjudication_cases.jsonl --diagnostic-report-output results/stale_mini_state_adjudication_report.md`
+  - STALE mini result: `semantic_state_adjudication` reached `100%` current
+    recall, `0%` stale exposure, and `57.14%` old-support adjudication. This
+    improves over `semantic_state_readout`, which had `100%` current recall but
+    `33.33%` stale exposure.
+  - LongMemEval-S balanced 60 command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60.adamem.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 60 --benchmark-cases-output results/longmemeval_s_balanced_60_state_adjudication_records.jsonl --benchmark-report-output results/longmemeval_s_balanced_60_state_adjudication_report.md --experiment-output results/longmemeval_s_balanced_60_state_adjudication_pilot.json`
+  - LongMemEval-S result: all four baselines scored `40/60`. Pairwise against
+    `semantic_only`, both adjudication variants had `gained_passes=0`,
+    `lost_passes=0`, and `net_delta=0`.
+  - Interpretation: the new mechanism fixes stale exposure on the mini fixture
+    without degrading the balanced LongMemEval-S retrieval-support pilot. It is
+    still retrieval-level evidence; next work should scale STALE diagnostics and
+    run answer/judge evaluation when provider keys are available.
+- Added reproducible STALE subset selection for larger pilots:
+  - `src/adamem/eval.py` now supports `--stale-types` and
+    `--limit-per-stale-type` for both `--stale-diagnostics` and `--stale`.
+  - `run_stale_benchmark` accepts `stale_types` and
+    `limit_per_stale_type`, enabling the same split for API-free retrieval
+    diagnostics and later LLM-judge runs.
+  - Experiment records now include split notes such as
+    `stale_types=T1;limit_per_stale_type=1`.
+  - Verified CLI diagnostics on the current mini fixture:
+    `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only semantic_state_adjudication state_readout --stale-types T1 --limit-per-stale-type 1 --experiment-output results/stale_mini_t1_limit1_state_adjudication_diagnostics.json --diagnostic-cases-output results/stale_mini_t1_limit1_state_adjudication_cases.jsonl --diagnostic-report-output results/stale_mini_t1_limit1_state_adjudication_report.md`
+  - Result: `semantic_state_adjudication` kept `100%` current recall and `0%`
+    stale exposure on the selected T1 case; `semantic_only` had `0%` current
+    recall and `33.33%` stale exposure.
+  - Verified mock LLM-judge mode on the same split:
+    `PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --baselines semantic_only semantic_state_adjudication --stale-types T1 --limit-per-stale-type 1 --answer-provider mock --judge-provider mock --experiment-output results/stale_mini_t1_limit1_mock_judge.json`
+  - The mock run is not an accuracy claim, but it confirms the exact split can
+    be reused in answer/judge mode once provider keys are available.
+- Added A-MEM-style mainstream approximation baseline:
+  - Literature basis: A-MEM proposes agentic memory notes with structured
+    attributes, dynamic links, and memory evolution over historical memories.
+  - New config flags: `use_memory_evolution`,
+    `memory_evolution_threshold`, `memory_evolution_keyword_limit`, and
+    `memory_evolution_candidate_limit`.
+  - New baseline: `a_mem_evolution`.
+  - Implementation is API-free and deterministic: observed text gets note
+    keywords; new raw memories link to recent related raw memories; older notes
+    absorb new evolved keywords and recompute their retrieval embedding. This
+    is documented as an approximation, not an official A-MEM reproduction.
+  - Added a candidate limit after the first 60-case LongMemEval attempt showed
+    the naive O(n²) evolution path was too slow for practical pilots.
+  - Added unit coverage for bidirectional linking and evolved keyword updates.
+- Evaluated A-MEM-style approximation against AdaMem state authority:
+  - STALE mini command:
+    `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only a_mem_evolution semantic_state_adjudication state_readout --max-cases 2 --experiment-output results/stale_mini_amem_vs_state_diagnostics.json --diagnostic-cases-output results/stale_mini_amem_vs_state_cases.jsonl --diagnostic-report-output results/stale_mini_amem_vs_state_report.md`
+  - STALE mini result: `semantic_only` had `0%` current recall and `33.33%`
+    stale exposure; `a_mem_evolution` had `33.33%` current recall and `16.67%`
+    stale exposure but `0%` old-support adjudication; `semantic_state_adjudication`
+    had `100%` current recall, `0%` stale exposure, and `57.14%` old-support
+    adjudication.
+  - LongMemEval-S balanced 12 result:
+    `semantic_only` `9/12`, `a_mem_evolution` `6/12`,
+    `semantic_state_adjudication` `9/12`. Pairwise vs `semantic_only`,
+    `a_mem_evolution` gained `1`, lost `4`, net `-3`.
+  - LongMemEval-S balanced 60 command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60.adamem.jsonl --baselines semantic_only a_mem_evolution semantic_state_adjudication --max-cases 60 --benchmark-cases-output results/longmemeval_s_balanced_60_amem_state_records.jsonl --benchmark-report-output results/longmemeval_s_balanced_60_amem_state_report.md --experiment-output results/longmemeval_s_balanced_60_amem_state_pilot.json`
+  - LongMemEval-S balanced 60 result:
+    `semantic_only` `40/60`, `a_mem_evolution` `27/60`,
+    `semantic_state_adjudication` `40/60`. Pairwise vs `semantic_only`,
+    `a_mem_evolution` gained `4`, lost `17`, net `-13`;
+    `semantic_state_adjudication` gained `0`, lost `0`, net `0`.
+  - Interpretation: generic memory evolution/linking is a useful mainstream
+    comparator and weakly helps STALE mini retrieval, but it adds retrieval
+    noise on LongMemEval-S. This strengthens the argument that stale-memory
+    handling needs explicit current-state authority, not only richer episodic
+    memory evolution.
+- Added Zep/Graphiti-style temporal KG approximation baseline:
+  - Literature basis: Zep/Graphiti represents dynamic information as temporal
+    KG facts/edges with old facts invalidated when new information supersedes
+    them.
+  - New config flags: `use_temporal_kg_memory`, `use_temporal_kg_readout`, and
+    `temporal_kg_readout_boost`.
+  - New baseline: `zep_temporal_kg`.
+  - Implementation is API-free and deterministic: extracted state patches write
+    `kg_fact` memories with subject/relation/object metadata; a new object for
+    the same subject/relation invalidates the old KG fact by setting
+    `superseded_by`, `valid_to`, and staleness; active KG facts are read out for
+    state-sensitive queries. Raw source evidence is intentionally not marked
+    stale, so the baseline remains distinct from AdaMem state-source
+    adjudication.
+  - Added unit coverage for KG edge invalidation, `valid_to`, current KG
+    readout, and absence of raw-source adjudication.
+- Evaluated temporal KG approximation:
+  - STALE mini command:
+    `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only zep_temporal_kg semantic_state_adjudication state_readout --max-cases 2 --experiment-output results/stale_mini_zepkg_vs_state_diagnostics.json --diagnostic-cases-output results/stale_mini_zepkg_vs_state_cases.jsonl --diagnostic-report-output results/stale_mini_zepkg_vs_state_report.md`
+  - STALE mini result: `zep_temporal_kg` reached `100%` current recall but kept
+    `33.33%` stale exposure and `28.57%` old-support adjudication.
+    `semantic_state_adjudication` reached `100%` current recall, `0%` stale
+    exposure, and `57.14%` old-support adjudication.
+  - LongMemEval-S balanced 60 command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60.adamem.jsonl --baselines semantic_only zep_temporal_kg semantic_state_adjudication --max-cases 60 --benchmark-cases-output results/longmemeval_s_balanced_60_zepkg_state_records.jsonl --benchmark-report-output results/longmemeval_s_balanced_60_zepkg_state_report.md --experiment-output results/longmemeval_s_balanced_60_zepkg_state_pilot.json`
+  - LongMemEval-S balanced 60 result: all three baselines scored `40/60`.
+    Pairwise versus `semantic_only`, both `zep_temporal_kg` and
+    `semantic_state_adjudication` had `gained_passes=0`, `lost_passes=0`, and
+    `net_delta=0`.
+  - Interpretation: temporal KG readout can expose current state without
+    degrading this LongMemEval retrieval-support pilot, but it does not control
+    stale raw evidence. This sharpens AdaMem's claimed mechanism boundary:
+    current-state authority requires both active state/fact readout and
+    query-scoped source adjudication.
+- Added Mem0-style compact extraction approximation baseline:
+  - Literature basis: Mem0-style production memory extracts compact facts from
+    messages, updates or supersedes older memories, and retrieves compact
+    memories rather than replaying all raw conversation.
+  - New config flags: `use_salient_memory`, `use_salient_memory_only`,
+    `use_salient_memory_readout`, and `salient_memory_readout_boost`.
+  - New baseline: `mem0_extraction`.
+  - Implementation is API-free and deterministic: extracted state patches write
+    `salient_fact` memories; new facts for the same subject/slot supersede old
+    compact facts; raw observations remain stored for audit but are hidden from
+    retrieval when `use_salient_memory_only=True`.
+  - Added unit coverage for compact-fact replacement, retrieval of the current
+    fact, and hiding raw source observations from the returned context.
+- Evaluated compact extraction approximation:
+  - STALE mini command:
+    `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only mem0_extraction zep_temporal_kg semantic_state_adjudication --max-cases 2 --experiment-output results/stale_mini_mem0_zep_state_diagnostics.json --diagnostic-cases-output results/stale_mini_mem0_zep_state_cases.jsonl --diagnostic-report-output results/stale_mini_mem0_zep_state_report.md`
+  - STALE mini result: `mem0_extraction` reached `100%` current recall and
+    `0%` stale exposure, matching the surface stale-exposure behavior of
+    `semantic_state_adjudication`; however its old-support adjudication was
+    `28.57%` versus `57.14%` for `semantic_state_adjudication`, because it
+    hides stale raw evidence rather than marking the source as stale.
+  - LongMemEval-S balanced 60 command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60.adamem.jsonl --baselines semantic_only mem0_extraction zep_temporal_kg semantic_state_adjudication --max-cases 60 --benchmark-cases-output results/longmemeval_s_balanced_60_mem0_zep_state_records.jsonl --benchmark-report-output results/longmemeval_s_balanced_60_mem0_zep_state_report.md --experiment-output results/longmemeval_s_balanced_60_mem0_zep_state_pilot.json`
+  - LongMemEval-S balanced 60 result: `semantic_only` `40/60`,
+    `mem0_extraction` `1/60`, `zep_temporal_kg` `40/60`, and
+    `semantic_state_adjudication` `40/60`. Pairwise versus `semantic_only`,
+    `mem0_extraction` had `gained_passes=0`, `lost_passes=39`, and
+    `net_delta=-39`; `zep_temporal_kg` and `semantic_state_adjudication` both
+    had `net_delta=0`.
+  - Interpretation: compact extraction/update alone can look strong on
+    state-like stale cases but fails broad episodic retrieval on LongMemEval-S
+    with the current narrow extractor. AdaMem's more defensible direction is to
+    preserve raw evidence for general memory while adding explicit
+    query-scoped source adjudication for stale-sensitive state slots.
+- Ran STALE retrieval diagnostics on `benchmarks/stale_mini.jsonl` with
+  `--max-cases 2`.
+  - `delta_full` and `full` reached `100.00%` old support adjudication.
+  - `delta_full` and `full` still had `0.00%` current recall under the stricter
+    diagnostic, indicating that current-state authorization remains unsolved.
+  - `state_memory` and `state_readout` reached `100.00%` current recall and
+    `0.00%` stale exposure on this mini fixture. This supports the state-aware
+    direction but is not yet a paper claim because the extractor is narrow and
+    the fixture is small.
+  - `semantic_importance` had nonzero current recall but high stale exposure,
+    which suggests retrieval alone can surface new evidence without reliably
+    controlling stale evidence.
+- Updated `AGENTS.md` and `docs/research_workflow.md` to include the new
+  diagnostics module and command.
+- Updated `README.md` to expose the state-aware prototype and current synthetic
+  ablation expectations.
+- Exported `StatePatch` from `adamem` so custom extractors can be written
+  without importing private module paths.
+
+### 2026-05-30
+
+- Broadened deterministic state extraction beyond location, schedule, task, and
+  beverage state:
+  - Added `health.*.status` slots for dietary/health constraints such as
+    peanut, gluten, dairy, nut, and shellfish restrictions.
+  - Added `resource.*.status` slots for resources such as passports, tokens,
+    API keys, licenses, credentials, and access badges.
+  - Added query routing for health/dietary and resource-sensitive questions.
+  - Added a small dependency topology from selected health constraints to
+    `meal.*`, `restaurant.*`, and `food.*` dependent state slots.
+  - Kept resource query routing tied to resource nouns instead of generic
+    `status` terms to reduce false-positive state readout.
+- Extended `benchmarks/dynamic_state_transfer.jsonl` from 3 to 5 queries:
+  schedule availability, task status, beverage preference, peanut-allergy
+  clearance, and passport renewal.
+- Added unit coverage for health constraint replacement and resource status
+  replacement in `tests/test_adamem.py`.
+- Updated JSONL benchmark summary tests for the expanded dynamic-state smoke
+  fixture.
+- Ran dynamic-state transfer smoke:
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 1 --experiment-output results/dynamic_state_transfer_health_resource.json`
+  - Result: `semantic_only` scored `0/5`; all listed state-aware variants
+    scored `5/5`.
+- Re-ran STALE mini diagnostics after the query-routing change:
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only semantic_state_adjudication state_readout --max-cases 2`
+  - Result: unchanged smoke behavior: `semantic_state_adjudication` and
+    `state_readout` reached `100.00%` current recall and `0.00%` stale
+    exposure; `semantic_state_adjudication` had `57.14%` old-support
+    adjudication and `state_readout` had `100.00%`.
+- Ran full deterministic test suite:
+  - `python -m pytest`
+  - Result: `56 passed`.
+- Interpretation: the state-authority mechanism now has API-free evidence that
+  the same write-side replacement and read-time authorization path works across
+  personal preference, scheduling, task state, health constraints, and resource
+  status. This is still a local smoke result, not a generality claim.
+- Added more agentic state slots:
+  - Added `workflow.*.*` slots for current runbook, procedure, policy, or
+    workflow rules such as checkout deployment rollback policy.
+  - Added `runtime.*.status` slots for current tool/runtime state such as
+    build runners, services, endpoints, queues, clusters, and environments.
+  - Kept runtime query routing tied to runtime nouns instead of generic
+    `status` terms to reduce false-positive readout.
+- Added unit coverage for workflow-rule replacement, runtime-status
+  replacement, and a false-positive boundary where a generic status report
+  query should not surface runtime state.
+- Extended `benchmarks/dynamic_state_transfer.jsonl` from 5 to 7 queries:
+  schedule availability, task status, beverage preference, peanut-allergy
+  clearance, passport renewal, checkout rollback runbook update, and staging
+  build runner restoration.
+- Ran dynamic-state transfer smoke:
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 1 --experiment-output results/dynamic_state_transfer_workflow_runtime.json`
+  - Result: `semantic_only` scored `0/7`; all listed state-aware variants
+    scored `7/7`.
+- Re-ran LongMemEval-S balanced 60 retrieval transfer after adding
+  workflow/runtime routing:
+  - Converted with `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10`
+  - Evaluated with `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60.adamem.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 60 --experiment-output results/longmemeval_s_balanced_60_workflow_runtime_state_pilot.json`
+  - Result: `semantic_only`, `semantic_state_adjudication`, and
+    `semantic_state_propagation_adjudication` each scored `40/60`. The added
+    routes did not introduce aggregate retrieval-support regressions in this
+    balanced pilot.
+- Re-ran STALE mini diagnostics after the workflow/runtime change:
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only semantic_state_adjudication state_readout --max-cases 2`
+  - Result: unchanged smoke behavior: `semantic_state_adjudication` and
+    `state_readout` reached `100.00%` current recall and `0.00%` stale
+    exposure.
+- Ran full deterministic test suite:
+  - `python -m pytest`
+  - Result: `59 passed`.
+- Interpretation: workflow/runbook and runtime/tool state make the local
+  transfer fixture closer to agent-memory trajectories, but the evidence is
+  still smoke-level. The important public-transfer check is that these routes
+  did not harm the current LongMemEval-S balanced retrieval-support pilot.
+- Added state-readout exposure diagnostics for JSONL retrieval benchmarks:
+  - Per-result trace entries now include `kind` and selected state/KG/salient
+    metadata such as `state_slot` and `state_value`.
+  - Case records now include `state_retrieval_count`,
+    `retrieved_state_slots`, and `state_sensitive`.
+  - Failure summaries and Markdown reports now include a
+    `State Readout Exposure` table with total state exposure and unmarked-query
+    state exposure.
+- Used the new exposure diagnostic to find and fix a real LongMemEval-S false
+  positive:
+  - Before the fix, the word `local` in `local animal shelter` triggered
+    location state readout for one unmarked LongMemEval-S query.
+  - Narrowed location routing so `local` requires a location-intent context
+    such as recommendation, nearby, places, resources, or spots.
+  - Added a regression test where a `local animal shelter` event-history query
+    must retrieve the historical event rather than current location state.
+- Re-ran dynamic-state exposure report:
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication --max-cases 1 --benchmark-report-output results/dynamic_state_transfer_state_exposure_report.md --experiment-output results/dynamic_state_transfer_state_exposure.json`
+  - Result: `semantic_only` scored `0/7`; `semantic_state_readout` and
+    `semantic_state_adjudication` scored `7/7`. State-aware variants exposed
+    state on all 7 marked state queries and `0` unmarked queries.
+- Re-ran LongMemEval-S balanced 60 exposure report after the routing fix:
+  - `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60.adamem.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 60 --benchmark-report-output results/longmemeval_s_balanced_60_state_exposure_report.md --experiment-output results/longmemeval_s_balanced_60_state_exposure.json`
+  - Result: all three baselines remained `40/60`; state exposure for
+    `semantic_state_adjudication` and
+    `semantic_state_propagation_adjudication` dropped from the observed
+    pre-fix `1/60` to `0/60`.
+- Ran full deterministic test suite:
+  - `python -m pytest`
+  - Result: `61 passed`.
+- Interpretation: the project now has an API-free diagnostic that measures
+  prompt pollution from state readout and already caught one public-transfer
+  false positive. This strengthens the causal-validity story because state
+  gains can be separated from indiscriminate state-summary insertion.
+- Extended state-readout diagnostics from exposure counts to slot-level
+  authorization checks:
+  - Records now include `expected_state_slots`, `unexpected_state_slots`, and
+    `state_slot_matched`.
+  - New failure modes: `state_readout_missing`,
+    `state_readout_slot_mismatch`, and
+    `state_readout_unmarked_exposure`.
+  - The Markdown `State Readout Exposure` table now reports matched, missing,
+    mismatched, and unmarked state exposure counts.
+- Added tests for the three authorization cases:
+  - A marked runtime-state query retrieves the matching runtime slot.
+  - A generic status-report query does not retrieve state.
+  - A deliberately wrong `state_slot` annotation produces
+    `state_readout_slot_mismatch`.
+- Re-ran dynamic-state exposure report after adding slot-level diagnostics:
+  - Result: `semantic_only` had `7` `state_readout_missing` records.
+  - `semantic_state_readout` and `semantic_state_adjudication` each matched
+    all `7/7` expected state slots with `0` missing, `0` mismatched, and `0`
+    unmarked exposures.
+- Re-ran LongMemEval-S balanced 60 exposure report:
+  - Result: all three baselines remained `40/60`.
+  - Failure modes were limited to `expected_support_missing`; state-aware
+    variants had `0` state exposure, `0` unmarked exposure, and `0` slot
+    mismatch on the 60 unmarked public-transfer queries.
+- Ran full deterministic test suite:
+  - `python -m pytest`
+  - Result: `61 passed`.
+- Interpretation: the evaluation harness can now distinguish three separate
+  questions that matter for a paper claim: whether support was retrieved,
+  whether state authority was invoked when expected, and whether state authority
+  polluted unrelated public-transfer queries.
+- Added a paper-facing metrics table to JSONL benchmark summaries and Markdown
+  reports:
+  - Metrics include support pass rate, net delta versus the first/reference
+    baseline, state-slot match rate, state-readout missing rate, slot-mismatch
+    rate, and unmarked state exposure rate.
+  - Metrics are also stored under `diagnostics.failure_summary.paper_metrics`
+    in `--experiment-output`, so paper tables can be reproduced from raw run
+    records.
+- Re-ran dynamic-state exposure report:
+  - Result: `semantic_only` `0/7`, `semantic_state_readout` `7/7`, and
+    `semantic_state_adjudication` `7/7`.
+  - Paper metrics: state-aware variants had `100.00%` state-slot match,
+    `0.00%` state missing, `0.00%` slot mismatch, and no unmarked-query state
+    exposure because all 7 queries are state-marked.
+- Re-ran LongMemEval-S balanced 60 exposure report:
+  - Result: `semantic_only`, `semantic_state_adjudication`, and
+    `semantic_state_propagation_adjudication` each scored `40/60`.
+  - Paper metrics: state-slot metrics are `n/a` because this public-transfer
+    sample has no evaluation-marked state queries; all three baselines had
+    `0.00%` unmarked state exposure.
+- Ran full deterministic test suite:
+  - `python -m pytest`
+  - Result: `62 passed`.
+- Interpretation: this makes the API-free JSONL harness closer to a paper
+  experiment table. It still measures retrieval support, not final answer
+  correctness, but it now reports the state-authority mechanism's precision
+  boundary alongside retrieval accuracy.
+- Added optional LongMemEval query-state annotation:
+  - Converter flag:
+    `PYTHONPATH=src python -m adamem.convert longmemeval INPUT OUTPUT --infer-state-slots`
+  - The converter uses the same deterministic query router as evaluation
+    diagnostics to add `query.metadata.state_slot` and
+    `state_slot_source=query_text_router`.
+  - These annotations are evaluation-only and are not written into observation
+    metadata or runtime memory.
+- Ran LongMemEval-S balanced 60 with inferred state slots:
+  - Conversion:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_inferred_state.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --infer-state-slots`
+  - Evaluation:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60_inferred_state.adamem.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 60 --benchmark-report-output results/longmemeval_s_balanced_60_inferred_state_report.md --experiment-output results/longmemeval_s_balanced_60_inferred_state.json`
+  - Result: all three baselines scored `40/60`.
+  - Paper metrics: the query router marked `18/60` questions as
+    state-sensitive, but every baseline had `0.00%` state-slot match and
+    `100.00%` state-readout missing on those marked questions.
+  - Interpretation: the readout/adjudication machinery is not enough on real
+    public-transfer data unless the observation-side extractor can derive
+    matching state records from natural dialogue. This is the next API-free
+    method bottleneck.
+- Ran full deterministic test suite after the LongMemEval state-slot
+  annotation change:
+  - `python -m pytest`
+  - Result: `63 passed`.
+- Tightened query-state routing after auditing the LongMemEval-S inferred-state
+  false positives:
+  - Replaced broad substring checks with word-boundary term matching.
+  - Added slot-specific intent gates so ordinary event-history queries such as
+    `coffee creamer`, `local community theater`, `met up`, `my city`,
+    `Netflix access`, and `work from home job list` no longer become
+    state-sensitive diagnostics.
+  - Preserved the intended state-routing behavior for dynamic-state queries
+    such as `What time can I meet`, `What is the migration status`, peanut
+    allergy premise resistance, passport status, workflow rollback, runtime
+    runner status, and local/nearby recommendation queries.
+- Added regression tests for query-router precision using the observed
+  LongMemEval-S false-positive patterns.
+- Re-ran LongMemEval-S balanced 60 with inferred state slots after the router
+  precision change:
+  - Conversion:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_inferred_state_router_v3.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --infer-state-slots`
+  - Evaluation:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60_inferred_state_router_v3.adamem.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 60 --benchmark-report-output results/longmemeval_s_balanced_60_inferred_state_router_v3_report.md --experiment-output results/longmemeval_s_balanced_60_inferred_state_router_v3.json`
+  - Result: all three baselines remained `40/60`.
+  - Paper metrics: inferred state-sensitive queries dropped from `18/60` to
+    `1/60`; unmarked state exposure stayed `0.00%`.
+  - Interpretation: the earlier `18/60` missing-state result was mostly a
+    query-router precision artifact. The remaining marked query is a local
+    `around me` recommendation where the memory does not appear to contain a
+    current user location. This makes the public-transfer diagnostic more
+    honest, but also shows that LongMemEval-S balanced 60 is not a rich enough
+    state-sensitive transfer set by itself.
+- Re-ran dynamic-state transfer after the router precision change:
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --experiment-output results/dynamic_state_transfer_router_precision.json --benchmark-report-output results/dynamic_state_transfer_router_precision_report.md`
+  - Result: `semantic_only` `0/7`; all listed state-aware variants `7/7`.
+- Re-ran STALE mini diagnostics after the router precision change:
+  - `PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 2 --experiment-output results/stale_mini_router_precision_diagnostics.json --diagnostic-report-output results/stale_mini_router_precision_report.md`
+  - Result: `semantic_state_adjudication`,
+    `semantic_state_propagation_adjudication`, and `state_readout` kept
+    `100.00%` current recall and `0.00%` stale exposure on the mini diagnostic.
+- Re-ran full deterministic test suite:
+  - `python -m pytest`
+  - Result: `64 passed`.
+- Added a manual audit workflow for public state-sensitive transfer subsets:
+  - `--state-audit-output` exports LongMemEval query-state candidates as JSONL
+    records with `is_state_sensitive: null`, inferred slots, question id/type,
+    question date, question text, and notes.
+  - `--state-audit-input` imports reviewed JSONL records only when
+    `is_state_sensitive` is `true` and a `state_slot` is present.
+  - Imported labels are written only to query metadata with
+    `state_slot_source=manual_state_audit`; observation metadata is unchanged.
+  - This separates automatic candidate generation from paper-facing
+    state-readout metrics.
+- Added converter tests for the manual audit path:
+  - Candidate export includes only routed state-query candidates.
+  - Rejected or unreviewed records are ignored.
+  - Accepted audit labels do not enter observation metadata or runtime memory
+    inputs.
+- Generated the current LongMemEval-S balanced 60 audit artifacts:
+  - Candidate export command:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_audit_probe.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --state-audit-output results/longmemeval_s_balanced_60_state_audit_candidates.jsonl`
+  - Result: `1` candidate query:
+    `Can you recommend some interesting cultural events happening around me this weekend?`
+  - Added reviewed label file:
+    `results/longmemeval_s_balanced_60_state_audit_reviewed.jsonl`
+  - Manual-audit conversion command:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_manual_audit.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --state-audit-input results/longmemeval_s_balanced_60_state_audit_reviewed.jsonl`
+  - Verified converted query labels:
+    one query had `state_slot=location`,
+    `state_slot_source=manual_state_audit`, and
+    `state_audit_id=longmemeval_s_balanced_60_router_v3_manual_001`.
+  - Verified observation-level `state_slot` leakage: `0`.
+- Ran LongMemEval-S balanced 60 with manual audit labels:
+  - `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60_manual_audit.adamem.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 60 --benchmark-report-output results/longmemeval_s_balanced_60_manual_audit_report.md --experiment-output results/longmemeval_s_balanced_60_manual_audit.json`
+  - Result: all three baselines remained `40/60`.
+  - Paper metrics: `1` manually audited state-sensitive query,
+    `100.00%` state-readout missing, and `0.00%` unmarked state exposure.
+- Re-ran deterministic local tests after the manual audit workflow:
+  - `python -m pytest`
+  - Result: `65 passed`.
+- Split manual-audit state sensitivity from state availability:
+  - Added `state_available` to the LongMemEval state-audit schema.
+  - `state_available=false` marks a query as state-sensitive but lacking a
+    reliable current state in the haystack. Such queries are no longer counted
+    in the state-readout missing denominator.
+  - Benchmark records now expose `state_available` and
+    `state_readout_expected`.
+  - `State Readout Exposure` reports now separate `state queries`,
+    `state available`, and `state unavailable`.
+- Updated the reviewed LongMemEval-S balanced 60 audit label:
+  - The `around me` cultural-events query remains `state_slot=location`.
+  - Manual inspection found no reliable current user location, so it is now
+    marked `state_available=false`.
+- Re-ran LongMemEval-S balanced 60 with state-availability-aware manual audit:
+  - `PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60_manual_audit_state_available.adamem.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 60 --benchmark-report-output results/longmemeval_s_balanced_60_manual_audit_state_available_report.md --experiment-output results/longmemeval_s_balanced_60_manual_audit_state_available.json`
+  - Result: all three baselines remained `40/60`.
+  - Paper metrics: `state_sensitive_total=1`, `state_query_total=0`,
+    `state_unavailable_total=1`, state readout metrics `n/a`, and unmarked
+    state exposure `0.00%`.
+  - Failure modes now include only `expected_support_missing`; the old
+    `state_readout_missing` count was removed for this state-unavailable case.
+- Re-ran deterministic local tests after the state availability metric split:
+  - `python -m pytest`
+  - Result: `65 passed`.
+- Added state-evidence candidates to the LongMemEval manual-audit export:
+  - `--state-audit-output` now includes `state_evidence_candidates`, generated
+    by running the deterministic observation-side state extractor over
+    haystack turns.
+  - Candidate evidence includes label, date, role, extracted state slot/value,
+    evidence text, and `source=deterministic_state_extractor`.
+  - It does not include LongMemEval `answer`, `answer_session_ids`, turn-level
+    `has_answer`, or any judge-only field.
+  - The converter now uses a shared LongMemEval turn iterator for both emitted
+    observations and audit evidence candidates, reducing schema drift between
+    runtime inputs and audit support.
+- Re-generated `results/longmemeval_s_balanced_60_state_audit_candidates.jsonl`
+  with evidence candidates:
+  - The only candidate remains the `around me` location query.
+  - `state_evidence_candidates` is empty, matching the reviewed
+    `state_available=false` label.
+  - This makes the state-unavailable decision auditable from the same
+    deterministic extractor used by the runtime prototype, without using answer
+    labels.
+- Re-ran deterministic local tests after evidence-candidate export:
+  - `python -m pytest`
+  - Result: `65 passed`.
+- Added LongMemEval audit summary output:
+  - New converter option: `--state-audit-summary-output`.
+  - Summary JSON reports `total_candidates`, `with_state_evidence`,
+    `without_state_evidence`, `state_evidence_candidate_total`, and breakdowns
+    by inferred state slot and LongMemEval `question_type`.
+  - Added tests for summary generation and evidence-coverage aggregation.
+- Tightened query-state routing after full LongMemEval-S audit exposed more
+  false positives:
+  - Task-status routing now requires explicit `status`, or a status-state term
+    plus a task-like subject such as task, ticket, issue, migration, incident,
+    workflow, project, deployment, or request.
+  - Direct `live`/`based`/`located`/`staying` location routing now requires a
+    self-location subject such as `I`, `me`, `user`, or `my location`.
+  - Added regression tests for third-party residence, completed-course counts,
+    and `Facebook Live` event queries.
+- Generated LongMemEval-S audit summaries after router tightening:
+  - Full 500-case command:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_full_audit_summary_router_v4.adamem.jsonl --expected evidence --top-k 8 --state-audit-output results/longmemeval_s_full_state_audit_candidates.jsonl --state-audit-summary-output results/longmemeval_s_full_state_audit_summary.json`
+  - Full 500-case result: `14` query-state candidates, `0` with deterministic
+    state evidence, and `0` total state-evidence candidates.
+  - Balanced 60-case command:
+    `PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_audit_summary_router_v4.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --state-audit-output results/longmemeval_s_balanced_60_state_audit_candidates.jsonl --state-audit-summary-output results/longmemeval_s_balanced_60_state_audit_summary.json`
+  - Balanced 60-case result: `1` query-state candidate, `0` with deterministic
+    state evidence, and `0` total state-evidence candidates.
+  - Interpretation: LongMemEval-S remains useful for broad retrieval
+    transfer/no-regression checks, but it is currently too sparse in
+    state-available cases to support AdaMem's main state-transfer claim.
+- Re-ran deterministic local tests after audit-summary and router changes:
+  - `python -m pytest`
+  - Result: `66 passed`.
 
 ### 2026-05-28
 
@@ -90,6 +933,27 @@ The next method iteration should extract state candidates, assign typed slots,
 adjudicate active versus stale values, and expose authorized current state
 before raw retrieved dialogue.
 
+### Diagnostics should distinguish current recall from stale filtering
+
+The first API-free diagnostics show that filtering or adjudicating old evidence
+does not imply current evidence is retrieved. Future method work should treat
+authorized current-state readout as a separate mechanism from stale suppression.
+
+### State-aware memory is promising but not yet validated
+
+The first deterministic location-state prototype improves API-free STALE mini
+diagnostics, but it is intentionally narrow. It must be tested on larger STALE
+splits, harder synthetic cases, and at least one non-STALE benchmark before it
+can support a paper claim.
+
+### Literature framing should drive mechanisms and gates
+
+`docs/literature_to_design.md` now records how STALE, A-MEM, Zep, MemGPT,
+MemoryBank, Generative Agents, Mem0, LongMemEval, AMA-Bench, LongMemEval-V2,
+and the 2026 memory survey map to AdaMem hypotheses. This should prevent the
+project from drifting into arbitrary engineering and keep each mechanism tied
+to a paper-facing claim and evaluation gate.
+
 ## Known Risks
 
 - Current `hashed_bow` embedder is weak for paraphrase and implicit state
@@ -103,15 +967,24 @@ before raw retrieved dialogue.
 
 ## Next Tasks
 
-1. Implement stricter STALE retrieval diagnostics.
-2. Add tests for metric edge cases and no-label-leakage behavior.
-3. Add an experiment output schema for configs, prompts, raw answers, raw judge
-   outputs, and metadata.
-4. Create a baseline registry with stable names and runnable configs.
-5. Draft and then implement the first state-aware memory prototype with a
-   deterministic mock extractor.
-6. Add synthetic tests aligned to STALE dimensions 1, 2, and 3.
-7. Prepare API-enabled pilot scripts for later provider keys.
+1. Prepare API-enabled pilot scripts for later provider keys.
+2. Run a 5-20 case real STALE pilot when provider keys are available and
+   manually audit at least one answer/judge disagreement.
+3. Add official/faithful external memory baselines when their code and licenses
+   are reviewed.
+4. Replace or complement `benchmarks/dynamic_state_transfer.jsonl` with at
+   least one public non-STALE memory benchmark for transfer.
+5. Build a reliable public state-sensitive transfer subset. Query annotations
+   must remain evaluation-only and should be precision-audited before being
+   used as state-readout metrics.
+6. Run state-aware diagnostics on a larger converted STALE sample when data is
+   available locally.
+7. Add remaining non-location state slots such as relationships, user roles,
+   environment gotchas, and tool-output facts.
+8. Evaluate `state_propagation` on larger STALE T2-style indirect conflicts.
+9. Add a documented LLM extractor baseline using the pluggable extractor hook.
+10. Use the compact failure report on larger STALE samples to select the next
+   mechanism iteration and paper error categories.
 
 ## Change Log
 
@@ -121,3 +994,140 @@ before raw retrieved dialogue.
 - Added `docs/research_workflow.md`.
 - Added `docs/progress_log.md`.
 
+### 2026-05-29
+
+- Added `src/adamem/diagnostics.py`.
+- Added `src/adamem/baselines.py`.
+- Added `src/adamem/state.py`.
+- Added `src/adamem/experiments.py`.
+- Added `docs/literature_to_design.md`.
+- Added `benchmarks/dynamic_state_transfer.jsonl`.
+- Updated `src/adamem/convert.py` with LongMemEval conversion support.
+- Updated `src/adamem/config.py` with state-memory/readout flags.
+- Updated `src/adamem/config.py` with state dependency propagation flag.
+- Updated `src/adamem/config.py` with state-source adjudication flag.
+- Updated `src/adamem/config.py` with deterministic memory-evolution flags.
+- Updated `src/adamem/config.py` with temporal-KG flags.
+- Updated `src/adamem/config.py` with compact salient-memory flags.
+- Updated `src/adamem/manager.py` to write and retrieve derived state memories.
+- Updated `src/adamem/manager.py` to propagate changed state slots to dependent
+  state slots and their source evidence.
+- Updated `src/adamem/manager.py` to mark and query-scope-filter raw evidence
+  superseded by replaced state slots.
+- Updated `src/adamem/manager.py` with A-MEM-style deterministic note keyword,
+  dynamic linking, and memory evolution support.
+- Updated `src/adamem/manager.py` with temporal KG fact writing, invalidation,
+  and readout support.
+- Updated `src/adamem/manager.py` with compact salient fact writing,
+  replacement, retrieval-only mode, and readout support.
+- Updated `src/adamem/state.py` with schedule availability and dynamic task
+  status extraction.
+- Updated `src/adamem/state.py` with wildcard state readout matching and the
+  initial state dependency topology.
+- Updated `src/adamem/state.py` to handle curly apostrophes in contractions.
+- Updated `src/adamem/baselines.py` with `state_propagation`.
+- Updated `src/adamem/baselines.py` with `a_mem_evolution`.
+- Updated `src/adamem/baselines.py` with `zep_temporal_kg`.
+- Updated `src/adamem/baselines.py` with `mem0_extraction`.
+- Updated `src/adamem/baselines.py` with `semantic_state_adjudication` and
+  `semantic_state_propagation_adjudication`.
+- Updated `src/adamem/eval.py` with `--stale-diagnostics`.
+- Updated `src/adamem/eval.py` with `--list-baselines` and
+  `--experiment-output`.
+- Updated `src/adamem/eval.py` with STALE T1/T2 subset selection through
+  `--stale-types` and `--limit-per-stale-type`.
+- Updated `src/adamem/eval.py` with `--diagnostic-cases-output`.
+- Updated `src/adamem/eval.py` with `--diagnostic-report-output`.
+- Updated `src/adamem/eval.py` so `--stale ... --experiment-output` records
+  prompts, raw model outputs, retrieved traces, model settings, and command.
+- Updated `src/adamem/diagnostics.py` with case-level diagnostic record export.
+- Updated `src/adamem/diagnostics.py` with failure summary and Markdown report
+  aggregation.
+- Updated `src/adamem/llm.py` so the mock provider can be used from CLI smoke
+  runs without a real model argument.
+- Updated `tests/test_stale.py` with diagnostics tests.
+- Updated `tests/test_adamem.py` with state-aware mechanism tests.
+- Updated `tests/test_eval.py` with dynamic-state transfer smoke coverage.
+- Updated `tests/test_eval.py` with LongMemEval converter coverage.
+- Added `tests/test_experiments.py`.
+- Updated `src/adamem/__init__.py` to export `StatePatch`.
+- Updated `AGENTS.md`, `README.md`, `docs/research_workflow.md`, and this
+  progress log.
+
+### 2026-05-30
+
+- Updated `src/adamem/state.py` with health/dietary constraint slots,
+  resource status slots, health/resource query routing, and selected
+  health-to-food dependency prefixes.
+- Updated `benchmarks/dynamic_state_transfer.jsonl` with peanut-allergy
+  clearance and passport-renewal premise-resistance cases.
+- Updated `tests/test_adamem.py` with health/resource state replacement tests.
+- Updated `tests/test_eval.py` for the expanded 5-query dynamic-state fixture.
+- Added `results/dynamic_state_transfer_health_resource.json` from the
+  API-free dynamic-state transfer smoke run.
+- Updated `src/adamem/state.py` with workflow/runbook rule slots,
+  runtime/tool status slots, workflow/runtime query routing, and runtime noun
+  guards.
+- Updated `benchmarks/dynamic_state_transfer.jsonl` with checkout rollback
+  runbook and staging build runner stale-premise cases.
+- Updated `tests/test_adamem.py` with workflow/runtime state replacement tests
+  and a generic status-report false-positive test.
+- Updated `tests/test_eval.py` for the expanded 7-query dynamic-state fixture.
+- Added `results/dynamic_state_transfer_workflow_runtime.json` from the
+  expanded dynamic-state transfer smoke run.
+- Added `results/longmemeval_s_balanced_60_workflow_runtime_state_pilot.json`
+  from the LongMemEval-S no-regression transfer check.
+- Updated `src/adamem/bench.py` with trace-level item kind/metadata and
+  state-readout exposure aggregates.
+- Updated `src/adamem/state.py` to require a location-intent context before
+  `local` can trigger location state readout.
+- Updated `tests/test_adamem.py` with a `local animal shelter` false-positive
+  regression test.
+- Updated `tests/test_eval.py` with state exposure metric coverage.
+- Added `results/dynamic_state_transfer_state_exposure.json` and
+  `results/dynamic_state_transfer_state_exposure_report.md`.
+- Added `results/longmemeval_s_balanced_60_state_exposure.json` and
+  `results/longmemeval_s_balanced_60_state_exposure_report.md`.
+- Updated `src/adamem/bench.py` with slot-level state authorization diagnostics
+  and failure modes.
+- Updated `tests/test_eval.py` with missing/matched/mismatched state-readout
+  assertions.
+- Updated `src/adamem/bench.py` with paper-facing JSONL benchmark metrics.
+- Updated `tests/test_eval.py` with paper metrics report coverage.
+- Updated `src/adamem/convert.py` with LongMemEval
+  `--infer-state-slots`, which annotates query metadata from query text for
+  diagnostics only.
+- Updated `tests/test_eval.py` to verify inferred LongMemEval state slots stay
+  out of observation metadata and runtime memory inputs.
+- Added `results/longmemeval_s_balanced_60_inferred_state.json` and
+  `results/longmemeval_s_balanced_60_inferred_state_report.md` from the
+  query-annotated LongMemEval-S transfer diagnostic.
+- Updated `src/adamem/convert.py` with LongMemEval
+  `--state-audit-summary-output`.
+- Updated `src/adamem/state.py` with stricter task-status and self-location
+  query routing gates.
+- Updated `tests/test_eval.py` with LongMemEval state-audit summary coverage.
+- Updated `tests/test_adamem.py` with additional LongMemEval-S router
+  false-positive regressions.
+- Added `results/longmemeval_s_full_state_audit_candidates.jsonl` and
+  `results/longmemeval_s_full_state_audit_summary.json` from the full-file
+  LongMemEval-S audit.
+- Added `results/longmemeval_s_balanced_60_state_audit_summary.json` from the
+  balanced LongMemEval-S audit summary.
+- Updated `src/adamem/convert.py` with an AMA-Bench-style trajectory
+  converter:
+  - New command: `PYTHONPATH=src python -m adamem.convert ama INPUT OUTPUT`.
+  - Accepts JSON arrays or JSONL records with `trajectory`/`steps`-style
+    action-observation histories.
+  - Emits actions, observations, and environment states as runtime
+    observations while preserving action-to-observation causality through
+    `cause_labels`.
+  - Keeps answers and evidence labels query-only, avoiding runtime leakage.
+- Updated `tests/test_eval.py` with an AMA causality smoke test:
+  - A semantic no-graph config misses the hidden action identifier.
+  - A graph-enabled config recovers it through the action-result cause edge.
+- Updated `README.md` and `docs/research_workflow.md` with the AMA converter
+  command and the next API-free trajectory-transfer step.
+- Re-ran deterministic local tests:
+  - `python -m pytest`
+  - Result: `67 passed`.

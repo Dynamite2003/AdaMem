@@ -5,8 +5,17 @@ from pathlib import Path
 
 from adamem.bench import default_ablation_configs, load_jsonl_cases
 from adamem.convert import convert_stale_file, convert_stale_sample
+from adamem.diagnostics import (
+    diagnostic_case_records,
+    diagnostic_failure_report,
+    diagnostic_failure_summary,
+    diagnostics_report,
+    run_stale_retrieval_diagnostics,
+    stale_text_signal,
+    text_supports_signal,
+)
 from adamem.eval import run_stale_benchmark, stale_report
-from adamem.llm import MockLLMClient
+from adamem.llm import MockLLMClient, build_client
 
 
 def _toy_stale_instance(uid: str = "stale-toy-1", sample_type: str = "T1") -> dict:
@@ -101,6 +110,7 @@ def test_run_stale_benchmark_with_mock_clients(tmp_path: Path) -> None:
     answer_client = MockLLMClient("The user lives in Boston.")
     judge_client = MockLLMClient("CORRECT")
     configs = {"semantic_only": default_ablation_configs()["semantic_only"]}
+    raw_outputs: list[dict] = []
 
     results = run_stale_benchmark(
         out,
@@ -108,6 +118,7 @@ def test_run_stale_benchmark_with_mock_clients(tmp_path: Path) -> None:
         judge_client=judge_client,
         configs=configs,
         top_k=4,
+        raw_outputs=raw_outputs,
     )
 
     assert len(results) == 1
@@ -120,6 +131,13 @@ def test_run_stale_benchmark_with_mock_clients(tmp_path: Path) -> None:
     # Mock client received both answer and judge prompts.
     assert len(answer_client.calls) == 3
     assert len(judge_client.calls) == 3
+    assert len(raw_outputs) == 3
+    assert raw_outputs[0]["baseline"] == "semantic_only"
+    assert "Conversation memory excerpts" in raw_outputs[0]["answer_prompt"]
+    assert "OLD belief" in raw_outputs[0]["judge_prompt"]
+    assert raw_outputs[0]["answer_raw"] == "The user lives in Boston."
+    assert raw_outputs[0]["judge_raw"] == "CORRECT"
+    assert raw_outputs[0]["retrieved"]
     # By-dim breakdown covers all three dimensions.
     assert set(result.by_dim) == {1, 2, 3}
     for dim_stats in result.by_dim.values():
@@ -148,6 +166,42 @@ def test_run_stale_benchmark_judge_incorrect(tmp_path: Path) -> None:
     assert result.n_correct == 1
     assert result.n_total == 3
     assert result.accuracy == 1 / 3
+
+
+def test_run_stale_benchmark_filters_and_balances_types(tmp_path: Path) -> None:
+    src = tmp_path / "stale_in.json"
+    src.write_text(json.dumps([
+        _toy_stale_instance("t1-a", "T1"),
+        _toy_stale_instance("t1-b", "T1"),
+        _toy_stale_instance("t2-a", "T2"),
+        _toy_stale_instance("t2-b", "T2"),
+    ]))
+    out = tmp_path / "stale.jsonl"
+    convert_stale_file(src, out, top_k=4)
+
+    answer_client = MockLLMClient("The user lives in Boston.")
+    judge_client = MockLLMClient("CORRECT")
+    configs = {"semantic_only": default_ablation_configs()["semantic_only"]}
+    results = run_stale_benchmark(
+        out,
+        answer_client=answer_client,
+        judge_client=judge_client,
+        configs=configs,
+        top_k=4,
+        stale_types=["T1", "T2"],
+        limit_per_stale_type=1,
+    )
+
+    result = results[0]
+    assert result.n_total == 6
+    assert result.by_type["T1"]["n_total"] == 3
+    assert result.by_type["T2"]["n_total"] == 3
+
+
+def test_build_mock_client_ignores_model_for_cli_smoke() -> None:
+    client = build_client("mock", model="ignored")
+
+    assert client.complete("hello") == "CORRECT"
 
 
 def test_stale_report_has_all_dim_columns(tmp_path: Path) -> None:
@@ -188,6 +242,7 @@ def test_stale_leak_rate_drops_when_filter_active(tmp_path: Path) -> None:
     configs = {
         "semantic_only": default_ablation_configs()["semantic_only"],
         "delta_full": default_ablation_configs()["delta_full"],
+        "state_readout": default_ablation_configs()["state_readout"],
     }
     results = {r.name: r for r in run_stale_benchmark(
         out,
@@ -202,3 +257,86 @@ def test_stale_leak_rate_drops_when_filter_active(tmp_path: Path) -> None:
     for name, res in results.items():
         assert 0.0 <= res.stale_leak_rate <= 1.0
     assert results["delta_full"].stale_leak_rate <= results["semantic_only"].stale_leak_rate
+
+
+def test_stale_text_signal_ignores_generic_old_belief_words() -> None:
+    signal = stale_text_signal("I've been staying in Seattle for the past few years, so that's where I'm located.")
+
+    assert "seattle" in signal.tokens
+    assert "years" not in signal.tokens
+    assert "user" not in signal.tokens
+    assert text_supports_signal("I recently moved away from Seattle.", signal)
+    assert not text_supports_signal("The user has been busy for the past few years.", signal)
+
+
+def test_retrieval_diagnostics_separate_current_and_stale_evidence(tmp_path: Path) -> None:
+    src = tmp_path / "stale_in.json"
+    src.write_text(json.dumps([_toy_stale_instance()]))
+    out = tmp_path / "stale.jsonl"
+    convert_stale_file(src, out, top_k=4)
+    cases = load_jsonl_cases(out)
+    configs = {
+        "semantic_only": default_ablation_configs()["semantic_only"],
+        "delta_full": default_ablation_configs()["delta_full"],
+        "state_readout": default_ablation_configs()["state_readout"],
+    }
+
+    results = {r.name: r for r in run_stale_retrieval_diagnostics(cases, configs)}
+
+    assert set(results) == {"semantic_only", "delta_full", "state_readout"}
+    for result in results.values():
+        assert result.total == 3
+        assert 0.0 <= result.current_recall_rate <= 1.0
+        assert 0.0 <= result.stale_exposure_rate <= 1.0
+        assert 0.0 <= result.old_support_adjudication_rate <= 1.0
+        assert all(record.old_supports <= 3 for record in result.queries)
+
+    assert results["delta_full"].old_support_adjudication_rate >= results["semantic_only"].old_support_adjudication_rate
+    assert results["state_readout"].current_recall_rate > results["delta_full"].current_recall_rate
+    report = diagnostics_report(list(results.values()))
+    assert "current recall" in report
+    assert "stale exposure" in report
+
+
+def test_diagnostic_case_records_export_failures(tmp_path: Path) -> None:
+    src = tmp_path / "stale_in.json"
+    src.write_text(json.dumps([_toy_stale_instance()]))
+    out = tmp_path / "stale.jsonl"
+    convert_stale_file(src, out, top_k=4)
+    cases = load_jsonl_cases(out)
+    configs = {
+        "semantic_only": default_ablation_configs()["semantic_only"],
+        "state_readout": default_ablation_configs()["state_readout"],
+    }
+
+    results = run_stale_retrieval_diagnostics(cases, configs)
+    records = diagnostic_case_records(results)
+
+    assert records
+    assert any(record["baseline"] == "semantic_only" for record in records)
+    assert all(record["failure_modes"] for record in records)
+    assert any("current_evidence_not_recalled" in record["failure_modes"] for record in records)
+    assert any("trace" in record for record in records)
+
+
+def test_diagnostic_failure_summary_groups_records(tmp_path: Path) -> None:
+    src = tmp_path / "stale_in.json"
+    src.write_text(json.dumps([_toy_stale_instance()]))
+    out = tmp_path / "stale.jsonl"
+    convert_stale_file(src, out, top_k=4)
+    cases = load_jsonl_cases(out)
+    configs = {
+        "semantic_only": default_ablation_configs()["semantic_only"],
+        "state_readout": default_ablation_configs()["state_readout"],
+    }
+
+    results = run_stale_retrieval_diagnostics(cases, configs)
+    records = diagnostic_case_records(results)
+    summary = diagnostic_failure_summary(records)
+    report = diagnostic_failure_report(records)
+
+    assert summary["total_records"] == len(records)
+    assert summary["by_baseline"]["semantic_only"] >= 1
+    assert summary["by_failure_mode"]["current_evidence_not_recalled"] >= 1
+    assert "Failure Modes By Baseline" in report
+    assert "Representative Examples" in report

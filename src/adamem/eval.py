@@ -8,12 +8,24 @@ from pathlib import Path
 from typing import Any
 
 from adamem.bench import (
+    benchmark_case_records,
+    benchmark_failure_report,
+    benchmark_failure_summary,
     benchmark_report,
     default_ablation_configs,
     load_jsonl_cases,
     run_benchmark,
 )
+from adamem.baselines import baseline_report, select_baselines
 from adamem.config import AdaMemConfig
+from adamem.diagnostics import (
+    diagnostic_case_records,
+    diagnostic_failure_report,
+    diagnostic_failure_summary,
+    diagnostics_report,
+    run_stale_retrieval_diagnostics,
+)
+from adamem.experiments import experiment_record, write_experiment_record
 from adamem.llm import LLMClient, build_client
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem
@@ -343,7 +355,10 @@ def run_stale_benchmark(
     top_k: int = 8,
     max_context_chars: int = 4000,
     max_cases: int | None = None,
+    stale_types: list[str] | None = None,
+    limit_per_stale_type: int | None = None,
     request_delay: float = 0.0,
+    raw_outputs: list[dict[str, Any]] | None = None,
 ) -> list[StaleAblationResult]:
     """Score AdaMem on the STALE benchmark using LLM-judge methodology.
 
@@ -353,8 +368,12 @@ def run_stale_benchmark(
     score CORRECT/INCORRECT, and aggregate by dim and type.
     """
     cases = load_jsonl_cases(dataset_path)
-    if max_cases is not None:
-        cases = cases[:max_cases]
+    cases = _select_stale_cases(
+        cases,
+        stale_types=stale_types,
+        limit_per_type=limit_per_stale_type,
+        max_cases=max_cases,
+    )
     configs = configs or default_ablation_configs()
 
     results: list[StaleAblationResult] = []
@@ -376,8 +395,9 @@ def run_stale_benchmark(
                 retrieved_results = mem.retrieve(query.query, top_k=query.top_k or top_k)
                 retrieved_texts = [result.item.content for result in retrieved_results]
                 context = _truncate("\n---\n".join(retrieved_texts), max_context_chars)
+                answer_prompt = STALE_ANSWER_TEMPLATE.format(context=context, query=query.query)
                 answer = answer_client.complete(
-                    STALE_ANSWER_TEMPLATE.format(context=context, query=query.query),
+                    answer_prompt,
                     system=STALE_ANSWER_SYSTEM,
                     max_tokens=200,
                     temperature=0.0,
@@ -403,6 +423,39 @@ def run_stale_benchmark(
                     time.sleep(request_delay)
                 correct = _parse_judge(judge_raw)
                 leak = _detect_stale_leak(retrieved_texts, query.metadata)
+                if raw_outputs is not None:
+                    raw_outputs.append(
+                        {
+                            "baseline": name,
+                            "case_id": case.id,
+                            "query_id": query.id or "",
+                            "dim": dim,
+                            "stale_type": str(query.metadata.get("stale_type") or "?"),
+                            "query": query.query,
+                            "answer_prompt": answer_prompt,
+                            "answer_system": STALE_ANSWER_SYSTEM,
+                            "answer_raw": answer,
+                            "judge_prompt": judge_prompt,
+                            "judge_system": STALE_JUDGE_SYSTEM,
+                            "judge_raw": judge_raw,
+                            "judge_correct": correct,
+                            "stale_leak": leak,
+                            "retrieved": [
+                                {
+                                    "rank": index,
+                                    "content": result.item.content,
+                                    "score": round(result.score, 4),
+                                    "staleness": round(result.item.staleness, 4),
+                                    "relation": result.relation,
+                                    "contributions": {
+                                        key: round(value, 4)
+                                        for key, value in result.contributions.items()
+                                    },
+                                }
+                                for index, result in enumerate(retrieved_results, start=1)
+                            ],
+                        }
+                    )
                 per_query.append(
                     StaleQueryResult(
                         case_id=case.id,
@@ -552,29 +605,167 @@ def _aggregate_stale_leak_rate(records: list[StaleQueryResult]) -> float:
     return sum(1 for r in records if r.stale_leak) / len(records)
 
 
+def _select_stale_cases(
+    cases: list[Any],
+    *,
+    stale_types: list[str] | None = None,
+    limit_per_type: int | None = None,
+    max_cases: int | None = None,
+) -> list[Any]:
+    allowed = set(stale_types or [])
+    selected: list[Any] = []
+    type_counts: dict[str, int] = {}
+    for case in cases:
+        case_type = _case_stale_type(case)
+        if allowed and case_type not in allowed:
+            continue
+        if limit_per_type is not None:
+            count = type_counts.get(case_type, 0)
+            if count >= limit_per_type:
+                continue
+            type_counts[case_type] = count + 1
+        selected.append(case)
+        if max_cases is not None and len(selected) >= max_cases:
+            break
+    return selected
+
+
+def _case_stale_type(case: Any) -> str:
+    queries = getattr(case, "queries", [])
+    for query in queries:
+        metadata = getattr(query, "metadata", {})
+        value = metadata.get("stale_type") if isinstance(metadata, dict) else None
+        if value:
+            return str(value)
+    return "<missing>"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run AdaMem's deterministic synthetic ablations.")
     parser.add_argument("--dataset", type=Path, help="JSONL QA benchmark in AdaMem thin format")
     parser.add_argument("--stale", type=Path, help="Run STALE LLM-judge evaluation on this JSONL")
+    parser.add_argument("--stale-diagnostics", type=Path, help="Run API-free STALE retrieval diagnostics on this JSONL")
+    parser.add_argument("--benchmark-cases-output", type=Path, help="Write JSONL per-query records for --dataset runs")
+    parser.add_argument("--benchmark-report-output", type=Path, help="Write Markdown grouped report for --dataset runs")
+    parser.add_argument("--diagnostic-cases-output", type=Path, help="Write JSONL case-level STALE diagnostic records")
+    parser.add_argument("--diagnostic-report-output", type=Path, help="Write Markdown STALE diagnostic failure report")
+    parser.add_argument("--list-baselines", action="store_true", help="List stable baseline registry entries")
+    parser.add_argument("--baselines", nargs="+", help="Run only these stable baseline names")
+    parser.add_argument("--experiment-output", type=Path, help="Write a JSON experiment record for supported runs")
     parser.add_argument("--answer-provider", default="openai", help="LLM provider for answer agent")
     parser.add_argument("--answer-model", default="gpt-4o-mini")
     parser.add_argument("--judge-provider", default="gemini", help="LLM provider for judge")
     parser.add_argument("--judge-model", default="gemini-1.5-flash")
     parser.add_argument("--top-k", type=int, default=8)
+    parser.add_argument("--max-context-chars", type=int, default=4000)
     parser.add_argument("--max-cases", type=int, help="Limit number of STALE cases evaluated")
+    parser.add_argument("--stale-types", nargs="+", choices=["T1", "T2"], help="Filter STALE cases by conflict type")
+    parser.add_argument("--limit-per-stale-type", type=int, help="Keep at most this many STALE cases per type")
+    parser.add_argument("--request-delay", type=float, default=0.0, help="Delay between STALE answer/judge calls")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of Markdown")
     args = parser.parse_args()
+
+    try:
+        specs = select_baselines(args.baselines)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    if args.list_baselines:
+        if args.json:
+            print(json.dumps({name: asdict(spec) for name, spec in specs.items()}, indent=2, ensure_ascii=False))
+        else:
+            print(baseline_report(specs))
+        return
+
+    if args.stale_diagnostics:
+        cases = load_jsonl_cases(args.stale_diagnostics)
+        cases = _select_stale_cases(
+            cases,
+            stale_types=args.stale_types,
+            limit_per_type=args.limit_per_stale_type,
+            max_cases=args.max_cases,
+        )
+        diagnostic_results = run_stale_retrieval_diagnostics(
+            cases,
+            {name: spec.config for name, spec in specs.items()},
+        )
+        case_records = diagnostic_case_records(diagnostic_results)
+        if args.diagnostic_cases_output:
+            _write_jsonl(args.diagnostic_cases_output, case_records)
+        failure_summary = diagnostic_failure_summary(case_records)
+        if args.diagnostic_report_output:
+            _write_text(args.diagnostic_report_output, diagnostic_failure_report(case_records))
+        if args.experiment_output:
+            record = experiment_record(
+                run_name=args.experiment_output.stem,
+                run_type="stale_retrieval_diagnostics",
+                dataset=args.stale_diagnostics,
+                split_or_case_limit=_split_note(args.max_cases, args.stale_types, args.limit_per_stale_type),
+                baselines=specs,
+                diagnostics=[asdict(result) for result in diagnostic_results],
+                results={"failure_summary": failure_summary},
+                raw_outputs=case_records,
+                notes={
+                    "answer_model_required": False,
+                    "judge_model_required": False,
+                    "ground_truth_runtime_use": "forbidden",
+                    "diagnostic_case_records": len(case_records),
+                },
+            )
+            write_experiment_record(args.experiment_output, record)
+        if args.json:
+            print(json.dumps([asdict(result) for result in diagnostic_results], indent=2, ensure_ascii=False))
+        else:
+            print(diagnostics_report(diagnostic_results))
+        return
 
     if args.stale:
         answer_client = build_client(args.answer_provider, model=args.answer_model)
         judge_client = build_client(args.judge_provider, model=args.judge_model)
+        raw_outputs: list[dict[str, Any]] = []
         stale_results = run_stale_benchmark(
             args.stale,
             answer_client=answer_client,
             judge_client=judge_client,
+            configs={name: spec.config for name, spec in specs.items()},
             top_k=args.top_k,
+            max_context_chars=args.max_context_chars,
             max_cases=args.max_cases,
+            stale_types=args.stale_types,
+            limit_per_stale_type=args.limit_per_stale_type,
+            request_delay=args.request_delay,
+            raw_outputs=raw_outputs,
         )
+        if args.experiment_output:
+            record = experiment_record(
+                run_name=args.experiment_output.stem,
+                run_type="stale_llm_judge",
+                dataset=args.stale,
+                split_or_case_limit=_split_note(args.max_cases, args.stale_types, args.limit_per_stale_type),
+                baselines=specs,
+                results=[asdict(result) for result in stale_results],
+                prompts={
+                    "answer_system": STALE_ANSWER_SYSTEM,
+                    "answer_template": STALE_ANSWER_TEMPLATE,
+                    "judge_system": STALE_JUDGE_SYSTEM,
+                    "judge_template": STALE_JUDGE_TEMPLATE,
+                },
+                raw_outputs=raw_outputs,
+                notes={
+                    "answer_provider": args.answer_provider,
+                    "answer_model": args.answer_model,
+                    "judge_provider": args.judge_provider,
+                    "judge_model": args.judge_model,
+                    "top_k": args.top_k,
+                    "max_context_chars": args.max_context_chars,
+                    "stale_types": args.stale_types,
+                    "limit_per_stale_type": args.limit_per_stale_type,
+                    "request_delay": args.request_delay,
+                    "ground_truth_runtime_use": "forbidden",
+                    "ground_truth_judge_use": "allowed",
+                },
+            )
+            write_experiment_record(args.experiment_output, record)
         if args.json:
             print(json.dumps([asdict(r) for r in stale_results], indent=2, ensure_ascii=False))
         else:
@@ -582,7 +773,36 @@ def main() -> None:
         return
 
     if args.dataset:
-        benchmark_results = run_benchmark(load_jsonl_cases(args.dataset))
+        cases = load_jsonl_cases(args.dataset)
+        if args.max_cases is not None:
+            cases = cases[:args.max_cases]
+        benchmark_results = run_benchmark(cases, {name: spec.config for name, spec in specs.items()})
+        benchmark_records = benchmark_case_records(benchmark_results)
+        benchmark_summary = benchmark_failure_summary(benchmark_records)
+        if args.benchmark_cases_output:
+            _write_jsonl(args.benchmark_cases_output, benchmark_records)
+        if args.benchmark_report_output:
+            _write_text(args.benchmark_report_output, benchmark_failure_report(benchmark_records))
+        if args.experiment_output:
+            record = experiment_record(
+                run_name=args.experiment_output.stem,
+                run_type="jsonl_retrieval_benchmark",
+                dataset=args.dataset,
+                split_or_case_limit=str(args.max_cases) if args.max_cases is not None else None,
+                baselines=specs,
+                results=[asdict(result) for result in benchmark_results],
+                diagnostics={"failure_summary": benchmark_summary},
+                raw_outputs=benchmark_records,
+                notes={
+                    "answer_model_required": False,
+                    "judge_model_required": False,
+                    "benchmark_kind": "retrieval_support",
+                    "benchmark_case_records": len(benchmark_records),
+                    "ground_truth_runtime_use": "forbidden",
+                    "ground_truth_evaluation_use": "expected_substrings_only",
+                },
+            )
+            write_experiment_record(args.experiment_output, record)
         if args.json:
             print(json.dumps([asdict(result) for result in benchmark_results], indent=2, ensure_ascii=False))
         else:
@@ -594,6 +814,40 @@ def main() -> None:
         print(json.dumps([asdict(result) for result in results], indent=2, ensure_ascii=False))
     else:
         print(as_report(results))
+
+
+def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+    tmp.replace(path)
+    return path
+
+
+def _write_text(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+    return path
+
+
+def _split_note(
+    max_cases: int | None,
+    stale_types: list[str] | None,
+    limit_per_stale_type: int | None,
+) -> str | None:
+    parts: list[str] = []
+    if max_cases is not None:
+        parts.append(f"max_cases={max_cases}")
+    if stale_types:
+        parts.append(f"stale_types={','.join(stale_types)}")
+    if limit_per_stale_type is not None:
+        parts.append(f"limit_per_stale_type={limit_per_stale_type}")
+    return ";".join(parts) if parts else None
 
 
 if __name__ == "__main__":

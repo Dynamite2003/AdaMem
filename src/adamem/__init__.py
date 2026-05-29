@@ -3,6 +3,7 @@
 from adamem.config import AdaMemConfig
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem, MemoryResult
+from adamem.state import StatePatch
 from adamem.store import JsonMemoryStore, MemoryStore
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "MemoryItem",
     "MemoryResult",
     "MemoryStore",
+    "StatePatch",
 ]

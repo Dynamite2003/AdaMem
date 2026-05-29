@@ -252,5 +252,7 @@ def build_client(provider: str, **kwargs) -> LLMClient:
     if name == "modelhub":
         return ModelHubClient(**kwargs)
     if name == "mock":
+        kwargs.pop("model", None)
+        kwargs.setdefault("responses", "CORRECT")
         return MockLLMClient(**kwargs)
     raise ValueError(f"Unknown LLM provider: {provider}")

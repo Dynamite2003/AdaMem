@@ -57,12 +57,23 @@ state/staleness mechanisms.
 - `src/adamem/config.py`: mechanism switches and scoring weights. New research
   mechanisms should usually be ablatable here.
 - `src/adamem/schema.py`: memory/result dataclasses.
+- `src/adamem/state.py`: deterministic API-free typed state extractor prototype,
+  pluggable state patch type, state-readout query detector, wildcard state slot
+  matcher, and initial state dependency topology.
 - `src/adamem/store.py`: store protocol, in-memory store, JSON prototype store.
 - `src/adamem/text.py`: tokenizer, hashed bag-of-words embedder, memory key
   helper.
+- `src/adamem/baselines.py`: stable baseline registry for paper tables and
+  runnable ablation configs.
 - `src/adamem/bench.py`: thin JSONL retrieval benchmark runner and ablation
   definitions.
+- `src/adamem/diagnostics.py`: API-free STALE retrieval diagnostics for
+  current-evidence recall, stale exposure, conflict coverage, and adjudication
+  signals, case-level JSONL records, and Markdown failure reports for error
+  analysis.
 - `src/adamem/eval.py`: synthetic benchmark and STALE LLM-judge evaluation.
+- `src/adamem/experiments.py`: experiment record schema and JSON writer for
+  reproducible runs.
 - `src/adamem/convert.py`: LoCoMo and STALE converters.
 - `src/adamem/llm.py`: provider-agnostic HTTP clients for answer/judge calls.
 - `benchmarks/`: small fixtures and local smoke data.
@@ -149,7 +160,8 @@ state-aware memory layer:
 
 - Extract candidate state updates from new observations.
 - Assign each state to a typed slot such as location, schedule, preference,
-  health constraint, relationship, task status, or resource ownership.
+  health constraint, relationship, task status, resource status,
+  workflow/runbook rule, or runtime/tool status.
 - Mark each slot value as active, stale, replaced, or unknown-current.
 - Propagate invalidation through a small dependency topology between state
   slots.
@@ -183,6 +195,8 @@ https://arxiv.org/abs/2605.06527
 - Read existing tests before changing behavior.
 - Follow `docs/research_workflow.md` when planning evaluation, baseline, or
   paper-track work.
+- Use `docs/literature_to_design.md` to connect new mechanisms to papers,
+  baseline gaps, hypotheses, and evaluation gates.
 - Keep `docs/progress_log.md` updated when a meaningful design decision,
   experiment, implementation change, or scope change happens.
 - Keep new mechanisms deterministic where possible so local ablations stay
@@ -201,7 +215,20 @@ https://arxiv.org/abs/2605.06527
 ```bash
 python -m pytest
 PYTHONPATH=src python -m adamem.eval
+PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/tiny_memory_qa.jsonl
+PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl
+PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 1 --experiment-output results/dynamic_state_transfer_smoke.json
+PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json benchmarks/longmemeval_s.adamem.jsonl
+PYTHONPATH=src python -m adamem.eval --dataset benchmarks/longmemeval_s.adamem.jsonl --baselines semantic_only semantic_state_readout semantic_state_propagation full state_readout state_propagation --max-cases 20 --experiment-output results/longmemeval_transfer_pilot.json
+PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10
+PYTHONPATH=src python -m adamem.eval --dataset /tmp/longmemeval_s_balanced_60.adamem.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication --max-cases 60 --benchmark-cases-output results/longmemeval_s_balanced_60_state_adjudication_records.jsonl --benchmark-report-output results/longmemeval_s_balanced_60_state_adjudication_report.md --experiment-output results/longmemeval_s_balanced_60_state_adjudication_pilot.json
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale.adamem.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication state_readout --stale-types T1 T2 --limit-per-stale-type 10 --experiment-output results/stale_balanced20_state_adjudication_diagnostics.json --diagnostic-cases-output results/stale_balanced20_state_adjudication_cases.jsonl --diagnostic-report-output results/stale_balanced20_state_adjudication_report.md
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --experiment-output results/stale_diagnostics_smoke.json
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl
+PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl --diagnostic-report-output results/stale_failure_report.md
+PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output results/stale_pilot_mock.json
 PYTHONPATH=src python -m adamem.convert locomo data/locomo10.json benchmarks/locomo10.adamem.jsonl
 PYTHONPATH=src python -m adamem.convert stale data/T1_T2_400_FULL.json benchmarks/stale.adamem.jsonl
 ```

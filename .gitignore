@@ -17,3 +17,4 @@ secrets/
 *.pem
 runs/
 results/
+data/

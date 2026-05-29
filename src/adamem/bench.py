@@ -5,9 +5,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from adamem.baselines import default_ablation_configs
 from adamem.config import AdaMemConfig
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem
+from adamem.state import state_slot_matches_query
 
 
 @dataclass(slots=True)
@@ -45,11 +47,13 @@ class MemoryQACase:
 class QueryEvalResult:
     case_id: str
     query_id: str
+    query: str
     passed: bool
     retrieved: list[str]
     expected_substrings: list[str]
     forbidden_substrings: list[str]
     trace: list[dict[str, Any]]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -59,45 +63,6 @@ class BenchmarkResult:
     passed: int
     total: int
     queries: list[QueryEvalResult]
-
-
-def default_ablation_configs() -> dict[str, AdaMemConfig]:
-    semantic_only = dict(
-        use_graph=False,
-        use_temporal=False,
-        use_importance=False,
-        use_recency=False,
-        use_confidence=False,
-        use_feedback=False,
-        use_mmr=False,
-        use_supersession=False,
-        use_auto_links=False,
-        use_soft_staleness=False,
-        use_stale_propagation=False,
-        use_adjudication_filter=False,
-    )
-    return {
-        "semantic_only": AdaMemConfig(**semantic_only),
-        "semantic_importance": AdaMemConfig(**{**semantic_only, "use_importance": True}),
-        "semantic_temporal": AdaMemConfig(**{**semantic_only, "use_temporal": True}),
-        "semantic_graph": AdaMemConfig(**{**semantic_only, "use_graph": True}),
-        "delta_graph": AdaMemConfig(**{**semantic_only, "use_graph": True, "use_supersession": True}),
-        "delta_soft": AdaMemConfig(**{**semantic_only, "use_supersession": True, "use_soft_staleness": True}),
-        "delta_propagation": AdaMemConfig(**{
-            **semantic_only,
-            "use_supersession": True,
-            "use_soft_staleness": True,
-            "use_stale_propagation": True,
-        }),
-        "delta_full": AdaMemConfig(**{
-            **semantic_only,
-            "use_supersession": True,
-            "use_soft_staleness": True,
-            "use_stale_propagation": True,
-            "use_adjudication_filter": True,
-        }),
-        "full": AdaMemConfig(),
-    }
 
 
 def load_jsonl_cases(path: str | Path) -> list[MemoryQACase]:
@@ -153,6 +118,184 @@ def benchmark_report(results: list[BenchmarkResult]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def benchmark_case_records(results: list[BenchmarkResult]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for result in results:
+        for query in result.queries:
+            records.append(_query_record(result.name, query))
+    return records
+
+
+def benchmark_failure_summary(
+    records: list[dict[str, Any]],
+    *,
+    group_fields: Iterable[str] = ("question_type", "dimension", "state_slot", "abstention"),
+) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "total_records": len(records),
+        "by_baseline": {},
+        "failure_modes": {},
+        "by_metadata": {},
+        "state_readout_exposure": {},
+        "paper_metrics": {},
+        "pairwise_vs_first_baseline": {},
+    }
+    baseline_order = list(dict.fromkeys(str(record["baseline"]) for record in records))
+    for baseline in sorted(set(baseline_order)):
+        subset = [record for record in records if record["baseline"] == baseline]
+        summary["by_baseline"][baseline] = _aggregate_records(subset)
+        summary["state_readout_exposure"][baseline] = _state_exposure_aggregate(subset)
+    if baseline_order:
+        reference = baseline_order[0]
+        for candidate in baseline_order[1:]:
+            summary["pairwise_vs_first_baseline"][candidate] = _paired_comparison(
+                records,
+                reference=reference,
+                candidate=candidate,
+                group_fields=group_fields,
+            )
+    for baseline in sorted(set(baseline_order)):
+        summary["paper_metrics"][baseline] = _paper_metrics_for_baseline(
+            baseline,
+            summary=summary,
+            reference=baseline_order[0] if baseline_order else None,
+        )
+
+    for record in records:
+        for mode in record["failure_modes"]:
+            summary["failure_modes"][mode] = summary["failure_modes"].get(mode, 0) + 1
+
+    for field_name in group_fields:
+        field_summary: dict[str, Any] = {}
+        values = sorted({_metadata_group_value(record["metadata"], field_name) for record in records})
+        for value in values:
+            value_subset = [
+                record
+                for record in records
+                if _metadata_group_value(record["metadata"], field_name) == value
+            ]
+            by_baseline = {
+                baseline: _aggregate_records([
+                    record for record in value_subset if record["baseline"] == baseline
+                ])
+                for baseline in sorted({str(record["baseline"]) for record in value_subset})
+            }
+            field_summary[value] = by_baseline
+        summary["by_metadata"][field_name] = field_summary
+    return summary
+
+
+def benchmark_failure_report(
+    records: list[dict[str, Any]],
+    *,
+    group_fields: Iterable[str] = ("question_type", "dimension", "state_slot", "abstention"),
+    max_examples: int = 2,
+) -> str:
+    summary = benchmark_failure_summary(records, group_fields=group_fields)
+    lines = ["# JSONL Retrieval Benchmark Failure Report", ""]
+    lines.append("## Baselines")
+    lines.append("| baseline | passed | accuracy |")
+    lines.append("| --- | ---: | ---: |")
+    for baseline, aggregate in summary["by_baseline"].items():
+        lines.append(
+            f"| {baseline} | {aggregate['passed']}/{aggregate['total']} | {aggregate['accuracy']:.2%} |"
+        )
+    lines.append("")
+
+    pairwise = summary.get("pairwise_vs_first_baseline", {})
+    if pairwise:
+        reference = next(iter(records), {}).get("baseline", "<none>") if records else "<none>"
+        lines.append(f"## Pairwise Vs {reference}")
+        lines.append("| candidate | common | gained | lost | net | both pass | both fail |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for candidate, comparison in pairwise.items():
+            lines.append(
+                f"| {candidate} | {comparison['common_total']} | {comparison['gained_passes']} | "
+                f"{comparison['lost_passes']} | {comparison['net_delta']} | "
+                f"{comparison['both_pass']} | {comparison['both_fail']} |"
+            )
+        lines.append("")
+
+    paper_metrics = summary.get("paper_metrics", {})
+    if paper_metrics:
+        lines.append("## Paper Metrics")
+        lines.append(
+            "| baseline | support | accuracy | net vs reference | state slot match | "
+            "state missing | slot mismatch | unmarked state exposure |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for baseline, metrics in paper_metrics.items():
+            lines.append(
+                f"| {baseline} | {metrics['support_passed']}/{metrics['support_total']} | "
+                f"{metrics['support_accuracy']:.2%} | {metrics['net_delta_vs_reference']} | "
+                f"{_format_optional_rate(metrics['state_slot_match_rate'])} | "
+                f"{_format_optional_rate(metrics['state_readout_missing_rate'])} | "
+                f"{_format_optional_rate(metrics['state_slot_mismatch_rate'])} | "
+                f"{_format_optional_rate(metrics['unmarked_state_exposure_rate'])} |"
+            )
+        lines.append("")
+
+    exposure = summary.get("state_readout_exposure", {})
+    if exposure:
+        lines.append("## State Readout Exposure")
+        lines.append(
+            "| baseline | state queries | state available | state unavailable | queries with state | "
+            "matched | missing | mismatched | unmarked with state | unmarked exposure |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for baseline, aggregate in exposure.items():
+            lines.append(
+                f"| {baseline} | {aggregate['state_sensitive_total']} | "
+                f"{aggregate['state_available_total']} | "
+                f"{aggregate['state_unavailable_total']} | "
+                f"{aggregate['state_retrieval_records']} | "
+                f"{aggregate['state_slot_match_records']} | "
+                f"{aggregate['state_readout_missing_records']} | "
+                f"{aggregate['state_slot_mismatch_records']} | "
+                f"{aggregate['unmarked_state_retrieval_records']} | "
+                f"{aggregate['unmarked_state_exposure_rate']:.2%} |"
+            )
+        lines.append("")
+
+    for field_name, field_summary in summary["by_metadata"].items():
+        if list(field_summary) == ["<missing>"]:
+            continue
+        lines.append(f"## By {field_name}")
+        lines.append("| value | baseline | passed | accuracy |")
+        lines.append("| --- | --- | ---: | ---: |")
+        for value, by_baseline in field_summary.items():
+            for baseline, aggregate in by_baseline.items():
+                lines.append(
+                    f"| {value} | {baseline} | {aggregate['passed']}/{aggregate['total']} | "
+                    f"{aggregate['accuracy']:.2%} |"
+                )
+        lines.append("")
+
+    lines.append("## Failure Modes")
+    lines.append("| mode | count |")
+    lines.append("| --- | ---: |")
+    for mode, count in sorted(summary["failure_modes"].items(), key=lambda item: (-item[1], item[0])):
+        lines.append(f"| {mode} | {count} |")
+    lines.append("")
+
+    failures = [record for record in records if not record["passed"]]
+    lines.append("## Representative Failures")
+    for record in failures[:max_examples]:
+        metadata = ", ".join(
+            f"{key}={value}" for key, value in record["metadata"].items()
+            if key in set(group_fields) and value is not None
+        )
+        metadata = metadata or "metadata=<none>"
+        first = record["retrieved"][0] if record["retrieved"] else "<none>"
+        lines.append(
+            f"- `{record['baseline']}` `{record['case_id']}/{record['query_id']}` "
+            f"({metadata}) modes={record['failure_modes']}: {first}"
+        )
+    if not failures:
+        lines.append("- No failures.")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _run_case(case: MemoryQACase, config: AdaMemConfig) -> list[QueryEvalResult]:
     mem = AdaMem(config=config)
     labels: dict[str, MemoryItem] = {}
@@ -181,21 +324,329 @@ def _run_query(case_id: str, mem: AdaMem, query: QuerySpec) -> QueryEvalResult:
     trace = [
         {
             "content": result.item.content,
+            "kind": result.item.kind,
             "score": round(result.score, 4),
             "relation": result.relation,
             "contributions": {key: round(value, 4) for key, value in result.contributions.items()},
+            "metadata": _trace_metadata(result.item),
         }
         for result in results
     ]
     return QueryEvalResult(
         case_id=case_id,
         query_id=query.id or query.query,
+        query=query.query,
         passed=has_expected and not has_forbidden,
         retrieved=retrieved,
         expected_substrings=query.expected_substrings,
         forbidden_substrings=query.forbidden_substrings,
         trace=trace,
+        metadata=dict(query.metadata),
     )
+
+
+def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
+    text = "\n".join(query.retrieved).lower()
+    missing_expected = [
+        expected for expected in query.expected_substrings if expected.lower() not in text
+    ]
+    present_forbidden = [
+        forbidden for forbidden in query.forbidden_substrings if forbidden.lower() in text
+    ]
+    state_retrieval_count = _state_trace_count(query.trace)
+    retrieved_state_slots = _state_trace_slots(query.trace)
+    expected_state_slots = _expected_state_slots(query.metadata)
+    state_sensitive = bool(expected_state_slots)
+    state_available = _state_available(query.metadata, state_sensitive=state_sensitive)
+    state_readout_expected = state_sensitive and state_available
+    unexpected_state_slots = [
+        slot for slot in retrieved_state_slots
+        if not state_slot_matches_query(slot, set(expected_state_slots))
+    ] if state_sensitive else retrieved_state_slots
+    state_slot_matched = (
+        any(state_slot_matches_query(slot, set(expected_state_slots)) for slot in retrieved_state_slots)
+        if state_sensitive else False
+    )
+    failure_modes: list[str] = []
+    if missing_expected:
+        failure_modes.append("expected_support_missing")
+    if present_forbidden:
+        failure_modes.append("forbidden_support_present")
+    if not query.retrieved:
+        failure_modes.append("no_retrieval")
+    if state_readout_expected and state_retrieval_count == 0:
+        failure_modes.append("state_readout_missing")
+    if state_readout_expected and unexpected_state_slots:
+        failure_modes.append("state_readout_slot_mismatch")
+    if not state_sensitive and state_retrieval_count > 0:
+        failure_modes.append("state_readout_unmarked_exposure")
+    return {
+        "baseline": baseline,
+        "case_id": query.case_id,
+        "query_id": query.query_id,
+        "query": query.query,
+        "passed": query.passed,
+        "expected_substrings": query.expected_substrings,
+        "missing_expected": missing_expected,
+        "forbidden_substrings": query.forbidden_substrings,
+        "present_forbidden": present_forbidden,
+        "failure_modes": failure_modes,
+        "metadata": dict(query.metadata),
+        "retrieved": query.retrieved,
+        "trace": query.trace,
+        "state_retrieval_count": state_retrieval_count,
+        "retrieved_state_slots": retrieved_state_slots,
+        "expected_state_slots": expected_state_slots,
+        "unexpected_state_slots": unexpected_state_slots,
+        "state_slot_matched": state_slot_matched,
+        "state_sensitive": state_sensitive,
+        "state_available": state_available,
+        "state_readout_expected": state_readout_expected,
+    }
+
+
+def _aggregate_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(records)
+    passed = sum(1 for record in records if record["passed"])
+    return {
+        "passed": passed,
+        "total": total,
+        "accuracy": passed / total if total else 0.0,
+    }
+
+
+def _state_exposure_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(records)
+    state_sensitive_total = sum(1 for record in records if record["state_sensitive"])
+    state_available_total = sum(1 for record in records if record["state_readout_expected"])
+    state_unavailable_total = sum(
+        1 for record in records
+        if record["state_sensitive"] and not record["state_readout_expected"]
+    )
+    state_retrieval_records = sum(1 for record in records if record["state_retrieval_count"] > 0)
+    state_slot_match_records = sum(
+        1 for record in records
+        if record["state_readout_expected"] and record["state_slot_matched"]
+    )
+    state_readout_missing_records = sum(
+        1 for record in records
+        if record["state_readout_expected"] and record["state_retrieval_count"] == 0
+    )
+    state_slot_mismatch_records = sum(
+        1 for record in records
+        if record["state_readout_expected"] and record["unexpected_state_slots"]
+    )
+    unmarked_records = [record for record in records if not record["state_sensitive"]]
+    unmarked_state_retrieval_records = sum(
+        1 for record in unmarked_records if record["state_retrieval_count"] > 0
+    )
+    return {
+        "total": total,
+        "state_sensitive_total": state_sensitive_total,
+        "state_available_total": state_available_total,
+        "state_unavailable_total": state_unavailable_total,
+        "state_retrieval_records": state_retrieval_records,
+        "state_exposure_rate": state_retrieval_records / total if total else 0.0,
+        "state_slot_match_records": state_slot_match_records,
+        "state_slot_match_rate": (
+            state_slot_match_records / state_available_total if state_available_total else 0.0
+        ),
+        "state_readout_missing_records": state_readout_missing_records,
+        "state_slot_mismatch_records": state_slot_mismatch_records,
+        "unmarked_total": len(unmarked_records),
+        "unmarked_state_retrieval_records": unmarked_state_retrieval_records,
+        "unmarked_state_exposure_rate": (
+            unmarked_state_retrieval_records / len(unmarked_records)
+            if unmarked_records else 0.0
+        ),
+    }
+
+
+def _paper_metrics_for_baseline(
+    baseline: str,
+    *,
+    summary: dict[str, Any],
+    reference: str | None,
+) -> dict[str, Any]:
+    support = summary["by_baseline"][baseline]
+    exposure = summary["state_readout_exposure"][baseline]
+    pairwise = summary.get("pairwise_vs_first_baseline", {})
+    comparison = pairwise.get(baseline)
+    net_delta = 0 if baseline == reference else (comparison or {}).get("net_delta")
+    state_total = exposure["state_available_total"]
+    return {
+        "support_passed": support["passed"],
+        "support_total": support["total"],
+        "support_accuracy": support["accuracy"],
+        "net_delta_vs_reference": net_delta,
+        "state_query_total": state_total,
+        "state_sensitive_total": exposure["state_sensitive_total"],
+        "state_unavailable_total": exposure["state_unavailable_total"],
+        "state_slot_match_rate": _ratio_or_none(exposure["state_slot_match_records"], state_total),
+        "state_readout_missing_rate": _ratio_or_none(exposure["state_readout_missing_records"], state_total),
+        "state_slot_mismatch_rate": _ratio_or_none(exposure["state_slot_mismatch_records"], state_total),
+        "unmarked_state_exposure_rate": _ratio_or_none(
+            exposure["unmarked_state_retrieval_records"],
+            exposure["unmarked_total"],
+        ),
+    }
+
+
+def _ratio_or_none(numerator: int, denominator: int) -> float | None:
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def _format_optional_rate(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.2%}"
+
+
+def _state_trace_count(trace: list[dict[str, Any]]) -> int:
+    return sum(1 for item in trace if _trace_is_state(item))
+
+
+def _state_trace_slots(trace: list[dict[str, Any]]) -> list[str]:
+    slots: list[str] = []
+    for item in trace:
+        if not _trace_is_state(item):
+            continue
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        slot = metadata.get("state_slot") or metadata.get("kg_relation") or metadata.get("salient_slot")
+        if slot is not None:
+            slots.append(str(slot))
+    return slots
+
+
+def _trace_is_state(item: dict[str, Any]) -> bool:
+    if item.get("kind") in {"state", "kg_fact", "salient_fact"}:
+        return True
+    contributions = item.get("contributions")
+    return isinstance(contributions, dict) and "state_readout" in contributions
+
+
+def _expected_state_slots(metadata: dict[str, Any]) -> list[str]:
+    raw = metadata.get("state_slot")
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    return [str(raw)]
+
+
+def _state_available(metadata: dict[str, Any], *, state_sensitive: bool) -> bool:
+    if not state_sensitive:
+        return False
+    raw = metadata.get("state_available")
+    if raw is None:
+        return True
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        return raw.strip().lower() not in {"0", "false", "no", "unavailable"}
+    return bool(raw)
+
+
+def _trace_metadata(item: MemoryItem) -> dict[str, Any]:
+    keys = (
+        "state_slot",
+        "state_value",
+        "kg_relation",
+        "kg_object",
+        "salient_slot",
+        "salient_value",
+        "source_id",
+        "derived",
+    )
+    return {key: item.metadata[key] for key in keys if key in item.metadata}
+
+
+def _metadata_group_value(metadata: dict[str, Any], field_name: str) -> str:
+    value = metadata.get(field_name)
+    if value is None:
+        return "<missing>"
+    return str(value)
+
+
+def _paired_comparison(
+    records: list[dict[str, Any]],
+    *,
+    reference: str,
+    candidate: str,
+    group_fields: Iterable[str],
+) -> dict[str, Any]:
+    reference_records = {
+        _record_key(record): record
+        for record in records
+        if record["baseline"] == reference
+    }
+    candidate_records = {
+        _record_key(record): record
+        for record in records
+        if record["baseline"] == candidate
+    }
+    common_keys = sorted(set(reference_records) & set(candidate_records))
+    base = _paired_counts(reference_records, candidate_records, common_keys)
+    base["reference"] = reference
+    base["candidate"] = candidate
+    base["by_metadata"] = {}
+    for field_name in group_fields:
+        values = sorted({
+            _metadata_group_value(reference_records[key]["metadata"], field_name)
+            for key in common_keys
+        })
+        base["by_metadata"][field_name] = {
+            value: _paired_counts(
+                reference_records,
+                candidate_records,
+                [
+                    key for key in common_keys
+                    if _metadata_group_value(reference_records[key]["metadata"], field_name) == value
+                ],
+            )
+            for value in values
+        }
+    return base
+
+
+def _paired_counts(
+    reference_records: dict[tuple[str, str], dict[str, Any]],
+    candidate_records: dict[tuple[str, str], dict[str, Any]],
+    keys: list[tuple[str, str]],
+) -> dict[str, Any]:
+    both_pass = 0
+    both_fail = 0
+    gained = 0
+    lost = 0
+    for key in keys:
+        reference_passed = bool(reference_records[key]["passed"])
+        candidate_passed = bool(candidate_records[key]["passed"])
+        if reference_passed and candidate_passed:
+            both_pass += 1
+        elif not reference_passed and not candidate_passed:
+            both_fail += 1
+        elif candidate_passed:
+            gained += 1
+        else:
+            lost += 1
+    return {
+        "common_total": len(keys),
+        "both_pass": both_pass,
+        "both_fail": both_fail,
+        "gained_passes": gained,
+        "lost_passes": lost,
+        "net_delta": gained - lost,
+    }
+
+
+def _record_key(record: dict[str, Any]) -> tuple[str, str]:
+    return (str(record["case_id"]), str(record["query_id"]))
 
 
 def _case_from_mapping(raw: dict[str, Any], *, line_number: int) -> MemoryQACase:

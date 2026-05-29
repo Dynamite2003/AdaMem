@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from adamem import AdaMem, AdaMemConfig
+from adamem import AdaMem, AdaMemConfig, StatePatch
 from adamem.bench import default_ablation_configs
+from adamem.state import query_relevant_state_slots
 
 
 def test_observe_deduplicates_near_identical_memory() -> None:
@@ -187,3 +188,713 @@ def test_adjudication_filter_drops_high_staleness_candidate() -> None:
     ids2 = [r.item.id for r in mem2.retrieve("What is the office door code?", top_k=4)]
     assert o2.id in ids2
 
+
+def test_memory_evolution_links_and_updates_related_raw_notes() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=True,
+            use_auto_links=True,
+            use_mmr=False,
+            use_supersession=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_memory_evolution=True,
+            memory_evolution_threshold=0.15,
+        )
+    )
+
+    old = mem.observe("Checkout migration is blocked by legal approval.")
+    new = mem.observe("Legal approval arrived for checkout migration.")
+    old_after = mem.store.get(old.id)
+
+    assert old_after is not None
+    assert new.id in old_after.links
+    assert old.id in new.links
+    assert "arrived" in old_after.metadata["evolved_keywords"]
+    assert new.id in old_after.metadata["evolved_by"]
+
+    results = mem.retrieve("What arrived for checkout migration?", top_k=3)
+
+    assert any(result.item.id == old.id and "graph" in result.contributions for result in results)
+
+
+def test_temporal_kg_readout_invalidates_old_edge_without_raw_source_adjudication() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=True,
+            use_mmr=False,
+            use_supersession=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_temporal_kg_memory=True,
+            use_temporal_kg_readout=True,
+        )
+    )
+
+    old = mem.observe(
+        "[2026-01-01] user: I've been living in Seattle.",
+        valid_from="2026-01-01T00:00:00+00:00",
+    )
+    new = mem.observe(
+        "[2026-03-01] user: I relocated to Boston for a new job.",
+        valid_from="2026-03-01T00:00:00+00:00",
+    )
+
+    kg_items = [item for item in mem.store.all() if item.kind == "kg_fact"]
+    old_kg = next(item for item in kg_items if item.metadata["kg_object"] == "Seattle")
+    new_kg = next(item for item in kg_items if item.metadata["kg_object"] == "Boston")
+    old_source = mem.store.get(old.id)
+
+    assert not old_kg.active
+    assert old_kg.superseded_by == new_kg.id
+    assert old_kg.valid_to == new.valid_from
+    assert old_source is not None
+    assert old_source.staleness == 0.0
+    assert old_source.metadata.get("stale_state_slots") is None
+
+    results = mem.retrieve("Since I'm in Seattle, recommend local resources.", top_k=4)
+
+    assert results[0].item.kind == "kg_fact"
+    assert "Boston" in results[0].item.content
+    assert any(result.item.id == old.id for result in results)
+
+
+def test_salient_memory_only_retrieves_extracted_fact_and_hides_raw_source() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_supersession=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_salient_memory=True,
+            use_salient_memory_only=True,
+            use_salient_memory_readout=True,
+        )
+    )
+
+    old = mem.observe("[2026-01-01] user: I've been living in Seattle.")
+    mem.observe("[2026-03-01] user: I relocated to Boston for a new job.")
+
+    salient_items = [item for item in mem.store.all() if item.kind == "salient_fact"]
+    old_salient = next(item for item in salient_items if item.metadata["salient_value"] == "Seattle")
+    new_salient = next(item for item in salient_items if item.metadata["salient_value"] == "Boston")
+
+    assert not old_salient.active
+    assert old_salient.superseded_by == new_salient.id
+
+    results = mem.retrieve("Since I'm in Seattle, recommend local resources.", top_k=4)
+
+    assert results
+    assert results[0].item.kind == "salient_fact"
+    assert "Boston" in results[0].item.content
+    assert all(result.item.id != old.id for result in results)
+
+
+def test_state_readout_surfaces_current_location_for_implicit_local_query() -> None:
+    mem = AdaMem(config=AdaMemConfig(use_state_memory=True, use_state_readout=True))
+
+    mem.observe("[2026-01-01] user: I just moved into a place in Seattle.")
+    mem.observe("[2026-03-01] user: I relocated to Boston for a new job.")
+
+    state_items = [item for item in mem.store.all() if item.kind == "state"]
+    active_state_values = [item.metadata.get("state_value") for item in state_items if item.active]
+    inactive_state_values = [item.metadata.get("state_value") for item in state_items if not item.active]
+
+    assert "Boston" in active_state_values
+    assert "Seattle" in inactive_state_values
+
+    results = mem.retrieve("Recommend a coffee shop near me.", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert "Boston" in results[0].item.content
+    assert results[0].contributions["state_readout"] > 0.0
+
+
+def test_state_readout_is_necessary_for_stale_state_resolution_query() -> None:
+    without_readout = _state_isolation_memory(use_state_readout=False)
+    with_readout = _state_isolation_memory(use_state_readout=True)
+    query = "Is Seattle still the right city for me?"
+
+    without_results = without_readout.retrieve(query, top_k=2)
+    with_results = with_readout.retrieve(query, top_k=2)
+
+    assert without_results
+    assert "Seattle" in without_results[0].item.content
+    assert with_results[0].item.kind == "state"
+    assert "Boston" in with_results[0].item.content
+
+
+def test_state_readout_resists_stale_query_premise() -> None:
+    without_readout = _state_isolation_memory(use_state_readout=False)
+    with_readout = _state_isolation_memory(use_state_readout=True)
+    query = "Since I'm in Seattle, recommend a coffee shop near me."
+
+    without_results = without_readout.retrieve(query, top_k=2)
+    with_results = with_readout.retrieve(query, top_k=2)
+
+    assert without_results
+    assert "Seattle" in without_results[0].item.content
+    assert with_results[0].item.kind == "state"
+    assert "Boston" in with_results[0].item.content
+
+
+def test_state_readout_supports_implicit_policy_adaptation_query() -> None:
+    without_readout = _state_isolation_memory(use_state_readout=False)
+    with_readout = _state_isolation_memory(use_state_readout=True)
+    query = "Any good weekend spots nearby?"
+
+    without_results = without_readout.retrieve(query, top_k=2)
+    with_results = with_readout.retrieve(query, top_k=2)
+
+    assert all(result.item.kind != "state" for result in without_results)
+    assert with_results[0].item.kind == "state"
+    assert "Boston" in with_results[0].item.content
+
+
+def test_state_readout_handles_non_location_preference_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: My favorite drink is coffee.")
+    mem.observe("[2026-02-01] user: I prefer tea now.")
+    mem.observe("[2026-03-01] user: I relocated to Boston for a new job.")
+
+    results = mem.retrieve("What drink should I order for the user?", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert results[0].item.metadata["state_slot"] == "preference.beverage"
+    assert "tea" in results[0].item.content
+    assert "Boston" not in results[0].item.content
+
+
+def test_state_readout_handles_schedule_availability_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: I'm free on Friday afternoons.")
+    mem.observe("[2026-01-02] user: My favorite drink is coffee.")
+
+    results = mem.retrieve("What time can I meet with the user?", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert results[0].item.metadata["state_slot"] == "schedule.availability"
+    assert "friday afternoons" in results[0].item.content.lower()
+    assert "coffee" not in results[0].item.content.lower()
+
+
+def test_state_readout_handles_dynamic_task_status_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: The checkout migration is blocked by missing approval.")
+    mem.observe("[2026-01-03] user: Checkout migration is now resolved.")
+
+    active_states = [
+        item
+        for item in mem.store.all()
+        if item.kind == "state" and item.metadata.get("state_slot") == "task.checkout_migration.status"
+    ]
+    active_values = [item.metadata.get("state_value") for item in active_states if item.active]
+    inactive_values = [item.metadata.get("state_value") for item in active_states if not item.active]
+
+    assert active_values == ["resolved"]
+    assert inactive_values == ["blocked"]
+
+    results = mem.retrieve("What is the migration status?", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert results[0].item.metadata["state_slot"] == "task.checkout_migration.status"
+    assert "resolved" in results[0].item.content
+    assert "blocked" not in results[0].item.content
+
+
+def test_state_readout_handles_health_constraint_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: I'm allergic to peanuts.")
+    mem.observe("[2026-02-01] user: I can eat peanuts now.")
+
+    active_states = [
+        item
+        for item in mem.store.all()
+        if item.kind == "state" and item.metadata.get("state_slot") == "health.peanut_allergy.status"
+    ]
+    active_values = [item.metadata.get("state_value") for item in active_states if item.active]
+    inactive_values = [item.metadata.get("state_value") for item in active_states if not item.active]
+
+    assert active_values == ["peanut allergy cleared"]
+    assert inactive_values == ["peanut allergy active"]
+
+    results = mem.retrieve("Given the user's peanut allergy, what meal constraint applies?", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert results[0].item.metadata["state_slot"] == "health.peanut_allergy.status"
+    assert "peanut allergy cleared" in results[0].item.content
+    assert "allergic to peanuts" not in results[0].item.content
+
+
+def test_state_readout_handles_resource_status_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: My passport is expired.")
+    mem.observe("[2026-02-01] user: My passport is now renewed.")
+
+    active_states = [
+        item
+        for item in mem.store.all()
+        if item.kind == "state" and item.metadata.get("state_slot") == "resource.passport.status"
+    ]
+    active_values = [item.metadata.get("state_value") for item in active_states if item.active]
+    inactive_values = [item.metadata.get("state_value") for item in active_states if not item.active]
+
+    assert active_values == ["renewed"]
+    assert inactive_values == ["expired"]
+
+    results = mem.retrieve("Is my passport expired?", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert results[0].item.metadata["state_slot"] == "resource.passport.status"
+    assert "renewed" in results[0].item.content
+    assert "expired" not in results[0].item.content
+
+
+def test_state_readout_handles_workflow_rule_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: For checkout deploys, the rollback rule is manual approval.")
+    mem.observe("[2026-02-01] user: For checkout deploys, the rollback rule is automatic canary rollback.")
+
+    active_states = [
+        item
+        for item in mem.store.all()
+        if item.kind == "state" and item.metadata.get("state_slot") == "workflow.checkout_deploys.rollback"
+    ]
+    active_values = [item.metadata.get("state_value") for item in active_states if item.active]
+    inactive_values = [item.metadata.get("state_value") for item in active_states if not item.active]
+
+    assert active_values == ["automatic canary rollback"]
+    assert inactive_values == ["manual approval"]
+
+    results = mem.retrieve("What rollback procedure applies to checkout deploys?", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert results[0].item.metadata["state_slot"] == "workflow.checkout_deploys.rollback"
+    assert "automatic canary rollback" in results[0].item.content
+    assert "manual approval" not in results[0].item.content
+
+
+def test_state_readout_handles_runtime_status_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: The staging build runner is offline.")
+    mem.observe("[2026-02-01] user: The staging build runner is now online.")
+
+    active_states = [
+        item
+        for item in mem.store.all()
+        if item.kind == "state" and item.metadata.get("state_slot") == "runtime.staging_build_runner.status"
+    ]
+    active_values = [item.metadata.get("state_value") for item in active_states if item.active]
+    inactive_values = [item.metadata.get("state_value") for item in active_states if not item.active]
+
+    assert active_values == ["online"]
+    assert inactive_values == ["offline"]
+
+    results = mem.retrieve("Is the staging build runner offline?", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert results[0].item.metadata["state_slot"] == "runtime.staging_build_runner.status"
+    assert "online" in results[0].item.content
+    assert "offline" not in results[0].item.content
+
+
+def test_state_records_do_not_pollute_generic_retrieval_without_authorization() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: I relocated to Boston for a new job.")
+    mem.observe("[2026-01-02] user: The Boston architecture article covered brick facades.")
+
+    results = mem.retrieve("What did the Boston architecture article cover?", top_k=3)
+
+    assert results
+    assert results[0].item.kind != "state"
+    assert "brick facades" in results[0].item.content
+
+
+def test_task_state_readout_requires_status_intent_not_project_count() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: The checkout migration status is completed.")
+    mem.observe("[2026-01-02] user: I led three migration projects this year.")
+
+    count_results = mem.retrieve("How many migration projects have I led?", top_k=2)
+    status_results = mem.retrieve("What is the migration status?", top_k=2)
+
+    assert count_results
+    assert count_results[0].item.kind != "state"
+    assert "three migration projects" in count_results[0].item.content
+    assert status_results[0].item.kind == "state"
+
+
+def test_runtime_state_readout_requires_runtime_intent_not_generic_status_report() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: The staging build runner is online.")
+    mem.observe("[2026-01-02] user: The status report has three sections.")
+
+    results = mem.retrieve("How many sections were in the status report?", top_k=2)
+
+    assert results
+    assert results[0].item.kind != "state"
+    assert "three sections" in results[0].item.content
+
+
+def test_location_state_readout_does_not_trigger_on_local_event_history() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: I moved to Boston.")
+    mem.observe("[2026-01-02] user: I volunteered at the local animal shelter dinner in February.")
+
+    results = mem.retrieve("When did I volunteer at the local animal shelter dinner?", top_k=2)
+
+    assert results
+    assert results[0].item.kind != "state"
+    assert "february" in results[0].item.content.lower()
+
+
+def test_query_state_router_uses_word_boundaries_and_intent_gates() -> None:
+    assert query_relevant_state_slots("What is the migration status?") == ["task.*.status"]
+    assert query_relevant_state_slots("What time can I meet with the user?") == ["schedule.availability"]
+    assert query_relevant_state_slots("Is the staging build runner offline?") == ["runtime.*.status"]
+    assert query_relevant_state_slots("Given the user's peanut allergy, what meal constraint applies?") == [
+        "health.*.status"
+    ]
+
+    assert query_relevant_state_slots("What play did I attend at the local community theater?") == []
+    assert query_relevant_state_slots("Can you suggest accessories for my current photography setup?") == []
+    assert query_relevant_state_slots("How many days ago did I attend the Maundy Thursday service?") == []
+    assert query_relevant_state_slots("What time did I go to bed before the appointment?") == []
+    assert query_relevant_state_slots("Which event happened the day I ordered a customized phone case?") == []
+    assert query_relevant_state_slots("Where did I redeem a $5 coupon on coffee creamer?") == []
+    assert query_relevant_state_slots("How many Korean restaurants have I tried in my city?") == []
+    assert query_relevant_state_slots("What was the hostel near the Red Light District you recommended last time?") == []
+    assert query_relevant_state_slots("Can I access all seasons of old shows on Netflix?") == []
+    assert query_relevant_state_slots("What old show only had the last season available on Netflix?") == []
+    assert query_relevant_state_slots("What was the 7th work from home job in the list?") == []
+    assert query_relevant_state_slots("Where does my sister Emily live?") == []
+    assert query_relevant_state_slots("What is the total number of online courses I've completed?") == []
+    assert query_relevant_state_slots("What is the total number of comments on my Facebook Live session?") == []
+
+
+def test_state_authorization_can_be_disabled_for_ablation() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=False,
+            use_state_readout_authorization=False,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: I relocated to Boston for a new job.")
+
+    results = mem.retrieve("Boston", top_k=2)
+
+    assert any(result.item.kind == "state" for result in results)
+
+
+def test_state_source_adjudication_filters_replaced_raw_evidence_for_state_queries() -> None:
+    base_config = dict(
+        use_temporal=False,
+        use_importance=False,
+        use_recency=False,
+        use_confidence=False,
+        use_feedback=False,
+        use_graph=False,
+        use_mmr=False,
+        use_supersession=False,
+        use_soft_staleness=False,
+        use_stale_propagation=False,
+        use_adjudication_filter=False,
+        use_state_memory=True,
+        use_state_readout=True,
+    )
+    without_adjudication = AdaMem(config=AdaMemConfig(**base_config))
+    with_adjudication = AdaMem(
+        config=AdaMemConfig(
+            **{
+                **base_config,
+                "use_state_source_adjudication": True,
+            }
+        )
+    )
+
+    for mem in (without_adjudication, with_adjudication):
+        mem.observe("[2026-01-01] user: I've been living in Seattle.")
+        mem.observe("[2026-03-01] user: I relocated to Boston for a new job.")
+
+    old_source = with_adjudication.store.all()[0]
+    new_source = with_adjudication.store.all()[2]
+
+    assert old_source.staleness == 1.0
+    assert new_source.id in old_source.stale_sources
+    assert old_source.metadata["stale_state_slots"] == ["location"]
+
+    query = "Since I'm in Seattle, recommend local resources."
+    without_ids = [result.item.id for result in without_adjudication.retrieve(query, top_k=5)]
+    with_results = with_adjudication.retrieve(query, top_k=5)
+    with_ids = [result.item.id for result in with_results]
+
+    assert without_adjudication.store.all()[0].id in without_ids
+    assert old_source.id not in with_ids
+    assert with_results[0].item.kind == "state"
+    assert "Boston" in with_results[0].item.content
+
+
+def test_state_source_adjudication_keeps_historical_raw_evidence_outside_state_queries() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_supersession=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+        )
+    )
+
+    old = mem.observe("[2026-01-01] user: I've been living in Seattle.")
+    mem.observe("[2026-03-01] user: I relocated to Boston for a new job.")
+
+    results = mem.retrieve("What did I say about Seattle?", top_k=3)
+
+    assert old.id in [result.item.id for result in results]
+
+
+def test_custom_state_extractor_can_inject_domain_state() -> None:
+    def extractor(content: str, metadata: dict[str, object] | None) -> list[StatePatch]:
+        if "workspace moved to" not in content:
+            return []
+        value = content.rsplit("workspace moved to", 1)[1].strip(" .")
+        return [StatePatch(slot="workspace", value=value, evidence=content)]
+
+    mem = AdaMem(config=AdaMemConfig(use_state_memory=True), state_extractor=extractor)
+
+    mem.observe("The workspace moved to /tmp/adamem.")
+
+    state_items = [item for item in mem.store.all() if item.kind == "state"]
+    assert len(state_items) == 1
+    assert state_items[0].metadata["state_slot"] == "workspace"
+    assert state_items[0].metadata["state_value"] == "/tmp/adamem"
+
+
+def test_state_dependency_propagation_invalidates_local_state_on_location_change() -> None:
+    def extractor(content: str, metadata: dict[str, object] | None) -> list[StatePatch]:
+        patches: list[StatePatch] = []
+        if "moved to Seattle" in content:
+            patches.append(StatePatch(slot="location", value="Seattle", evidence=content))
+        if "relocated to Boston" in content:
+            patches.append(StatePatch(slot="location", value="Boston", evidence=content))
+        if "local gym is Rain City Fitness" in content:
+            patches.append(StatePatch(slot="local.gym", value="Rain City Fitness", evidence=content))
+        return patches
+
+    without_propagation = AdaMem(
+        config=AdaMemConfig(use_state_memory=True, use_state_readout=True),
+        state_extractor=extractor,
+    )
+    with_propagation = AdaMem(
+        config=AdaMemConfig(
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_dependency_propagation=True,
+        ),
+        state_extractor=extractor,
+    )
+    for mem in (without_propagation, with_propagation):
+        mem.observe("I moved to Seattle.")
+        mem.observe("My local gym is Rain City Fitness.")
+        mem.observe("I relocated to Boston.")
+
+    stale_local_states = [
+        item
+        for item in with_propagation.store.all()
+        if item.metadata.get("state_slot") == "local.gym" and not item.active
+    ]
+    active_without = [
+        item
+        for item in without_propagation.store.all()
+        if item.metadata.get("state_slot") == "local.gym" and item.active
+    ]
+
+    assert active_without
+    assert stale_local_states
+    assert stale_local_states[0].staleness == 1.0
+
+    without_results = without_propagation.retrieve("Which local gym near me should I use?", top_k=3)
+    with_results = with_propagation.retrieve("Which local gym near me should I use?", top_k=3)
+
+    assert any("Rain City Fitness" in result.item.content for result in without_results)
+    assert all("Rain City Fitness" not in result.item.content for result in with_results)
+    assert any("Boston" in result.item.content for result in with_results)
+
+
+def _state_isolation_memory(*, use_state_readout: bool) -> AdaMem:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=use_state_readout,
+        )
+    )
+    mem.observe("[2026-01-01] user: I just moved into a place in Seattle.")
+    mem.observe("[2026-02-01] user: My favorite coffee order is a cappuccino.")
+    mem.observe("[2026-03-01] user: I relocated to Boston for a new job.")
+    return mem

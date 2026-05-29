@@ -1,0 +1,818 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import re
+from typing import Callable, Mapping
+
+
+@dataclass(slots=True, frozen=True)
+class StatePatch:
+    slot: str
+    value: str
+    evidence: str
+    subject: str = "user"
+
+    @property
+    def key(self) -> str:
+        return f"state.{self.subject}.{self.slot}"
+
+    @property
+    def content(self) -> str:
+        return (
+            f"Current {self.subject} {self.slot}: {self.value}.\n"
+            f"State evidence: {self.evidence}"
+        )
+
+
+StateExtractor = Callable[[str, Mapping[str, object] | None], list[StatePatch]]
+
+
+STATE_DEPENDENCY_PREFIXES = {
+    "location": (
+        "commute.",
+        "local.",
+        "schedule.local.",
+        "timezone.",
+    ),
+    "health.peanut_allergy.status": (
+        "meal.",
+        "restaurant.",
+        "food.",
+    ),
+    "health.gluten_restriction.status": (
+        "meal.",
+        "restaurant.",
+        "food.",
+    ),
+    "health.dairy_restriction.status": (
+        "meal.",
+        "restaurant.",
+        "food.",
+    ),
+    "health.nut_allergy.status": (
+        "meal.",
+        "restaurant.",
+        "food.",
+    ),
+    "health.shellfish_allergy.status": (
+        "meal.",
+        "restaurant.",
+        "food.",
+    ),
+}
+
+
+LOCATION_PATTERNS = [
+    re.compile(r"\b(?:i[’']?ve|i have)\s+been\s+(?:based|staying|living)\s+in\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
+    re.compile(r"\b(?:i[’']?m|i am)\s+(?:based|staying|living)\s+in\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
+    re.compile(r"\bhome base\s+is\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
+    re.compile(r"\b(?:my\s+)?(?:new\s+)?place\s+in\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
+    re.compile(r"\brelocated\s+to\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
+    re.compile(r"\bmoved\s+(?:into\s+a\s+place\s+in|to)\s+([A-Z][A-Za-z .'-]{1,40})", re.I),
+]
+
+LOCATION_STOP = {
+    "and",
+    "after",
+    "around",
+    "before",
+    "but",
+    "can",
+    "for",
+    "from",
+    "if",
+    "near",
+    "now",
+    "since",
+    "so",
+    "that",
+    "the",
+    "to",
+    "where",
+    "with",
+}
+
+LOCATION_QUERY_TERMS = {
+    "area",
+    "based",
+    "city",
+    "live",
+    "located",
+    "near",
+    "nearby",
+    "neighborhood",
+    "neighborhoods",
+    "place",
+    "places",
+    "relax",
+    "spots",
+    "staying",
+}
+
+LOCAL_LOCATION_CONTEXT_TERMS = {
+    "around",
+    "go",
+    "near",
+    "nearby",
+    "option",
+    "options",
+    "place",
+    "places",
+    "recommend",
+    "resource",
+    "resources",
+    "spot",
+    "spots",
+    "where",
+}
+
+BEVERAGE_VALUES = (
+    "black coffee",
+    "cappuccino",
+    "coffee",
+    "espresso",
+    "green tea",
+    "latte",
+    "matcha",
+    "tea",
+)
+
+BEVERAGE_PATTERNS = [
+    re.compile(r"\bswitched\s+from\s+(?P<old>[A-Za-z ]{2,30})\s+to\s+(?P<value>[A-Za-z ]{2,30})", re.I),
+    re.compile(r"\b(?:i\s+)?prefer\s+(?P<value>[A-Za-z ]{2,30})\s+now\b", re.I),
+    re.compile(r"\b(?:my\s+)?(?:favorite|usual)\s+(?:drink|beverage|coffee\s+order|order)\s+is\s+(?P<value>[A-Za-z ]{2,30})", re.I),
+]
+
+BEVERAGE_QUERY_TERMS = {
+    "beverage",
+    "cafe",
+    "coffee",
+    "drink",
+    "espresso",
+    "latte",
+    "matcha",
+    "order",
+    "tea",
+}
+
+TASK_STATUS_PATTERNS = [
+    re.compile(
+        r"\b(?:the\s+)?(?P<task>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+status\s+is\s+(?P<status>blocked|done|complete|completed|resolved|open|pending|paused|cancelled|canceled)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\bmarked\s+(?:the\s+)?(?P<task>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+as\s+(?P<status>blocked|done|complete|completed|resolved|open|pending|paused|cancelled|canceled)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?P<task>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+is\s+(?:now\s+)?(?P<status>blocked|done|complete|completed|resolved|open|pending|paused|cancelled|canceled)\b",
+        re.I,
+    ),
+]
+
+TASK_QUERY_TERMS = {
+    "blocked",
+    "complete",
+    "completed",
+    "done",
+    "pending",
+    "resolved",
+    "status",
+}
+
+TASK_QUERY_SUBJECT_TERMS = {
+    "deployment",
+    "incident",
+    "issue",
+    "migration",
+    "project",
+    "request",
+    "task",
+    "ticket",
+    "workflow",
+}
+
+SCHEDULE_PATTERNS = [
+    re.compile(r"\b(?:i[’']?m|i am)\s+(?P<value>available|free)\s+(?P<when>on\s+[A-Za-z0-9 ,:'-]{2,50})", re.I),
+    re.compile(r"\b(?:my\s+)?availability\s+is\s+(?P<when>[A-Za-z0-9 ,:'-]{2,50})", re.I),
+    re.compile(r"\bi\s+can\s+meet\s+(?P<when>on\s+[A-Za-z0-9 ,:'-]{2,50})", re.I),
+    re.compile(r"\bi\s+can'?t\s+meet\s+(?P<when>on\s+[A-Za-z0-9 ,:'-]{2,50})", re.I),
+]
+
+SCHEDULE_QUERY_TERMS = {
+    "availability",
+    "available",
+    "calendar",
+    "free",
+    "meet",
+    "meeting",
+    "schedule",
+    "time",
+    "times",
+}
+
+DIETARY_ACTIVE_PATTERNS = [
+    re.compile(r"\b(?:i[’']?m|i am)\s+allergic\s+to\s+(?P<item>[A-Za-z][A-Za-z -]{1,40})", re.I),
+    re.compile(r"\b(?:i\s+have|my)\s+(?:a\s+)?(?P<item>[A-Za-z][A-Za-z -]{1,40})\s+allergy\b", re.I),
+    re.compile(r"\bi\s+can(?:not|[’']?t)\s+eat\s+(?P<item>[A-Za-z][A-Za-z -]{1,40})", re.I),
+    re.compile(r"\b(?:i\s+need|please\s+keep\s+me)\s+(?P<constraint>gluten[- ]free|dairy[- ]free|nut[- ]free|peanut[- ]free|vegan|vegetarian)\b", re.I),
+]
+
+DIETARY_CLEARED_PATTERNS = [
+    re.compile(r"\b(?:i[’']?m|i am)\s+no\s+longer\s+allergic\s+to\s+(?P<item>[A-Za-z][A-Za-z -]{1,40})", re.I),
+    re.compile(r"\bi\s+(?:can|may)\s+eat\s+(?P<item>[A-Za-z][A-Za-z -]{1,40})\s+(?:again|now)\b", re.I),
+    re.compile(r"\b(?:my\s+)?(?P<item>[A-Za-z][A-Za-z -]{1,40})\s+allergy\s+(?:is\s+)?(?:cleared|resolved|gone)\b", re.I),
+    re.compile(r"\b(?:cleared|resolved)\s+(?P<item>[A-Za-z][A-Za-z -]{1,40})\b", re.I),
+    re.compile(r"\b(?:no\s+longer|not)\s+avoiding\s+(?P<item>[A-Za-z][A-Za-z -]{1,40})", re.I),
+]
+
+DIETARY_QUERY_TERMS = {
+    "allergic",
+    "allergy",
+    "diet",
+    "dietary",
+    "dairy",
+    "eat",
+    "food",
+    "gluten",
+    "meal",
+    "peanut",
+    "peanuts",
+    "restaurant",
+    "safe",
+    "shellfish",
+}
+
+RESOURCE_STATUS_PATTERNS = [
+    re.compile(
+        r"\b(?:my\s+|the\s+)?(?P<resource>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?:is|was)\s+(?:now\s+)?"
+        r"(?P<status>active|available|blocked|disabled|enabled|expired|found|lost|renewed|revoked|rotated|unavailable|valid)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:my\s+|the\s+)?(?P<resource>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"has\s+been\s+"
+        r"(?P<status>activated|deactivated|disabled|enabled|expired|renewed|revoked|rotated)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?P<status>activated|deactivated|disabled|enabled|renewed|revoked|rotated)\s+"
+        r"(?:my\s+|the\s+)?(?P<resource>[A-Za-z][A-Za-z0-9 _/'-]{2,50})\b",
+        re.I,
+    ),
+]
+
+RESOURCE_QUERY_TERMS = {
+    "access",
+    "account",
+    "api key",
+    "badge",
+    "credential",
+    "credentials",
+    "key",
+    "license",
+    "passport",
+    "token",
+    "visa",
+}
+
+RESOURCE_NOUNS = {
+    "access",
+    "account",
+    "api",
+    "badge",
+    "card",
+    "certificate",
+    "credential",
+    "credentials",
+    "github",
+    "key",
+    "license",
+    "passport",
+    "token",
+    "visa",
+}
+
+WORKFLOW_RULE_PATTERNS = [
+    re.compile(
+        r"\b(?:for|in)\s+(?P<workflow>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?),?\s+"
+        r"(?:the\s+)?(?P<rule>[A-Za-z][A-Za-z0-9 _/'-]{2,40}?)\s+"
+        r"(?:rule|procedure|policy|runbook)\s+is\s+(?P<value>[A-Za-z0-9 _/'-]{2,80})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?P<workflow>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?:workflow|runbook|procedure)\s+(?P<rule>rollback|deploy|release|incident|backup)\s+"
+        r"(?:rule|step|policy)\s+is\s+(?P<value>[A-Za-z0-9 _/'-]{2,80})",
+        re.I,
+    ),
+]
+
+WORKFLOW_QUERY_TERMS = {
+    "backup",
+    "deploy",
+    "deployment",
+    "incident",
+    "policy",
+    "procedure",
+    "release",
+    "rollback",
+    "runbook",
+    "workflow",
+}
+
+RUNTIME_STATUS_PATTERNS = [
+    re.compile(
+        r"\b(?:the\s+)?(?P<system>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?:is|was)\s+(?:now\s+)?"
+        r"(?P<status>available|blocked|degraded|down|fixed|healthy|offline|online|unavailable|up)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?P<system>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"has\s+been\s+(?P<status>degraded|fixed|restored|unblocked)\b",
+        re.I,
+    ),
+]
+
+RUNTIME_QUERY_TERMS = {
+    "api endpoint",
+    "cluster",
+    "database",
+    "db",
+    "endpoint",
+    "environment",
+    "job",
+    "queue",
+    "runner",
+    "service",
+    "system",
+    "tool",
+}
+
+RUNTIME_NOUNS = {
+    "api",
+    "cluster",
+    "database",
+    "db",
+    "endpoint",
+    "environment",
+    "job",
+    "queue",
+    "runner",
+    "service",
+    "system",
+    "tool",
+}
+
+
+def extract_state_patches(content: str, metadata: dict[str, object] | None = None) -> list[StatePatch]:
+    """Deterministic state extractor used for API-free development.
+
+    This is intentionally narrow. It establishes the state-aware memory
+    interface without using benchmark labels or an LLM. Later paper experiments
+    should replace or augment it with a documented extractor baseline.
+    """
+
+    if metadata and metadata.get("derived"):
+        return []
+    if _speaker(content) == "assistant":
+        return []
+
+    patches: list[StatePatch] = []
+    for pattern in LOCATION_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        value = _clean_location(match.group(1))
+        if value:
+            patches.append(StatePatch(slot="location", value=value, evidence=content))
+            break
+    beverage = _extract_beverage_value(content)
+    if beverage:
+        patches.append(StatePatch(slot="preference.beverage", value=beverage, evidence=content))
+    schedule = _extract_schedule_availability(content)
+    if schedule:
+        patches.append(StatePatch(slot="schedule.availability", value=schedule, evidence=content))
+    task_status = _extract_task_status(content)
+    if task_status:
+        task, status = task_status
+        patches.append(StatePatch(slot=f"task.{task}.status", value=status, evidence=content))
+    dietary_status = _extract_dietary_status(content)
+    if dietary_status:
+        slot_suffix, value = dietary_status
+        patches.append(StatePatch(slot=f"health.{slot_suffix}.status", value=value, evidence=content))
+    resource_status = _extract_resource_status(content)
+    if resource_status:
+        resource, status = resource_status
+        patches.append(StatePatch(slot=f"resource.{resource}.status", value=status, evidence=content))
+    workflow_rule = _extract_workflow_rule(content)
+    if workflow_rule:
+        workflow, rule, value = workflow_rule
+        patches.append(StatePatch(slot=f"workflow.{workflow}.{rule}", value=value, evidence=content))
+    runtime_status = _extract_runtime_status(content)
+    if runtime_status:
+        system, status = runtime_status
+        patches.append(StatePatch(slot=f"runtime.{system}.status", value=status, evidence=content))
+    return patches
+
+
+def query_needs_state_readout(query: str) -> bool:
+    return bool(query_relevant_state_slots(query))
+
+
+def query_relevant_state_slots(query: str) -> list[str]:
+    text = query.lower()
+    slots: list[str] = []
+    if _has_location_intent(text):
+        slots.append("location")
+    if _has_beverage_intent(text):
+        slots.append("preference.beverage")
+    if _has_schedule_intent(text):
+        slots.append("schedule.availability")
+    if _has_task_status_intent(text):
+        slots.append("task.*.status")
+    if _has_dietary_intent(text):
+        slots.append("health.*.status")
+    if _has_resource_intent(text):
+        slots.append("resource.*.status")
+    if _has_any_term(text, WORKFLOW_QUERY_TERMS):
+        slots.append("workflow.*")
+    if _has_runtime_intent(text):
+        slots.append("runtime.*.status")
+    return slots
+
+
+def _has_local_location_intent(text: str) -> bool:
+    if not _has_term(text, "local"):
+        return False
+    return _has_any_term(text, LOCAL_LOCATION_CONTEXT_TERMS)
+
+
+def _has_location_intent(text: str) -> bool:
+    if _has_any_term(text, {"live", "located", "based", "staying"}) and _has_self_location_subject(text):
+        return True
+    if _has_term(text, "city") and _has_any_term(text, {"right", "still", "where", "which", "what"}):
+        return True
+    if _has_any_phrase(text, {"near me", "nearby", "around me"}):
+        return True
+    if _has_local_location_intent(text):
+        return True
+    if _has_any_term(text, {"area", "areas", "neighborhood", "neighborhoods", "place", "places", "spots"}):
+        return _has_any_term(text, {"focus", "go", "nearby", "option", "options", "recommend", "suggest", "where"})
+    if _has_term(text, "near"):
+        return _has_any_phrase(text, {"near me", "near the user", "nearby"}) or _has_any_term(
+            text,
+            {"current", "local", "recommend", "suggest"},
+        )
+    return False
+
+
+def _has_self_location_subject(text: str) -> bool:
+    if _has_any_phrase(text, {"my location", "user location", "user's location"}):
+        return True
+    return bool(
+        re.search(r"\b(?:i|user)\b.{0,50}\b(?:live|located|based|staying)\b", text)
+        or re.search(r"\b(?:live|located|based|staying)\b.{0,50}\b(?:me|user)\b", text)
+    )
+
+
+def _has_beverage_intent(text: str) -> bool:
+    if _has_any_term(text, {"beverage", "drink", "espresso", "latte", "matcha", "tea"}):
+        return True
+    if _has_term(text, "cafe"):
+        return _has_any_term(text, {"beverage", "drink", "order", "prefer", "preference", "usual"})
+    if _has_term(text, "coffee"):
+        return _has_any_term(text, {"beverage", "drink", "favorite", "order", "prefer", "preference", "usual"})
+    return _has_term(text, "order") and _has_any_term(text, {"beverage", "cafe", "coffee", "drink", "tea"})
+
+
+def _has_task_status_intent(text: str) -> bool:
+    if _has_term(text, "status"):
+        return True
+    state_terms = {"blocked", "open", "pending", "resolved", "paused", "cancelled", "canceled"}
+    if not _has_any_term(text, state_terms | {"complete", "completed", "done"}):
+        return False
+    if _has_any_phrase(text, {"how many", "total number", "number of"}):
+        return False
+    return _has_any_term(text, TASK_QUERY_SUBJECT_TERMS)
+
+
+def _has_schedule_intent(text: str) -> bool:
+    direct_terms = SCHEDULE_QUERY_TERMS - {"available", "free", "meet", "meeting", "time", "times"}
+    if _has_any_term(text, direct_terms):
+        return True
+    if _has_any_term(text, {"available", "free"}):
+        return _has_any_term(text, {"calendar", "meet", "meeting", "schedule", "time", "times"})
+    if _has_any_term(text, {"meet", "meeting"}):
+        return _has_any_term(text, {"available", "availability", "calendar", "can", "could", "free", "schedule", "time"})
+    return _has_any_term(text, {"time", "times"}) and _has_any_term(
+        text,
+        {"available", "availability", "calendar", "free", "meet", "meeting", "schedule"},
+    )
+
+
+def _has_dietary_intent(text: str) -> bool:
+    core_terms = {
+        "allergic",
+        "allergy",
+        "dairy",
+        "diet",
+        "dietary",
+        "gluten",
+        "peanut",
+        "peanuts",
+        "safe",
+        "shellfish",
+        "vegan",
+        "vegetarian",
+    }
+    if _has_any_term(text, core_terms):
+        return True
+    return _has_any_term(text, {"eat", "food", "meal", "restaurant"}) and _has_any_term(
+        text,
+        {"constraint", "diet", "dietary", "safe", "allergy", "allergic"},
+    )
+
+
+def _has_resource_intent(text: str) -> bool:
+    strong_terms = RESOURCE_QUERY_TERMS - {"access"}
+    if _has_any_term(text, strong_terms):
+        return True
+    return _has_term(text, "access") and _has_any_term(
+        text,
+        {"account", "api key", "badge", "credential", "credentials", "key", "license", "passport", "token", "visa"},
+    )
+
+
+def _has_runtime_intent(text: str) -> bool:
+    strong_terms = RUNTIME_QUERY_TERMS - {"job", "service", "system", "tool"}
+    if _has_any_term(text, strong_terms):
+        return True
+    status_terms = {"available", "blocked", "degraded", "down", "fixed", "healthy", "offline", "online", "status", "up"}
+    return _has_any_term(text, {"job", "service", "system", "tool"}) and _has_any_term(text, status_terms)
+
+
+def _has_any_term(text: str, terms: set[str] | frozenset[str]) -> bool:
+    return any(_has_term(text, term) for term in terms)
+
+
+def _has_any_phrase(text: str, phrases: set[str] | frozenset[str]) -> bool:
+    return any(_has_term(text, phrase) for phrase in phrases)
+
+
+def _has_term(text: str, term: str) -> bool:
+    escaped = re.escape(term.lower()).replace(r"\ ", r"\s+")
+    return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", text) is not None
+
+
+def state_slot_matches_query(slot: str, relevant_slots: set[str]) -> bool:
+    if slot in relevant_slots:
+        return True
+    for relevant in relevant_slots:
+        if "*" not in relevant:
+            continue
+        prefix, suffix = relevant.split("*", 1)
+        if slot.startswith(prefix) and slot.endswith(suffix):
+            return True
+    return False
+
+
+def state_slot_depends_on(slot: str, changed_slot: str) -> bool:
+    """Return whether `slot` should be invalidated by `changed_slot`.
+
+    This is intentionally small and deterministic. It encodes dependency
+    topology for state validity, not semantic retrieval relevance.
+    """
+
+    prefixes = STATE_DEPENDENCY_PREFIXES.get(changed_slot, ())
+    return any(slot.startswith(prefix) for prefix in prefixes)
+
+
+def _speaker(content: str) -> str | None:
+    match = re.search(r"\]\s*([A-Za-z_]+):", content)
+    if not match:
+        return None
+    return match.group(1).lower()
+
+
+def _clean_location(raw: str) -> str:
+    value = raw.strip(" .,!?:;[](){}\"'“”‘’")
+    words = value.split()
+    kept: list[str] = []
+    for word in words:
+        stripped = word.strip(" .,!?:;[](){}\"'“”‘’")
+        if stripped.lower() in LOCATION_STOP:
+            break
+        kept.append(stripped)
+    return " ".join(kept).strip()
+
+
+def _extract_beverage_value(content: str) -> str | None:
+    for pattern in BEVERAGE_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        value = _clean_state_value(match.group("value"))
+        if _is_known_beverage(value):
+            return value
+    return None
+
+
+def _extract_schedule_availability(content: str) -> str | None:
+    for pattern in SCHEDULE_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        when = _clean_state_value(match.group("when"))
+        if not when:
+            continue
+        prefix = match.groupdict().get("value")
+        if prefix:
+            return f"{prefix.lower()} {when}"
+        if "can't meet" in match.group(0).lower():
+            return f"unavailable {when}"
+        return when
+    return None
+
+
+def _extract_task_status(content: str) -> tuple[str, str] | None:
+    for pattern in TASK_STATUS_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        task = _slug(_clean_task_name(match.group("task")))
+        status = _normalize_status(match.group("status"))
+        if task and status:
+            return task, status
+    return None
+
+
+def _extract_dietary_status(content: str) -> tuple[str, str] | None:
+    for pattern in DIETARY_CLEARED_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        slot_suffix, label = _dietary_slot(match.groupdict().get("item") or match.group(0))
+        if slot_suffix:
+            return slot_suffix, f"{label} cleared"
+    for pattern in DIETARY_ACTIVE_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        raw = match.groupdict().get("item") or match.groupdict().get("constraint") or match.group(0)
+        slot_suffix, label = _dietary_slot(raw)
+        if slot_suffix:
+            return slot_suffix, f"{label} active"
+    return None
+
+
+def _extract_resource_status(content: str) -> tuple[str, str] | None:
+    for pattern in RESOURCE_STATUS_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        resource = _clean_resource_name(match.group("resource"))
+        status = _normalize_resource_status(match.group("status"))
+        if resource and status and _looks_like_resource(resource):
+            return _slug(resource), status
+    return None
+
+
+def _extract_workflow_rule(content: str) -> tuple[str, str, str] | None:
+    for pattern in WORKFLOW_RULE_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        workflow = _slug(_clean_state_phrase(match.group("workflow")))
+        rule = _slug(_clean_state_phrase(match.group("rule")))
+        value = _clean_state_phrase(match.group("value"))
+        if workflow and rule and value:
+            return workflow, rule, value
+    return None
+
+
+def _extract_runtime_status(content: str) -> tuple[str, str] | None:
+    for pattern in RUNTIME_STATUS_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        system = _clean_state_phrase(match.group("system"))
+        status = _normalize_runtime_status(match.group("status"))
+        if system and status and _looks_like_runtime(system):
+            return _slug(system), status
+    return None
+
+
+def _clean_state_value(raw: str) -> str:
+    value = raw.strip(" .,!?:;[](){}\"'“”‘’").lower()
+    words = value.split()
+    kept: list[str] = []
+    for word in words:
+        stripped = word.strip(" .,!?:;[](){}\"'“”‘’").lower()
+        if stripped in LOCATION_STOP:
+            break
+        kept.append(stripped)
+    return " ".join(kept).strip()
+
+
+def _clean_state_phrase(raw: str) -> str:
+    value = raw.strip(" .,!?:;[](){}\"'“”‘’").lower()
+    value = re.sub(r"^(?:the|a|an|my)\s+", "", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _clean_resource_name(raw: str) -> str:
+    value = raw.strip(" .,!?:;[](){}\"'“”‘’").lower()
+    value = re.sub(r"^(?:the|a|an|my)\s+", "", value)
+    words = value.split()
+    kept: list[str] = []
+    for word in words:
+        stripped = word.strip(" .,!?:;[](){}\"'“”‘’").lower()
+        if stripped in {"is", "was", "has", "now", "currently"}:
+            break
+        kept.append(stripped)
+    return " ".join(kept).strip()
+
+
+def _dietary_slot(raw: str) -> tuple[str | None, str]:
+    value = _clean_state_value(raw)
+    if "peanut" in value:
+        return "peanut_allergy", "peanut allergy"
+    if "shellfish" in value:
+        return "shellfish_allergy", "shellfish allergy"
+    if "gluten" in value:
+        return "gluten_restriction", "gluten restriction"
+    if "dairy" in value or "milk" in value or "lactose" in value:
+        return "dairy_restriction", "dairy restriction"
+    if "nut" in value:
+        return "nut_allergy", "nut allergy"
+    if "vegan" in value:
+        return "vegan_preference", "vegan preference"
+    if "vegetarian" in value:
+        return "vegetarian_preference", "vegetarian preference"
+    return None, value
+
+
+def _looks_like_resource(resource: str) -> bool:
+    tokens = set(re.findall(r"[a-z0-9]+", resource.lower()))
+    return bool(tokens & RESOURCE_NOUNS)
+
+
+def _looks_like_runtime(system: str) -> bool:
+    tokens = set(re.findall(r"[a-z0-9]+", system.lower()))
+    return bool(tokens & RUNTIME_NOUNS)
+
+
+def _normalize_resource_status(raw: str) -> str:
+    status = raw.strip().lower()
+    if status == "activated":
+        return "active"
+    if status == "deactivated":
+        return "disabled"
+    return status
+
+
+def _normalize_runtime_status(raw: str) -> str:
+    status = raw.strip().lower()
+    if status == "restored":
+        return "online"
+    if status == "unblocked":
+        return "available"
+    if status == "up":
+        return "online"
+    if status == "down":
+        return "offline"
+    return status
+
+
+def _is_known_beverage(value: str) -> bool:
+    return any(value == beverage or value.endswith(f" {beverage}") for beverage in BEVERAGE_VALUES)
+
+
+def _clean_task_name(raw: str) -> str:
+    value = raw.strip(" .,!?:;[](){}\"'“”‘’").lower()
+    value = re.sub(r"^(?:the|a|an|my)\s+", "", value)
+    words = value.split()
+    kept: list[str] = []
+    for word in words:
+        stripped = word.strip(" .,!?:;[](){}\"'“”‘’").lower()
+        if stripped in {"is", "now", "currently"}:
+            break
+        kept.append(stripped)
+    return " ".join(kept).strip()
+
+
+def _normalize_status(raw: str) -> str:
+    status = raw.strip().lower()
+    if status in {"complete", "completed", "done"}:
+        return "completed"
+    if status == "canceled":
+        return "cancelled"
+    return status
+
+
+def _slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return slug

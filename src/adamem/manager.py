@@ -8,8 +8,15 @@ from typing import Iterable
 
 from adamem.config import AdaMemConfig
 from adamem.schema import MemoryItem, MemoryResult, utc_now
+from adamem.state import (
+    StateExtractor,
+    extract_state_patches,
+    query_relevant_state_slots,
+    state_slot_depends_on,
+    state_slot_matches_query,
+)
 from adamem.store import InMemoryStore, MemoryStore
-from adamem.text import cosine, hashed_bow, memory_key
+from adamem.text import cosine, hashed_bow, memory_key, tokenize
 
 Embedder = Callable[[str], dict[str, float]]
 
@@ -22,10 +29,12 @@ class AdaMem:
         store: MemoryStore | None = None,
         config: AdaMemConfig | None = None,
         embedder: Embedder | None = None,
+        state_extractor: StateExtractor | None = None,
     ) -> None:
         self.store = store or InMemoryStore()
         self.config = config or AdaMemConfig()
         self.embedder = embedder or hashed_bow
+        self.state_extractor = state_extractor or extract_state_patches
 
     def observe(
         self,
@@ -40,6 +49,8 @@ class AdaMem:
         metadata: dict[str, object] | None = None,
     ) -> MemoryItem:
         metadata = dict(metadata or {})
+        if self.config.use_memory_evolution:
+            self._seed_memory_note_metadata(content, metadata)
         cause_ids = list(cause_ids or [])
         embedding = self.embedder(_embedding_text(content, metadata))
         item = MemoryItem(
@@ -73,6 +84,15 @@ class AdaMem:
             if cause_id not in item.links:
                 item.links.append(cause_id)
         self.store.upsert(item)
+        if self.config.use_memory_evolution:
+            self._evolve_related_memories(item)
+            self.store.upsert(item)
+        if self.config.use_temporal_kg_memory:
+            self._observe_temporal_kg_edges(item)
+        if self.config.use_salient_memory:
+            self._observe_salient_memories(item)
+        if self.config.use_state_memory:
+            self._observe_state_patches(item)
         return item
 
     def retrieve(
@@ -87,10 +107,22 @@ class AdaMem:
         direct = [
             self._score(item, query_embedding, now=now, relation="direct")
             for item in self.store.all()
-            if include_inactive or item.active
+            if (include_inactive or item.active) and self._eligible_for_direct_retrieval(item)
         ]
         direct = [result for result in direct if result.score > 0]
         candidates = {result.item.id: result for result in direct}
+
+        if self.config.use_state_readout:
+            for state_result in self._state_readout(query, query_embedding, now=now):
+                candidates[state_result.item.id] = state_result
+
+        if self.config.use_temporal_kg_readout:
+            for kg_result in self._temporal_kg_readout(query, query_embedding, now=now):
+                candidates[kg_result.item.id] = kg_result
+
+        if self.config.use_salient_memory_readout:
+            for salient_result in self._salient_memory_readout(query, query_embedding, now=now):
+                candidates[salient_result.item.id] = salient_result
 
         if self.config.use_graph:
             for seed in sorted(direct, key=lambda result: result.score, reverse=True)[: max(top_k, 3)]:
@@ -108,6 +140,9 @@ class AdaMem:
                         result.contributions["graph"] = graph_boost
                         result.score += graph_boost
                         candidates[neighbor.id] = result
+
+        if self.config.use_state_source_adjudication:
+            candidates = self._filter_state_adjudicated_sources(candidates, query)
 
         ranked = sorted(candidates.values(), key=lambda result: result.score, reverse=True)
         if self.config.use_mmr:
@@ -145,7 +180,12 @@ class AdaMem:
     def ablation(self, **overrides: bool) -> "AdaMem":
         values = {field.name: getattr(self.config, field.name) for field in fields(self.config)}
         config = AdaMemConfig(**{**values, **overrides})
-        clone = AdaMem(store=self.store, config=config, embedder=self.embedder)
+        clone = AdaMem(
+            store=self.store,
+            config=config,
+            embedder=self.embedder,
+            state_extractor=self.state_extractor,
+        )
         return clone
 
     def _nearest_active(self, embedding: dict[str, float]) -> MemoryItem | None:
@@ -157,6 +197,364 @@ class AdaMem:
             if best is None or score > best[0]:
                 best = (score, item)
         return best[1] if best else None
+
+    def _seed_memory_note_metadata(self, content: str, metadata: dict[str, object]) -> None:
+        keywords = _evolution_keywords(content, metadata, limit=self.config.memory_evolution_keyword_limit)
+        if keywords:
+            _extend_metadata_values(metadata, "keywords", keywords)
+            metadata.setdefault("evolution_keywords", keywords)
+        metadata.setdefault("memory_note", True)
+
+    def _evolve_related_memories(self, item: MemoryItem) -> None:
+        """A-MEM-style deterministic approximation.
+
+        A-MEM uses LLM-generated note attributes, dynamic linking, and memory
+        evolution. This API-free approximation only uses observed text and
+        metadata: it links semantically related active raw memories and folds
+        the new memory's extracted keywords into the older memories'
+        retrieval representation.
+        """
+
+        if item.kind == "state" or item.metadata.get("derived") is True:
+            return
+        threshold = self.config.memory_evolution_threshold
+        new_keywords = _metadata_strings(item.metadata.get("evolution_keywords"))
+        if not new_keywords:
+            return
+        evolved_ids: list[str] = []
+        candidate_limit = max(0, self.config.memory_evolution_candidate_limit)
+        considered = 0
+        seed_tags = _cooccurrence_tags(item)
+        for previous in reversed(self.store.all()):
+            if previous.id == item.id:
+                continue
+            if not previous.active:
+                continue
+            if previous.kind == "state" or previous.metadata.get("derived") is True:
+                continue
+            if candidate_limit and considered >= candidate_limit:
+                break
+            considered += 1
+            similarity = cosine(item.embedding, previous.embedding)
+            if similarity < threshold and not _co_occurs(item, previous, seed_tags):
+                continue
+            if previous.id not in item.links:
+                item.links.append(previous.id)
+            if item.id not in previous.links:
+                previous.links.append(item.id)
+            _extend_metadata_values(previous.metadata, "evolved_keywords", new_keywords)
+            _extend_metadata_values(previous.metadata, "keywords", new_keywords)
+            _append_metadata_value(previous.metadata, "evolved_by", item.id)
+            previous.embedding = self.embedder(_embedding_text(previous.content, previous.metadata))
+            self.store.upsert(previous)
+            evolved_ids.append(previous.id)
+        if evolved_ids:
+            item.metadata["evolved_memory_ids"] = evolved_ids
+            item.embedding = self.embedder(_embedding_text(item.content, item.metadata))
+
+    def _observe_state_patches(self, source: MemoryItem) -> None:
+        for patch in self.state_extractor(source.content, source.metadata):
+            metadata = {
+                "derived": True,
+                "source_id": source.id,
+                "memory_key": patch.key,
+                "state_slot": patch.slot,
+                "state_value": patch.value,
+                "subject": patch.subject,
+                "keywords": [patch.slot, patch.value],
+            }
+            state_item = MemoryItem(
+                content=patch.content,
+                kind="state",
+                importance=1.0,
+                confidence=source.confidence,
+                valid_from=source.valid_from,
+                metadata=metadata,
+                embedding=self.embedder(_embedding_text(patch.content, metadata)),
+            )
+            for previous in self.store.all():
+                if not previous.active:
+                    continue
+                if previous.metadata.get("memory_key") != patch.key:
+                    continue
+                if previous.metadata.get("derived") is not True:
+                    continue
+                if previous.content.strip() == state_item.content.strip():
+                    continue
+                previous.superseded_by = state_item.id
+                previous.staleness = max(previous.staleness, 1.0)
+                if source.id not in previous.stale_sources:
+                    previous.stale_sources.append(source.id)
+                state_item.supersedes.append(previous.id)
+                self.store.upsert(previous)
+                if self.config.use_state_source_adjudication:
+                    self._mark_source_evidence_stale(previous, state_item, source)
+            if self.config.use_state_dependency_propagation and state_item.supersedes:
+                self._propagate_state_dependency(state_item, source)
+            state_item.links.append(source.id)
+            self.store.upsert(state_item)
+
+    def _observe_temporal_kg_edges(self, source: MemoryItem) -> None:
+        if source.kind in {"state", "kg_fact"} or source.metadata.get("derived") is True:
+            return
+        for patch in self.state_extractor(source.content, source.metadata):
+            key = f"kg.{patch.subject}.{patch.slot}"
+            metadata = {
+                "derived": True,
+                "source_id": source.id,
+                "memory_key": key,
+                "kg_subject": patch.subject,
+                "kg_relation": patch.slot,
+                "kg_object": patch.value,
+                "state_slot": patch.slot,
+                "keywords": [patch.subject, patch.slot, patch.value, "temporal", "kg"],
+            }
+            kg_item = MemoryItem(
+                content=_temporal_kg_content(patch.subject, patch.slot, patch.value, patch.evidence),
+                kind="kg_fact",
+                importance=1.0,
+                confidence=source.confidence,
+                valid_from=source.valid_from,
+                metadata=metadata,
+                embedding=self.embedder(_embedding_text(
+                    _temporal_kg_content(patch.subject, patch.slot, patch.value, patch.evidence),
+                    metadata,
+                )),
+            )
+            for previous in self.store.all():
+                if not previous.active:
+                    continue
+                if previous.kind != "kg_fact":
+                    continue
+                if previous.metadata.get("memory_key") != key:
+                    continue
+                if previous.metadata.get("kg_object") == patch.value:
+                    continue
+                previous.superseded_by = kg_item.id
+                previous.valid_to = source.valid_from or utc_now()
+                previous.staleness = max(previous.staleness, 1.0)
+                if source.id not in previous.stale_sources:
+                    previous.stale_sources.append(source.id)
+                kg_item.supersedes.append(previous.id)
+                self.store.upsert(previous)
+            kg_item.links.append(source.id)
+            if kg_item.id not in source.links:
+                source.links.append(kg_item.id)
+                self.store.upsert(source)
+            self.store.upsert(kg_item)
+
+    def _observe_salient_memories(self, source: MemoryItem) -> None:
+        if source.kind in {"state", "kg_fact", "salient_fact"} or source.metadata.get("derived") is True:
+            return
+        for patch in self.state_extractor(source.content, source.metadata):
+            key = f"salient.{patch.subject}.{patch.slot}"
+            metadata = {
+                "extracted": True,
+                "source_id": source.id,
+                "memory_key": key,
+                "salient_subject": patch.subject,
+                "salient_slot": patch.slot,
+                "salient_value": patch.value,
+                "state_slot": patch.slot,
+                "keywords": [patch.subject, patch.slot, patch.value, "memory", "fact"],
+            }
+            salient_item = MemoryItem(
+                content=_salient_memory_content(patch.subject, patch.slot, patch.value, patch.evidence),
+                kind="salient_fact",
+                importance=1.0,
+                confidence=source.confidence,
+                valid_from=source.valid_from,
+                metadata=metadata,
+                embedding=self.embedder(_embedding_text(
+                    _salient_memory_content(patch.subject, patch.slot, patch.value, patch.evidence),
+                    metadata,
+                )),
+            )
+            for previous in self.store.all():
+                if not previous.active:
+                    continue
+                if previous.kind != "salient_fact":
+                    continue
+                if previous.metadata.get("memory_key") != key:
+                    continue
+                if previous.metadata.get("salient_value") == patch.value:
+                    continue
+                previous.superseded_by = salient_item.id
+                previous.staleness = max(previous.staleness, 1.0)
+                if source.id not in previous.stale_sources:
+                    previous.stale_sources.append(source.id)
+                salient_item.supersedes.append(previous.id)
+                self.store.upsert(previous)
+            salient_item.links.append(source.id)
+            self.store.upsert(salient_item)
+
+    def _mark_source_evidence_stale(
+        self,
+        previous_state: MemoryItem,
+        replacement_state: MemoryItem,
+        replacement_source: MemoryItem,
+    ) -> None:
+        source_id = previous_state.metadata.get("source_id")
+        if not isinstance(source_id, str) or source_id == replacement_source.id:
+            return
+        evidence = self.store.get(source_id)
+        if evidence is None or not evidence.active:
+            return
+        slot = str(previous_state.metadata.get("state_slot") or "")
+        if not slot:
+            return
+        evidence.staleness = max(evidence.staleness, 1.0)
+        if replacement_source.id not in evidence.stale_sources:
+            evidence.stale_sources.append(replacement_source.id)
+        _append_metadata_value(evidence.metadata, "stale_state_slots", slot)
+        _append_metadata_value(evidence.metadata, "state_adjudicated_by", replacement_state.id)
+        self.store.upsert(evidence)
+
+    def _propagate_state_dependency(self, state_item: MemoryItem, source: MemoryItem) -> None:
+        changed_slot = str(state_item.metadata.get("state_slot") or "")
+        if not changed_slot:
+            return
+        for candidate in self.store.all():
+            if not candidate.active:
+                continue
+            if candidate.kind != "state" or candidate.metadata.get("derived") is not True:
+                continue
+            if candidate.id == state_item.id:
+                continue
+            candidate_slot = str(candidate.metadata.get("state_slot") or "")
+            if not state_slot_depends_on(candidate_slot, changed_slot):
+                continue
+            candidate.superseded_by = state_item.id
+            candidate.staleness = max(candidate.staleness, 1.0)
+            if source.id not in candidate.stale_sources:
+                candidate.stale_sources.append(source.id)
+            if candidate.id not in state_item.supersedes:
+                state_item.supersedes.append(candidate.id)
+            self.store.upsert(candidate)
+            source_id = candidate.metadata.get("source_id")
+            if isinstance(source_id, str):
+                evidence = self.store.get(source_id)
+                if evidence and evidence.active:
+                    evidence.staleness = max(evidence.staleness, 1.0)
+                    if source.id not in evidence.stale_sources:
+                        evidence.stale_sources.append(source.id)
+                    self.store.upsert(evidence)
+
+    def _state_readout(
+        self,
+        query: str,
+        query_embedding: dict[str, float],
+        *,
+        now: str | None,
+    ) -> list[MemoryResult]:
+        relevant_slots = set(query_relevant_state_slots(query))
+        if not relevant_slots:
+            return []
+        results: list[MemoryResult] = []
+        for item in self.store.all():
+            if not item.active:
+                continue
+            if item.kind != "state":
+                continue
+            slot = str(item.metadata.get("state_slot") or "")
+            if not state_slot_matches_query(slot, relevant_slots):
+                continue
+            result = self._score(item, query_embedding, now=now, relation="state")
+            result.contributions["state_readout"] = self.config.state_readout_boost
+            result.score = sum(result.contributions.values())
+            results.append(result)
+        return results
+
+    def _temporal_kg_readout(
+        self,
+        query: str,
+        query_embedding: dict[str, float],
+        *,
+        now: str | None,
+    ) -> list[MemoryResult]:
+        relevant_slots = set(query_relevant_state_slots(query))
+        if not relevant_slots:
+            return []
+        results: list[MemoryResult] = []
+        for item in self.store.all():
+            if not item.active:
+                continue
+            if item.kind != "kg_fact":
+                continue
+            slot = str(item.metadata.get("state_slot") or item.metadata.get("kg_relation") or "")
+            if not state_slot_matches_query(slot, relevant_slots):
+                continue
+            result = self._score(item, query_embedding, now=now, relation="temporal_kg")
+            result.contributions["temporal_kg_readout"] = self.config.temporal_kg_readout_boost
+            result.score = sum(result.contributions.values())
+            results.append(result)
+        return results
+
+    def _salient_memory_readout(
+        self,
+        query: str,
+        query_embedding: dict[str, float],
+        *,
+        now: str | None,
+    ) -> list[MemoryResult]:
+        relevant_slots = set(query_relevant_state_slots(query))
+        if not relevant_slots:
+            return []
+        results: list[MemoryResult] = []
+        for item in self.store.all():
+            if not item.active:
+                continue
+            if item.kind != "salient_fact":
+                continue
+            slot = str(item.metadata.get("state_slot") or item.metadata.get("salient_slot") or "")
+            if not state_slot_matches_query(slot, relevant_slots):
+                continue
+            result = self._score(item, query_embedding, now=now, relation="salient")
+            result.contributions["salient_memory_readout"] = self.config.salient_memory_readout_boost
+            result.score = sum(result.contributions.values())
+            results.append(result)
+        return results
+
+    def _eligible_for_direct_retrieval(self, item: MemoryItem) -> bool:
+        if self.config.use_salient_memory_only and item.kind != "salient_fact":
+            return False
+        if not self.config.use_state_readout_authorization:
+            return True
+        if item.kind == "state" or item.metadata.get("derived") is True:
+            return False
+        return True
+
+    def _filter_state_adjudicated_sources(
+        self,
+        candidates: dict[str, MemoryResult],
+        query: str,
+    ) -> dict[str, MemoryResult]:
+        relevant_slots = set(query_relevant_state_slots(query))
+        if not relevant_slots:
+            return candidates
+        filtered: dict[str, MemoryResult] = {}
+        for item_id, result in candidates.items():
+            if self._state_source_adjudicates(result.item, relevant_slots):
+                result.relation = f"{result.relation}+state_adjudicated"
+                result.contributions["state_adjudicated"] = -1.0
+                continue
+            filtered[item_id] = result
+        return filtered
+
+    def _state_source_adjudicates(self, item: MemoryItem, relevant_slots: set[str]) -> bool:
+        slots = _metadata_strings(item.metadata.get("stale_state_slots"))
+        for slot in slots:
+            if state_slot_matches_query(slot, relevant_slots) and self._has_active_state_for_slot(slot):
+                return True
+        return False
+
+    def _has_active_state_for_slot(self, slot: str) -> bool:
+        for item in self.store.all():
+            if not item.active:
+                continue
+            if item.kind == "state" and item.metadata.get("state_slot") == slot:
+                return True
+        return False
 
     def _supersede_conflicting(self, item: MemoryItem) -> None:
         key = memory_key(item.content, item.metadata)
@@ -187,6 +585,8 @@ class AdaMem:
         directly_marked: list[MemoryItem] = []
         for previous in self.store.all():
             if previous.id == item.id:
+                continue
+            if previous.kind == "state" or previous.metadata.get("derived") is True:
                 continue
             if previous.superseded_by is not None:
                 continue
@@ -225,6 +625,8 @@ class AdaMem:
                 continue
             seed_tags = _cooccurrence_tags(seed)
             for other in all_items:
+                if other.kind == "state" or other.metadata.get("derived") is True:
+                    continue
                 if other.id in {item.id, seed.id}:
                     continue
                 if other.superseded_by is not None:
@@ -400,7 +802,7 @@ def _recency(item: MemoryItem, half_life_seconds: float, now: str | None) -> flo
 
 def _embedding_text(content: str, metadata: dict[str, object]) -> str:
     parts = [content]
-    for key in ("memory_key", "subject", "predicate", "keywords", "tags"):
+    for key in ("memory_key", "subject", "predicate", "keywords", "evolved_keywords", "tags"):
         value = metadata.get(key)
         if isinstance(value, str):
             parts.append(value)
@@ -413,6 +815,20 @@ def _embedding_text(content: str, metadata: dict[str, object]) -> str:
                     continue
                 parts.append(text)
     return " ".join(parts)
+
+
+def _temporal_kg_content(subject: str, relation: str, value: str, evidence: str) -> str:
+    return (
+        f"Temporal KG fact: {subject} {relation} = {value}.\n"
+        f"Evidence: {evidence}"
+    )
+
+
+def _salient_memory_content(subject: str, slot: str, value: str, evidence: str) -> str:
+    return (
+        f"Extracted memory fact: {subject} {slot} is {value}.\n"
+        f"Source evidence: {evidence}"
+    )
 
 
 def _cooccurrence_tags(item: MemoryItem) -> set[str]:
@@ -443,3 +859,66 @@ def _co_occurs(seed: MemoryItem, other: MemoryItem, seed_tags: set[str]) -> bool
         return False
     other_tags = _cooccurrence_tags(other)
     return bool(seed_tags & other_tags)
+
+
+EVOLUTION_STOPWORDS = {
+    "assistant",
+    "content",
+    "dialogue",
+    "memory",
+    "observation",
+    "session",
+    "system",
+    "thanks",
+    "user",
+}
+
+
+def _evolution_keywords(content: str, metadata: dict[str, object], *, limit: int) -> list[str]:
+    if limit <= 0:
+        return []
+    candidates = tokenize(content)
+    raw_tags = metadata.get("tags")
+    if isinstance(raw_tags, list):
+        candidates.extend(str(tag).lower() for tag in raw_tags)
+    subject = metadata.get("subject")
+    if isinstance(subject, str):
+        candidates.append(subject.lower())
+    keywords: list[str] = []
+    for token in candidates:
+        token = token.strip().lower()
+        if len(token) < 3 or token.isdigit():
+            continue
+        if token.startswith("session_") or token in EVOLUTION_STOPWORDS:
+            continue
+        if token not in keywords:
+            keywords.append(token)
+        if len(keywords) >= limit:
+            break
+    return keywords
+
+
+def _metadata_strings(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [entry for entry in (str(entry) for entry in value) if entry]
+    return []
+
+
+def _append_metadata_value(metadata: dict[str, object], key: str, value: str) -> None:
+    current = metadata.get(key)
+    if isinstance(current, list):
+        values = current
+    elif current is None:
+        values = []
+    else:
+        values = [str(current)]
+    if value not in values:
+        values.append(value)
+    metadata[key] = values
+
+
+def _extend_metadata_values(metadata: dict[str, object], key: str, values: list[str]) -> None:
+    for value in values:
+        _append_metadata_value(metadata, key, value)
