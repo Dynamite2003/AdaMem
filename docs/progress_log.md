@@ -2216,3 +2216,26 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `8 passed`
   - `PYTHONPATH=src python -m pytest -q` -> `145 passed`
   - `git diff --check` -> no issues
+
+### 2026-05-30 dataset-scope claim gates
+
+- Added dataset-scope metadata to claim audits and report manifests:
+  - `unknown`
+  - `mini_or_smoke_fixture`
+  - `public_transfer_prepared`
+  - `benchmark_like`
+  - `unspecified_benchmark`
+- Mini, smoke, debug, tmp-path, and local synthetic fixtures are now marked
+  `claim_limited: true`.
+- Batch claim matrices now include dataset scope fields and force
+  claim-limited datasets to `needs_attention`, preventing local smoke results
+  from being confused with paper-level evidence.
+- Purpose:
+  - Keep API-free smoke fixtures useful for debugging while preserving a clean
+    boundary around CCF-A-level claims.
+  - Make later paper-table triage filterable by both claim readiness and
+    dataset scope.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py -q` -> `18 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `147 passed`
+  - `git diff --check` -> no issues

@@ -625,6 +625,11 @@ Completed API-free foundations:
   `--benchmark-cases-output` and `--benchmark-report-output`.
 - Pairwise comparison diagnostics for retrieval-support runs, useful for
   non-degradation checks such as `semantic_state_readout` vs `semantic_only`.
+- Claim audits and batch claim matrices tag dataset scope. Mini, smoke, debug,
+  tmp-path, and local synthetic fixtures are marked claim-limited and force the
+  batch readiness gate to `needs_attention`, even when diagnostic metrics look
+  good. Use them for debugging only; paper-level claims require public/full
+  benchmark scope plus the relevant answer or diagnostic evidence.
 - LongMemEval balanced conversion through `--limit-per-type`, enabling small
   public benchmark pilots that cover all question types before scaling.
 - Optional LongMemEval query-state diagnostics through

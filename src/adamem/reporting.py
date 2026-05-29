@@ -34,6 +34,7 @@ def write_experiment_bundle(
         "experiment": str(experiment),
         "run_type": audit["run_type"],
         "dataset": audit["dataset"],
+        "dataset_scope": audit["dataset_scope"],
         "baselines": audit["baselines"],
         "raw_output_count": audit["raw_output_count"],
         "supported_claims": audit["supported_claims"],
@@ -148,10 +149,14 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         evidence = manifest.get("claim_evidence") or {}
         state_evidence = evidence.get("prepared_state_evidence") or {}
         retrieval = evidence.get("retrieval_transfer") or {}
+        dataset_scope = manifest.get("dataset_scope") or {}
         row = {
             "experiment": manifest.get("experiment"),
             "run_type": manifest.get("run_type"),
             "dataset": manifest.get("dataset"),
+            "dataset_scope": dataset_scope.get("scope") or "unknown",
+            "dataset_claim_limited": bool(dataset_scope.get("claim_limited")),
+            "dataset_scope_reasons": list(dataset_scope.get("reasons") or []),
             "record_kind": manifest.get("record_kind"),
             "raw_output_count": int(manifest.get("raw_output_count") or 0),
             "supported_claims": list(manifest.get("supported_claims") or []),
@@ -176,11 +181,11 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | gate | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| experiment | gate | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     if not rows:
-        lines.append("| <none> | needs_attention | <none> | 0 | 0 | 0 | 0/0 | 0.00% | 0 |")
+        lines.append("| <none> | needs_attention | unknown | <none> | 0 | 0 | 0 | 0/0 | 0.00% | 0 |")
         return "\n".join(lines) + "\n"
     for row in rows:
         experiment = Path(str(row.get("experiment") or "<missing>")).name
@@ -188,6 +193,7 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
         matching = int(row.get("state_matching_questions") or 0)
         lines.append(
             f"| {experiment} | {row.get('readiness_gate') or '<missing>'} | "
+            f"{row.get('dataset_scope') or 'unknown'} | "
             f"{row.get('run_type') or '<missing>'} | "
             f"{row['supported_claim_count']} | {row['blocked_claim_count']} | "
             f"{row['warning_count']} | {matching}/{expected} | "
@@ -203,6 +209,8 @@ def _claim_readiness_gate(row: dict[str, Any]) -> tuple[str, list[str]]:
     reasons: list[str] = []
     if int(row.get("warning_count") or 0) > 0:
         reasons.append("claim_audit_warnings_present")
+    if bool(row.get("dataset_claim_limited")):
+        reasons.append("dataset_scope_claim_limited")
     if int(row.get("raw_output_count") or 0) == 0:
         reasons.append("no_case_level_or_raw_records")
     if "unclassified_experiment" in supported:

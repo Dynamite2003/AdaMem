@@ -264,6 +264,26 @@ def test_claim_audit_warns_when_longmemeval_v2_prepared_notes_are_missing(tmp_pa
     ]
 
 
+def test_claim_audit_marks_mini_fixture_scope_as_claim_limited(tmp_path: Path) -> None:
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="stale_retrieval_diagnostics",
+        dataset="benchmarks/stale_mini.jsonl",
+        notes={"ground_truth_runtime_use": "forbidden"},
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+
+    assert audit["dataset_scope"] == {
+        "scope": "mini_or_smoke_fixture",
+        "claim_limited": True,
+        "reasons": ["mini_smoke_or_debug_name"],
+    }
+    assert "dataset scope is claim-limited: mini_smoke_or_debug_name" in audit["warnings"]
+    assert "Dataset scope: `mini_or_smoke_fixture`" in markdown
+
+
 def test_claim_audit_marks_mock_answer_generation_as_plumbing(tmp_path: Path) -> None:
     experiment = _write_experiment(
         tmp_path,
@@ -341,12 +361,13 @@ def _write_experiment(
     raw_outputs: list[dict] | None = None,
     results=None,
     baseline_configs: dict | None = None,
+    dataset: str = "benchmarks/example.jsonl",
 ) -> Path:
     path = tmp_path / f"{run_type}.json"
     payload = {
         "run_name": run_type,
         "run_type": run_type,
-        "dataset": "benchmarks/example.jsonl",
+        "dataset": dataset,
         "baseline_names": baseline_names or ["semantic_only"],
         "baseline_configs": baseline_configs or {},
         "results": results,

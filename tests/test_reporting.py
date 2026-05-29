@@ -83,6 +83,7 @@ def test_write_experiment_bundle_supports_longmemeval_v2_prepared_pilot(tmp_path
     assert manifest["record_kind"] == "retrieval"
     assert "longmemeval_v2_prepared_split_readiness" in manifest["supported_claims"]
     assert "answer_accuracy" in manifest["blocked_claims"]
+    assert manifest["dataset_scope"]["scope"] == "public_transfer_prepared"
     assert manifest["claim_evidence"]["prepared_state_evidence"]["with_matching_state_evidence"] == 1
     assert manifest["warnings"] == []
     assert "table_error" not in manifest
@@ -115,6 +116,7 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     for bundle in manifest["bundles"]:
         assert "claim_evidence" in bundle
         assert "warnings" in bundle
+        assert "dataset_scope" in bundle
         assert Path(bundle["artifacts"]["paper_tables_markdown"]).exists()
     matrix = json.loads(Path(manifest["artifacts"]["claim_matrix_json"]).read_text(encoding="utf-8"))
     by_name = {Path(row["experiment"]).name: row for row in matrix}
@@ -172,6 +174,9 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "experiment": "a.experiment.json",
         "run_type": "longmemeval_v2_prepared_answer_support_pilot",
         "dataset": "dataset.jsonl",
+        "dataset_scope": "unknown",
+        "dataset_claim_limited": False,
+        "dataset_scope_reasons": [],
         "record_kind": "retrieval",
         "raw_output_count": 20,
         "supported_claims": ["retrieval_diagnostics", "prepared_state_evidence_audit"],
@@ -193,6 +198,7 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
+    assert "| experiment | gate | scope | run type |" in markdown
 
 
 def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
@@ -230,6 +236,34 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
         "no_case_level_or_raw_records",
         "unclassified_experiment",
     ]
+
+
+def test_claim_matrix_gates_claim_limited_dataset_scope() -> None:
+    rows = claim_matrix_rows([
+        {
+            "experiment": "stale_mini.experiment.json",
+            "run_type": "stale_retrieval_diagnostics",
+            "dataset": "benchmarks/stale_mini.jsonl",
+            "dataset_scope": {
+                "scope": "mini_or_smoke_fixture",
+                "claim_limited": True,
+                "reasons": ["mini_smoke_or_debug_name"],
+            },
+            "raw_output_count": 12,
+            "supported_claims": ["stale_retrieval_diagnostics"],
+            "blocked_claims": {"stale_answer_accuracy": ["no answer generation"]},
+            "warnings": [],
+            "claim_evidence": {},
+        }
+    ])
+    markdown = claim_matrix_markdown(rows)
+
+    assert rows[0]["readiness_gate"] == "needs_attention"
+    assert rows[0]["readiness_reasons"] == ["dataset_scope_claim_limited"]
+    assert rows[0]["dataset_scope"] == "mini_or_smoke_fixture"
+    assert rows[0]["dataset_claim_limited"] is True
+    assert rows[0]["dataset_scope_reasons"] == ["mini_smoke_or_debug_name"]
+    assert "mini_or_smoke_fixture" in markdown
 
 
 def _write_answer_generation_experiment(tmp_path: Path, *, stem: str = "generation") -> Path:

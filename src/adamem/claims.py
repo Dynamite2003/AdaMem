@@ -36,6 +36,10 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
     warnings: list[str] = []
     claim_evidence: dict[str, Any] = {}
     claim_records = _load_claim_records(experiment_path, raw_outputs, notes, warnings=warnings)
+    dataset_scope = _dataset_scope(experiment)
+    if dataset_scope["claim_limited"]:
+        reasons = ", ".join(dataset_scope["reasons"]) or dataset_scope["scope"]
+        warnings.append(f"dataset scope is claim-limited: {reasons}")
 
     runtime_use = notes.get("ground_truth_runtime_use")
     if runtime_use != "forbidden":
@@ -110,6 +114,7 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
         "run_name": experiment.get("run_name"),
         "run_type": run_type,
         "dataset": experiment.get("dataset"),
+        "dataset_scope": dataset_scope,
         "baselines": baselines,
         "providers": providers,
         "supported_claims": supported,
@@ -131,6 +136,8 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
     lines.append(f"Experiment: `{audit['experiment']}`")
     lines.append(f"Run type: `{audit['run_type'] or '<missing>'}`")
     lines.append(f"Dataset: `{audit.get('dataset') or '<missing>'}`")
+    scope = audit.get("dataset_scope") or {}
+    lines.append(f"Dataset scope: `{scope.get('scope') or '<missing>'}`")
     lines.append(f"Raw outputs: `{audit['raw_output_count']}`")
     lines.append("")
 
@@ -213,6 +220,50 @@ def _optional_str(value: Any) -> str | None:
 
 def _uses_mock_provider(providers: dict[str, str | None]) -> bool:
     return any(value == "mock" for key, value in providers.items() if key.endswith("_provider"))
+
+
+def _dataset_scope(experiment: dict[str, Any]) -> dict[str, Any]:
+    dataset = str(experiment.get("dataset") or "")
+    if not dataset:
+        return {
+            "scope": "unknown",
+            "claim_limited": True,
+            "reasons": ["dataset_missing"],
+        }
+
+    text = " ".join(
+        str(experiment.get(key) or "")
+        for key in ("run_name", "run_type", "dataset", "split_or_case_limit")
+    ).lower()
+    reasons: list[str] = []
+    path = dataset.lower()
+    if path.startswith("/tmp") or "/tmp/" in path:
+        reasons.append("tmp_path")
+    if any(marker in text for marker in ("tiny", "mini", "smoke", "debug")):
+        reasons.append("mini_smoke_or_debug_name")
+    if any(
+        marker in text
+        for marker in (
+            "dynamic_state_transfer",
+            "unknown_current_state_transfer",
+        )
+    ):
+        reasons.append("local_synthetic_fixture")
+
+    if reasons:
+        scope = "mini_or_smoke_fixture"
+    elif "longmemeval_v2_prepared" in text or "longmemeval-v2" in text:
+        scope = "public_transfer_prepared"
+    elif any(marker in text for marker in ("longmemeval", "ama", "stale", "locomo", "state-bench")):
+        scope = "benchmark_like"
+    else:
+        scope = "unspecified_benchmark"
+
+    return {
+        "scope": scope,
+        "claim_limited": scope in {"unknown", "mini_or_smoke_fixture"},
+        "reasons": reasons,
+    }
 
 
 def _load_claim_records(
