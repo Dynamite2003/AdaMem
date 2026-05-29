@@ -131,6 +131,13 @@ PYTHONPATH=src python -m adamem.convert longmemeval-v2 \
 PYTHONPATH=src python -m adamem.lme_v2 question-audit \
   --output-dir results/longmemeval_v2_question_audit \
   --json
+
+PYTHONPATH=src python -m adamem.lme_v2 transfer-split \
+  --audit-records results/longmemeval_v2_question_audit/longmemeval_v2_question_audit.records.jsonl \
+  --output-dir results/longmemeval_v2_transfer_split \
+  --transfer-per-type 10 \
+  --control-per-group 10 \
+  --json
 ```
 
 Latest question-side audit:
@@ -145,6 +152,30 @@ Latest question-side audit:
   router-audit warnings, not automatic state-transfer candidates.
 - Dominant inferred slots were `location`, `workflow.*`, `resource.*.status`,
   `task.*.status`, and `runtime.*.status`.
+
+Latest text-only transfer split:
+
+- Selected questions: `60`.
+- Transfer questions: `40`, with `10` each from `dynamic-environment`,
+  `dynamic-environment-abs`, `procedure`, and `procedure-abs`.
+- Static controls: `20`, split into `10` router-warning controls and `10`
+  clean static controls.
+- `errors-gotchas` had `29` source candidates but `0` eligible text-only
+  candidates because all require images. Include them only in a separate
+  multimodal setting.
+- The split records can drive exact conversion after the trajectory file is
+  available:
+
+```bash
+PYTHONPATH=src python -m adamem.convert longmemeval-v2 \
+  data/longmemeval-v2/questions.jsonl \
+  data/longmemeval-v2/trajectories.jsonl \
+  data/longmemeval-v2/haystacks/lme_v2_small.json \
+  /tmp/longmemeval_v2_text_transfer_60.adamem.jsonl \
+  --question-ids-file results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl \
+  --expected answer \
+  --top-k 8
+```
 
 Claim boundary:
 

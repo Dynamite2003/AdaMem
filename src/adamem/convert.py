@@ -190,6 +190,7 @@ def convert_longmemeval_v2_file(
     top_k: int = 8,
     limit: int | None = None,
     question_types: list[str] | None = None,
+    question_ids: list[str] | None = None,
     limit_per_type: int | None = None,
     max_trajectories_per_question: int | None = None,
     infer_state_slots: bool = True,
@@ -206,6 +207,7 @@ def convert_longmemeval_v2_file(
         questions,
         limit=limit,
         question_types=question_types,
+        question_ids=question_ids,
         limit_per_type=limit_per_type,
     )
     haystacks = _load_longmemeval_v2_haystacks(haystack_path)
@@ -609,12 +611,17 @@ def _select_longmemeval_v2_questions(
     *,
     limit: int | None = None,
     question_types: list[str] | None = None,
+    question_ids: list[str] | None = None,
     limit_per_type: int | None = None,
 ) -> list[dict[str, Any]]:
     allowed = set(question_types or [])
+    allowed_ids = set(question_ids or [])
     selected: list[dict[str, Any]] = []
     type_counts: dict[str, int] = {}
     for question in questions:
+        question_id = _longmemeval_v2_question_id(question)
+        if allowed_ids and question_id not in allowed_ids:
+            continue
         question_type = str(question.get("question_type") or "")
         if allowed and question_type not in allowed:
             continue
@@ -627,6 +634,17 @@ def _select_longmemeval_v2_questions(
         if limit is not None and len(selected) >= limit:
             break
     return selected
+
+
+def load_question_ids(input_path: str | Path) -> list[str]:
+    records = _load_json_records(input_path)
+    ids: list[str] = []
+    for index, record in enumerate(records, start=1):
+        value = record.get("id") or record.get("question_id")
+        if value is None:
+            raise ValueError(f"Question-id record {index} needs id or question_id")
+        ids.append(str(value))
+    return ids
 
 
 def convert_longmemeval_sample(
@@ -1148,6 +1166,11 @@ def main() -> None:
     longmemeval_v2.add_argument("--limit", type=int)
     longmemeval_v2.add_argument("--question-types", nargs="+", help="Filter LongMemEval-V2 question_type values")
     longmemeval_v2.add_argument(
+        "--question-ids-file",
+        type=Path,
+        help="Filter LongMemEval-V2 questions by JSON/JSONL records containing id or question_id",
+    )
+    longmemeval_v2.add_argument(
         "--limit-per-type",
         type=int,
         help="Keep at most this many LongMemEval-V2 items per question_type",
@@ -1212,6 +1235,7 @@ def main() -> None:
             top_k=args.top_k,
             limit=args.limit,
             question_types=args.question_types,
+            question_ids=load_question_ids(args.question_ids_file) if args.question_ids_file else None,
             limit_per_type=args.limit_per_type,
             max_trajectories_per_question=args.max_trajectories_per_question,
             infer_state_slots=not args.no_infer_state_slots,

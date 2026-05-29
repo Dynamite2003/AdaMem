@@ -64,6 +64,194 @@ def write_longmemeval_v2_question_audit(
     }
 
 
+def write_longmemeval_v2_transfer_split(
+    audit_records_source: str | Path,
+    output_dir: str | Path,
+    *,
+    transfer_per_type: int = 10,
+    control_per_group: int = 10,
+    include_image_required: bool = False,
+    require_haystack: bool = True,
+) -> dict[str, Any]:
+    """Write a deterministic LongMemEval-V2 public-transfer split manifest."""
+
+    audit_records = _load_jsonl_objects(audit_records_source)
+    selected = select_longmemeval_v2_transfer_split(
+        audit_records,
+        transfer_per_type=transfer_per_type,
+        control_per_group=control_per_group,
+        include_image_required=include_image_required,
+        require_haystack=require_haystack,
+    )
+    summary = summarize_longmemeval_v2_transfer_split(
+        selected,
+        audit_records=audit_records,
+        transfer_per_type=transfer_per_type,
+        control_per_group=control_per_group,
+        include_image_required=include_image_required,
+        require_haystack=require_haystack,
+    )
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    records_path = output / "longmemeval_v2_transfer_split.records.jsonl"
+    manifest_path = output / "longmemeval_v2_transfer_split.manifest.json"
+    report_path = output / "longmemeval_v2_transfer_split.report.md"
+    _write_jsonl(records_path, selected)
+    _write_json(manifest_path, summary)
+    report_path.write_text(longmemeval_v2_transfer_split_report(summary), encoding="utf-8")
+    return {
+        "audit_records_source": str(audit_records_source),
+        "records_path": str(records_path),
+        "manifest_path": str(manifest_path),
+        "report_path": str(report_path),
+        "summary": summary,
+    }
+
+
+def select_longmemeval_v2_transfer_split(
+    audit_records: Iterable[Mapping[str, Any]],
+    *,
+    transfer_per_type: int = 10,
+    control_per_group: int = 10,
+    include_image_required: bool = False,
+    require_haystack: bool = True,
+) -> list[dict[str, Any]]:
+    records = list(audit_records)
+    selected: list[dict[str, Any]] = []
+    for question_type in sorted({
+        str(record.get("question_type") or "")
+        for record in records
+        if record.get("type_transfer_candidate")
+    }):
+        candidates = [
+            record for record in records
+            if str(record.get("question_type") or "") == question_type
+            and record.get("type_transfer_candidate")
+            and _eligible_for_split(record, include_image_required=include_image_required, require_haystack=require_haystack)
+        ]
+        selected.extend(
+            _tag_selected_records(
+                candidates[:transfer_per_type],
+                split="transfer",
+                selection_group=question_type,
+            )
+        )
+
+    static_records = [
+        record for record in records
+        if str(record.get("question_type") or "").startswith("static-environment")
+        and _eligible_for_split(record, include_image_required=include_image_required, require_haystack=require_haystack)
+    ]
+    selected.extend(_tag_selected_records(
+        [record for record in static_records if record.get("query_state_slot_candidate")][:control_per_group],
+        split="router_warning_control",
+        selection_group="static_query_state_slot_signal",
+    ))
+    selected.extend(_tag_selected_records(
+        [record for record in static_records if not record.get("query_state_slot_candidate")][:control_per_group],
+        split="static_clean_control",
+        selection_group="static_no_state_slot_signal",
+    ))
+    return selected
+
+
+def summarize_longmemeval_v2_transfer_split(
+    selected_records: Iterable[Mapping[str, Any]],
+    *,
+    audit_records: Iterable[Mapping[str, Any]],
+    transfer_per_type: int,
+    control_per_group: int,
+    include_image_required: bool,
+    require_haystack: bool,
+) -> dict[str, Any]:
+    selected = list(selected_records)
+    audit = list(audit_records)
+    return {
+        "total_selected": len(selected),
+        "selection_policy": {
+            "transfer_per_type": transfer_per_type,
+            "control_per_group": control_per_group,
+            "include_image_required": include_image_required,
+            "require_haystack": require_haystack,
+            "ordering": "source_order_with_sorted_question_type_groups",
+            "label_use": "question metadata only; reference answers excluded",
+        },
+        "source_audit_total": len(audit),
+        "source_type_transfer_candidates": sum(1 for record in audit if record.get("type_transfer_candidate")),
+        "source_static_query_state_slot_signals": sum(
+            1
+            for record in audit
+            if str(record.get("question_type") or "").startswith("static-environment")
+            and record.get("query_state_slot_candidate")
+        ),
+        "excluded_image_required": sum(
+            1 for record in audit if record.get("image_required") and not include_image_required
+        ),
+        "excluded_missing_haystack": sum(
+            1
+            for record in audit
+            if require_haystack and not isinstance(record.get("haystack_size"), int)
+        ),
+        "transfer_candidate_availability": _transfer_candidate_availability(
+            audit,
+            selected,
+            include_image_required=include_image_required,
+            require_haystack=require_haystack,
+        ),
+        "by_split": _count_by(selected, "split"),
+        "by_question_type": _question_type_summary(selected),
+        "by_state_slot": _state_slot_summary(selected),
+        "question_ids": [str(record.get("id") or "") for record in selected],
+    }
+
+
+def longmemeval_v2_transfer_split_report(summary: Mapping[str, Any]) -> str:
+    policy = summary["selection_policy"]
+    lines = [
+        "# LongMemEval-V2 Transfer Split",
+        "",
+        f"Total selected: {summary['total_selected']}",
+        f"Transfer per type: {policy['transfer_per_type']}",
+        f"Control per group: {policy['control_per_group']}",
+        f"Include image-required: {policy['include_image_required']}",
+        f"Require haystack: {policy['require_haystack']}",
+        f"Excluded image-required source records: {summary['excluded_image_required']}",
+        f"Excluded missing-haystack source records: {summary['excluded_missing_haystack']}",
+        "",
+        "## Transfer Availability",
+        "",
+        "| question_type | source candidates | eligible | selected |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for question_type, aggregate in sorted(summary["transfer_candidate_availability"].items()):
+        lines.append(
+            f"| {question_type} | {aggregate['source_candidates']} | "
+            f"{aggregate['eligible_candidates']} | {aggregate['selected']} |"
+        )
+    lines.extend([
+        "",
+        "## Splits",
+        "",
+        "| split | questions |",
+        "| --- | ---: |",
+    ])
+    for split, count in sorted(summary["by_split"].items()):
+        lines.append(f"| {split} | {count} |")
+    lines.extend([
+        "",
+        "## Question Types",
+        "",
+        "| question_type | total | candidates | inferred state | abstention |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ])
+    for question_type, aggregate in sorted(summary["by_question_type"].items()):
+        lines.append(
+            f"| {question_type} | {aggregate['total']} | {aggregate['state_transfer_candidates']} | "
+            f"{aggregate['inferred_state_slot_questions']} | {aggregate['abstention_questions']} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def longmemeval_v2_question_audit_records(
     questions: Iterable[Mapping[str, Any]],
     *,
@@ -177,6 +365,75 @@ def longmemeval_v2_question_audit_report(summary: Mapping[str, Any]) -> str:
     for slot, count in sorted(summary["by_state_slot"].items(), key=lambda item: (-item[1], item[0])):
         lines.append(f"| {slot} | {count} |")
     return "\n".join(lines) + "\n"
+
+
+def _eligible_for_split(
+    record: Mapping[str, Any],
+    *,
+    include_image_required: bool,
+    require_haystack: bool,
+) -> bool:
+    if not include_image_required and record.get("image_required"):
+        return False
+    if require_haystack and not isinstance(record.get("haystack_size"), int):
+        return False
+    return True
+
+
+def _tag_selected_records(
+    records: list[Mapping[str, Any]],
+    *,
+    split: str,
+    selection_group: str,
+) -> list[dict[str, Any]]:
+    tagged: list[dict[str, Any]] = []
+    for index, record in enumerate(records, start=1):
+        row = dict(record)
+        row["split"] = split
+        row["selection_group"] = selection_group
+        row["selection_rank"] = index
+        tagged.append(row)
+    return tagged
+
+
+def _transfer_candidate_availability(
+    audit_records: list[Mapping[str, Any]],
+    selected_records: list[Mapping[str, Any]],
+    *,
+    include_image_required: bool,
+    require_haystack: bool,
+) -> dict[str, dict[str, int]]:
+    question_types = sorted({
+        str(record.get("question_type") or "")
+        for record in audit_records
+        if record.get("type_transfer_candidate")
+    })
+    availability: dict[str, dict[str, int]] = {}
+    for question_type in question_types:
+        source = [
+            record for record in audit_records
+            if str(record.get("question_type") or "") == question_type
+            and record.get("type_transfer_candidate")
+        ]
+        eligible = [
+            record for record in source
+            if _eligible_for_split(
+                record,
+                include_image_required=include_image_required,
+                require_haystack=require_haystack,
+            )
+        ]
+        selected = [
+            record for record in selected_records
+            if record.get("split") == "transfer"
+            and str(record.get("question_type") or "") == question_type
+        ]
+        availability[question_type] = {
+            "source_candidates": len(source),
+            "eligible_candidates": len(eligible),
+            "selected": len(selected),
+        }
+    return availability
 
 
 def _load_jsonl_objects(source: str | Path, *, limit: int | None = None) -> list[dict[str, Any]]:
@@ -331,6 +588,15 @@ def main(argv: list[str] | None = None) -> None:
     audit.add_argument("--limit", type=int)
     audit.add_argument("--json", action="store_true")
 
+    split = sub.add_parser("transfer-split", help="Select a deterministic LongMemEval-V2 transfer split")
+    split.add_argument("--audit-records", type=Path, required=True)
+    split.add_argument("--output-dir", type=Path, required=True)
+    split.add_argument("--transfer-per-type", type=int, default=10)
+    split.add_argument("--control-per-group", type=int, default=10)
+    split.add_argument("--include-image-required", action="store_true")
+    split.add_argument("--allow-missing-haystack", action="store_true")
+    split.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "question-audit":
         result = write_longmemeval_v2_question_audit(
@@ -343,6 +609,20 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             print(f"wrote LongMemEval-V2 question audit to {args.output_dir}")
+            print(f"report: {result['report_path']}")
+    elif args.command == "transfer-split":
+        result = write_longmemeval_v2_transfer_split(
+            args.audit_records,
+            args.output_dir,
+            transfer_per_type=args.transfer_per_type,
+            control_per_group=args.control_per_group,
+            include_image_required=args.include_image_required,
+            require_haystack=not args.allow_missing_haystack,
+        )
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"wrote LongMemEval-V2 transfer split to {args.output_dir}")
             print(f"report: {result['report_path']}")
 
 

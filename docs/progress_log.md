@@ -1980,3 +1980,34 @@ to a paper-facing claim and evaluation gate.
   `results/longmemeval_v2_question_audit/`.
 - Validation:
   - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `2 passed`
+
+### 2026-05-30 LongMemEval-V2 transfer split
+
+- Added a deterministic public-transfer split builder:
+  - `PYTHONPATH=src python -m adamem.lme_v2 transfer-split ...`
+  - Input is the answer-free question audit JSONL.
+  - Output is a split JSONL, manifest JSON, and Markdown report.
+  - Default policy requires haystack coverage and excludes image-required
+    questions so current text-only memory experiments do not silently enter a
+    multimodal setting.
+  - The split contains transfer questions plus two static controls:
+    router-warning controls where the query router fires on static questions,
+    and clean static controls where it does not.
+- Added exact split consumption to the LongMemEval-V2 converter:
+  - `--question-ids-file` accepts JSON/JSONL records with `id` or
+    `question_id`.
+  - This lets future trajectory-backed runs convert the same selected split
+    instead of approximating it with question-type limits.
+- Ran the public text-only split from the latest audit:
+  - Total selected: `60`.
+  - Transfer: `40` questions, `10` each from `dynamic-environment`,
+    `dynamic-environment-abs`, `procedure`, and `procedure-abs`.
+  - Controls: `10` router-warning static questions and `10` clean static
+    questions.
+  - `errors-gotchas`: `29` source candidates, `0` text-only eligible because
+    all require images.
+- Generated ignored local artifacts under
+  `results/longmemeval_v2_transfer_split/`.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py tests/test_eval.py -q`
+    -> `31 passed`

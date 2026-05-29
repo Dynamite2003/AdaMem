@@ -45,7 +45,9 @@ PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.j
 PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_full_audit_probe.adamem.jsonl --expected evidence --top-k 8 --state-audit-output results/longmemeval_s_full_state_audit_candidates.jsonl --state-audit-summary-output results/longmemeval_s_full_state_audit_summary.json
 PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60_manual_audit.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10 --state-audit-input results/longmemeval_s_balanced_60_state_audit_reviewed.jsonl
 PYTHONPATH=src python -m adamem.lme_v2 question-audit --output-dir results/longmemeval_v2_question_audit --json
+PYTHONPATH=src python -m adamem.lme_v2 transfer-split --audit-records results/longmemeval_v2_question_audit/longmemeval_v2_question_audit.records.jsonl --output-dir results/longmemeval_v2_transfer_split --transfer-per-type 10 --control-per-group 10 --json
 PYTHONPATH=src python -m adamem.convert longmemeval-v2 data/longmemeval-v2/questions.jsonl data/longmemeval-v2/trajectories.jsonl data/longmemeval-v2/haystacks/lme_v2_small.json /tmp/longmemeval_v2_small.adamem.jsonl --expected answer --top-k 8 --limit-per-type 5 --max-trajectories-per-question 20
+PYTHONPATH=src python -m adamem.convert longmemeval-v2 data/longmemeval-v2/questions.jsonl data/longmemeval-v2/trajectories.jsonl data/longmemeval-v2/haystacks/lme_v2_small.json /tmp/longmemeval_v2_text_transfer_60.adamem.jsonl --question-ids-file results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl --expected answer --top-k 8
 PYTHONPATH=src python -m adamem.convert ama data/ama_bench.jsonl benchmarks/ama_bench.adamem.jsonl --expected answer --top-k 8
 PYTHONPATH=src python -m adamem.pilot ama-public --limit 20 --output-dir results/ama_public_20_light --baselines semantic_only trajectory_step_readout --top-k 8 --answer-only
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2
@@ -70,6 +72,8 @@ Outputs:
 - LongMemEval-V2 question-side audit records that separate type-level transfer
   candidates from noisy query-state-slot signals before selecting a public
   transfer split.
+- LongMemEval-V2 transfer split manifest and exact question-id file for later
+  answer-model and retrieval runs.
 - Notes on any regression before new work begins.
 
 Done when:

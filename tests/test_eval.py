@@ -20,6 +20,7 @@ from adamem.convert import (
     convert_locomo_file,
     convert_longmemeval_file,
     convert_longmemeval_v2_file,
+    load_question_ids,
     load_state_audit_labels,
     summarize_longmemeval_state_audit_records,
 )
@@ -420,6 +421,8 @@ def test_longmemeval_v2_converter_emits_haystack_trajectory_records(tmp_path: Pa
         }),
         encoding="utf-8",
     )
+    question_ids = tmp_path / "split.records.jsonl"
+    question_ids.write_text(json.dumps({"id": "q_dynamic", "split": "transfer"}) + "\n", encoding="utf-8")
     output = tmp_path / "longmemeval_v2.adamem.jsonl"
 
     count = convert_longmemeval_v2_file(
@@ -430,6 +433,7 @@ def test_longmemeval_v2_converter_emits_haystack_trajectory_records(tmp_path: Pa
         expected="answer",
         top_k=4,
         question_types=["dynamic-environment"],
+        question_ids=load_question_ids(question_ids),
     )
     cases = load_jsonl_cases(output)
     case = cases[0]
