@@ -10,7 +10,9 @@ from adamem.lme_v2 import (
     summarize_longmemeval_v2_question_audit,
     summarize_longmemeval_v2_trajectory_manifest,
     summarize_longmemeval_v2_transfer_split,
+    validate_longmemeval_v2_prepared_split,
     write_longmemeval_v2_extracted_trajectories,
+    write_longmemeval_v2_prepared_split_validation,
     write_longmemeval_v2_question_audit,
     write_longmemeval_v2_trajectory_manifest,
     write_longmemeval_v2_transfer_split,
@@ -428,6 +430,92 @@ def test_extract_longmemeval_v2_trajectories_stops_after_all_requested(tmp_path:
     assert manifest["records_scanned"] == 2
     assert manifest["completed_all_requested"] is True
     assert manifest["missing_trajectories"] == 0
+
+
+def test_validate_longmemeval_v2_prepared_split_accepts_complete_runtime_files() -> None:
+    summary = validate_longmemeval_v2_prepared_split(
+        [
+            {"id": "q1", "split": "transfer"},
+            {"id": "q2", "split": "static_clean_control"},
+        ],
+        questions_by_id={
+            "q1": {"id": "q1", "answer": "allowed only in question source"},
+            "q2": {"id": "q2"},
+        },
+        haystacks={
+            "q1": ["traj-a", "traj-b"],
+            "q2": ["traj-b", "traj-c"],
+        },
+        trajectory_records=[
+            {"id": "traj-a", "domain": "enterprise", "states": []},
+            {"id": "traj-b", "domain": "enterprise", "states": []},
+            {"id": "traj-c", "domain": "web", "states": []},
+        ],
+    )
+
+    assert summary["valid"] is True
+    assert summary["blocking_issue_count"] == 0
+    assert summary["required_trajectories"] == 3
+    assert summary["selected_trajectories"] == 3
+    assert summary["label_leak_records"] == []
+
+
+def test_validate_longmemeval_v2_prepared_split_flags_missing_and_leaked_records() -> None:
+    summary = validate_longmemeval_v2_prepared_split(
+        [
+            {"id": "q1", "split": "transfer"},
+            {"id": "q_missing", "split": "transfer"},
+            {"id": "q_no_haystack", "split": "transfer"},
+        ],
+        questions_by_id={
+            "q1": {"id": "q1"},
+            "q_no_haystack": {"id": "q_no_haystack"},
+        },
+        haystacks={
+            "q1": ["traj-a", "traj-b"],
+            "q_missing": ["traj-c"],
+        },
+        trajectory_records=[
+            {"id": "traj-a", "states": [], "answer": "leak"},
+            {"id": "traj-a", "states": []},
+            {"id": "traj-extra", "states": [], "unexpected": True},
+        ],
+    )
+
+    assert summary["valid"] is False
+    assert summary["missing_question_ids"] == ["q_missing"]
+    assert summary["missing_haystack_question_ids"] == ["q_no_haystack"]
+    assert summary["missing_trajectory_ids"] == ["traj-b", "traj-c"]
+    assert summary["duplicate_trajectory_ids"] == ["traj-a"]
+    assert summary["label_leak_records"] == [{"id": "traj-a", "fields": ["answer"]}]
+    assert summary["extra_trajectory_ids"] == ["traj-extra"]
+    assert summary["extra_field_records"] == [{"id": "traj-extra", "fields": ["unexpected"]}]
+    assert summary["blocking_issue_count"] == 6
+
+
+def test_write_longmemeval_v2_prepared_split_validation_outputs_report(tmp_path: Path) -> None:
+    split_records = tmp_path / "split.jsonl"
+    split_records.write_text(json.dumps({"id": "q1", "split": "transfer"}) + "\n", encoding="utf-8")
+    questions = tmp_path / "questions.jsonl"
+    questions.write_text(json.dumps({"id": "q1", "answer": "not copied"}) + "\n", encoding="utf-8")
+    haystack = tmp_path / "haystack.json"
+    haystack.write_text(json.dumps({"q1": ["traj-a"]}), encoding="utf-8")
+    trajectories = tmp_path / "selected.jsonl"
+    trajectories.write_text(json.dumps({"id": "traj-a", "states": []}) + "\n", encoding="utf-8")
+
+    result = write_longmemeval_v2_prepared_split_validation(
+        split_records,
+        questions,
+        haystack,
+        trajectories,
+        tmp_path / "validation",
+    )
+    summary = json.loads(Path(result["summary_path"]).read_text(encoding="utf-8"))
+    report = Path(result["report_path"]).read_text(encoding="utf-8")
+
+    assert summary["valid"] is True
+    assert summary["required_trajectories"] == 1
+    assert "Prepared Split Validation" in report
 
 
 def _audit_record(

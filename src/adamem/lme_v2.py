@@ -25,6 +25,9 @@ STATE_TRANSFER_TYPE_TERMS = (
     "awareness",
 )
 
+TRAJECTORY_RUNTIME_FIELDS = {"id", "trajectory_id", "domain", "environment", "goal", "outcome", "start_url", "states"}
+FORBIDDEN_TRAJECTORY_LABEL_FIELDS = {"answer", "answers", "eval_function", "question", "question_id"}
+
 
 def write_longmemeval_v2_question_audit(
     questions_source: str | Path,
@@ -198,6 +201,132 @@ def write_longmemeval_v2_extracted_trajectories(
         "report_path": str(report_path),
         "summary": summary,
     }
+
+
+def write_longmemeval_v2_prepared_split_validation(
+    split_records_source: str | Path,
+    questions_source: str | Path,
+    haystack_source: str | Path,
+    trajectories_source: str | Path,
+    output_dir: str | Path,
+) -> dict[str, Any]:
+    """Validate that a prepared LME-V2 split is ready for conversion/evaluation."""
+
+    split_records = _load_jsonl_objects(split_records_source)
+    questions_by_id = {_question_id(record): record for record in _load_jsonl_objects(questions_source)}
+    haystacks = _load_haystack_json(haystack_source)
+    trajectory_records = list(_iter_jsonl_objects(trajectories_source))
+    summary = validate_longmemeval_v2_prepared_split(
+        split_records,
+        questions_by_id=questions_by_id,
+        haystacks=haystacks,
+        trajectory_records=trajectory_records,
+    )
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    summary_path = output / "longmemeval_v2_prepared_split_validation.json"
+    report_path = output / "longmemeval_v2_prepared_split_validation.md"
+    _write_json(summary_path, summary)
+    report_path.write_text(longmemeval_v2_prepared_split_validation_report(summary), encoding="utf-8")
+    return {
+        "split_records_source": str(split_records_source),
+        "questions_source": str(questions_source),
+        "haystack_source": str(haystack_source),
+        "trajectories_source": str(trajectories_source),
+        "summary_path": str(summary_path),
+        "report_path": str(report_path),
+        "summary": summary,
+    }
+
+
+def validate_longmemeval_v2_prepared_split(
+    split_records: Iterable[Mapping[str, Any]],
+    *,
+    questions_by_id: Mapping[str, Mapping[str, Any]],
+    haystacks: Mapping[str, list[str]],
+    trajectory_records: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    split_list = list(split_records)
+    split_question_ids = [str(record.get("id") or record.get("question_id") or "") for record in split_list]
+    missing_question_ids = sorted({question_id for question_id in split_question_ids if question_id not in questions_by_id})
+    missing_haystack_question_ids = sorted({question_id for question_id in split_question_ids if question_id not in haystacks})
+    required_trajectory_ids = sorted({
+        trajectory_id
+        for question_id in split_question_ids
+        for trajectory_id in haystacks.get(question_id, [])
+    })
+
+    selected_ids: set[str] = set()
+    duplicate_ids: set[str] = set()
+    label_leaks: list[dict[str, Any]] = []
+    extra_field_records: list[dict[str, Any]] = []
+    for record in trajectory_records:
+        trajectory_id = _record_id(record)
+        if not trajectory_id:
+            continue
+        if trajectory_id in selected_ids:
+            duplicate_ids.add(trajectory_id)
+        selected_ids.add(trajectory_id)
+        leaked = sorted(FORBIDDEN_TRAJECTORY_LABEL_FIELDS.intersection(record))
+        if leaked:
+            label_leaks.append({"id": trajectory_id, "fields": leaked})
+        extra_fields = sorted(set(record) - TRAJECTORY_RUNTIME_FIELDS - FORBIDDEN_TRAJECTORY_LABEL_FIELDS)
+        if extra_fields:
+            extra_field_records.append({"id": trajectory_id, "fields": extra_fields})
+
+    required_set = set(required_trajectory_ids)
+    missing_trajectory_ids = sorted(required_set - selected_ids)
+    extra_trajectory_ids = sorted(selected_ids - required_set)
+    blocking_issue_count = (
+        len(missing_question_ids)
+        + len(missing_haystack_question_ids)
+        + len(missing_trajectory_ids)
+        + len(label_leaks)
+        + len(duplicate_ids)
+    )
+    return {
+        "valid": blocking_issue_count == 0,
+        "total_split_questions": len(split_list),
+        "required_trajectories": len(required_set),
+        "selected_trajectories": len(selected_ids),
+        "missing_question_ids": missing_question_ids,
+        "missing_haystack_question_ids": missing_haystack_question_ids,
+        "missing_trajectory_ids": missing_trajectory_ids,
+        "extra_trajectory_ids": extra_trajectory_ids,
+        "duplicate_trajectory_ids": sorted(duplicate_ids),
+        "label_leak_records": label_leaks,
+        "extra_field_records": extra_field_records,
+        "blocking_issue_count": blocking_issue_count,
+        "warning_count": len(extra_trajectory_ids) + len(extra_field_records),
+        "label_policy": "selected trajectories must contain runtime fields only; answer/eval/question fields are blocking leaks",
+    }
+
+
+def longmemeval_v2_prepared_split_validation_report(summary: Mapping[str, Any]) -> str:
+    lines = [
+        "# LongMemEval-V2 Prepared Split Validation",
+        "",
+        f"Valid: {summary['valid']}",
+        f"Split questions: {summary['total_split_questions']}",
+        f"Required trajectories: {summary['required_trajectories']}",
+        f"Selected trajectories: {summary['selected_trajectories']}",
+        f"Blocking issues: {summary['blocking_issue_count']}",
+        f"Warnings: {summary['warning_count']}",
+        "",
+        "## Blocking Checks",
+        "",
+        f"- Missing questions: {len(summary['missing_question_ids'])}",
+        f"- Missing haystack questions: {len(summary['missing_haystack_question_ids'])}",
+        f"- Missing trajectories: {len(summary['missing_trajectory_ids'])}",
+        f"- Duplicate trajectories: {len(summary['duplicate_trajectory_ids'])}",
+        f"- Label leak records: {len(summary['label_leak_records'])}",
+        "",
+        "## Warnings",
+        "",
+        f"- Extra trajectories: {len(summary['extra_trajectory_ids'])}",
+        f"- Extra-field records: {len(summary['extra_field_records'])}",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def longmemeval_v2_extract_report(summary: Mapping[str, Any]) -> str:
@@ -903,6 +1032,17 @@ def main(argv: list[str] | None = None) -> None:
     extract.add_argument("--max-records", type=int)
     extract.add_argument("--json", action="store_true")
 
+    validate = sub.add_parser(
+        "validate-prep",
+        help="Validate prepared LongMemEval-V2 split/question/haystack/trajectory files before conversion",
+    )
+    validate.add_argument("--split-records", type=Path, required=True)
+    validate.add_argument("--questions", default=LONGMEMEVAL_V2_QUESTIONS_URL)
+    validate.add_argument("--haystack", default=LONGMEMEVAL_V2_SMALL_HAYSTACK_URL)
+    validate.add_argument("--trajectories", required=True)
+    validate.add_argument("--output-dir", type=Path, required=True)
+    validate.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "question-audit":
         result = write_longmemeval_v2_question_audit(
@@ -952,6 +1092,19 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             print(f"wrote selected LongMemEval-V2 trajectories to {args.output_dir}")
+            print(f"report: {result['report_path']}")
+    elif args.command == "validate-prep":
+        result = write_longmemeval_v2_prepared_split_validation(
+            args.split_records,
+            args.questions,
+            args.haystack,
+            args.trajectories,
+            args.output_dir,
+        )
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"wrote LongMemEval-V2 prepared split validation to {args.output_dir}")
             print(f"report: {result['report_path']}")
 
 

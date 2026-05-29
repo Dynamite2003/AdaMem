@@ -149,6 +149,14 @@ PYTHONPATH=src python -m adamem.lme_v2 extract-trajectories \
   --trajectories data/longmemeval-v2/trajectories.jsonl \
   --output-dir data/longmemeval-v2/text_transfer_60 \
   --json
+
+PYTHONPATH=src python -m adamem.lme_v2 validate-prep \
+  --split-records results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl \
+  --questions data/longmemeval-v2/questions.jsonl \
+  --haystack data/longmemeval-v2/haystacks/lme_v2_small.json \
+  --trajectories data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl \
+  --output-dir results/longmemeval_v2_text_transfer_60_validation \
+  --json
 ```
 
 Latest question-side audit:
@@ -184,6 +192,10 @@ Latest text-only transfer split:
   the full `trajectories.jsonl`. It writes sanitized trajectory runtime fields
   only and strips accidental `answer`, `eval_function`, or `question` fields
   before conversion.
+- Prepared-split validation checks that selected questions exist, haystacks are
+  present, required trajectories are covered, trajectory ids are unique, and no
+  selected trajectory record contains `answer`, `eval_function`, or `question`
+  label fields.
 - The split records can drive exact conversion after the trajectory file is
   available:
 

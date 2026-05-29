@@ -2058,3 +2058,24 @@ to a paper-facing claim and evaluation gate.
   - Requested `2`, matched `2`, scanned `3`, completed all requested.
 - Validation:
   - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `9 passed`
+
+### 2026-05-30 LongMemEval-V2 prepared split validation
+
+- Added `adamem.lme_v2 validate-prep`:
+  - Checks that selected split questions exist in `questions.jsonl`.
+  - Checks that every split question has a haystack.
+  - Checks that selected trajectories cover every required haystack trajectory.
+  - Flags duplicate selected trajectory ids.
+  - Treats top-level `answer`, `answers`, `eval_function`, `question`, or
+    `question_id` fields in selected trajectory records as blocking label
+    leakage.
+  - Reports extra selected trajectories and non-runtime extra trajectory fields
+    as warnings.
+- Added tests for valid prepared data, missing question/haystack/trajectory
+  coverage, duplicate ids, label leakage, extra-field warnings, and report
+  writing.
+- Local smoke command:
+  `PYTHONPATH=src python -m adamem.lme_v2 validate-prep --split-records $tmpdir/split.jsonl --questions $tmpdir/questions.jsonl --haystack $tmpdir/haystack.json --trajectories $tmpdir/traj.jsonl --output-dir $tmpdir/out --json`
+  - `valid=true`, `blocking_issue_count=0`, `warning_count=0`.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q` -> `12 passed`
