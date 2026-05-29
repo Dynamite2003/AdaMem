@@ -57,6 +57,25 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 single-run method coverage artifacts
+
+- Added single-experiment method/ablation coverage artifacts to report bundles.
+- Each `write_experiment_bundle` result now includes:
+  - `<run>.method_coverage.json`
+  - `<run>.method_coverage.md`
+  - `manifest["method_coverage"]`
+  - `manifest["artifacts"]["method_coverage_json"]`
+  - `manifest["artifacts"]["method_coverage_markdown"]`
+- Purpose:
+  - Make every real STALE or transfer run self-auditing for paper method
+    coverage.
+  - Show missing raw retrieval references, mainstream memory approximations,
+    proposed state-aware methods, mechanism ablations, named mechanism
+    ablations, and baseline reproduction gaps without requiring a batch
+    directory report.
+  - Keep claim boundaries explicit: coverage artifacts identify experimental
+    design gaps; they do not imply answer accuracy or SOTA.
+
 ### 2026-05-30 day-end handoff
 
 - Current committed implementation is at the paper-workflow stage for

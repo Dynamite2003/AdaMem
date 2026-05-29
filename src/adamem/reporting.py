@@ -124,6 +124,15 @@ def write_experiment_bundle(
     except Exception as exc:  # pragma: no cover - exercised by CLI workflows.
         manifest["table_error"] = f"{type(exc).__name__}: {exc}"
 
+    method_coverage = method_coverage_summary([manifest])
+    method_json = output / f"{stem}.method_coverage.json"
+    method_md = output / f"{stem}.method_coverage.md"
+    method_json.write_text(json.dumps(method_coverage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    method_md.write_text(method_coverage_markdown(method_coverage), encoding="utf-8")
+    manifest["method_coverage"] = method_coverage
+    manifest["artifacts"]["method_coverage_json"] = str(method_json)
+    manifest["artifacts"]["method_coverage_markdown"] = str(method_md)
+
     manifest_path = output / f"{stem}.manifest.json"
     manifest["artifacts"]["manifest"] = str(manifest_path)
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

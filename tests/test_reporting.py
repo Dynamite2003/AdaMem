@@ -41,11 +41,19 @@ def test_write_experiment_bundle_for_answer_generation(tmp_path: Path) -> None:
     assert Path(artifacts["paired_comparison_markdown"]).exists()
     assert Path(artifacts["paired_comparison_json"]).exists()
     assert Path(artifacts["claim_audit_markdown"]).exists()
+    assert Path(artifacts["method_coverage_markdown"]).exists()
+    assert Path(artifacts["method_coverage_json"]).exists()
+    method_coverage = json.loads(Path(artifacts["method_coverage_json"]).read_text(encoding="utf-8"))
+    assert method_coverage["experiment_count"] == 1
+    assert method_coverage["mechanism_flags"]["trajectory_step_readout"] is True
+    assert "raw_retrieval_reference" in method_coverage["missing_requirements"]
     table = Path(artifacts["paper_tables_markdown"]).read_text(encoding="utf-8")
     audit = Path(artifacts["claim_audit_markdown"]).read_text(encoding="utf-8")
+    method_md = Path(artifacts["method_coverage_markdown"]).read_text(encoding="utf-8")
     assert "# Answer Bundle" in table
     assert "| A | trajectory_step_readout | 1/1 | 100.00% |" in table
     assert "`harness_plumbing`" in audit
+    assert "`trajectory_step_readout`: `True`" in method_md
     comparison = Path(artifacts["paired_comparison_markdown"]).read_text(encoding="utf-8")
     assert "## Overall" in comparison
 
@@ -68,6 +76,8 @@ def test_reporting_cli_writes_manifest_json(tmp_path: Path) -> None:
     assert manifest["record_kind"] == "answer_generation"
     assert Path(manifest["artifacts"]["claim_audit_json"]).exists()
     assert Path(manifest["artifacts"]["paired_comparison_json"]).exists()
+    assert Path(manifest["artifacts"]["method_coverage_json"]).exists()
+    assert manifest["method_coverage"]["mechanism_flags"]["trajectory_step_readout"] is True
 
 
 def test_write_experiment_bundle_writes_traceable_failure_case_studies(tmp_path: Path) -> None:
@@ -225,9 +235,11 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     for bundle in manifest["bundles"]:
         assert "claim_evidence" in bundle
         assert "diagnostic_evidence" in bundle
+        assert "method_coverage" in bundle
         assert "warnings" in bundle
         assert "dataset_scope" in bundle
         assert Path(bundle["artifacts"]["paper_tables_markdown"]).exists()
+        assert Path(bundle["artifacts"]["method_coverage_markdown"]).exists()
     matrix = json.loads(Path(manifest["artifacts"]["claim_matrix_json"]).read_text(encoding="utf-8"))
     by_name = {Path(row["experiment"]).name: row for row in matrix}
     assert by_name["lme_v2_prepared.experiment.json"]["state_matching_questions"] == 1
