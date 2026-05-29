@@ -66,7 +66,7 @@ class AdaMem:
             embedding=embedding,
         )
 
-        duplicate = self._nearest_active(embedding)
+        duplicate = self._nearest_active(embedding, metadata)
         if duplicate and cosine(embedding, duplicate.embedding) >= self.config.novelty_threshold:
             duplicate.last_seen_at = utc_now()
             duplicate.importance = max(duplicate.importance, item.importance)
@@ -193,10 +193,14 @@ class AdaMem:
         )
         return clone
 
-    def _nearest_active(self, embedding: dict[str, float]) -> MemoryItem | None:
+    def _nearest_active(self, embedding: dict[str, float], metadata: dict[str, object]) -> MemoryItem | None:
         best: tuple[float, MemoryItem] | None = None
+        new_key = metadata.get("memory_key")
         for item in self.store.all():
             if not item.active:
+                continue
+            existing_key = item.metadata.get("memory_key")
+            if new_key is not None and existing_key is not None and new_key != existing_key:
                 continue
             score = cosine(embedding, item.embedding)
             if best is None or score > best[0]:

@@ -16,6 +16,25 @@ def test_observe_deduplicates_near_identical_memory() -> None:
     assert len(mem.store.all()) == 1
 
 
+def test_observe_preserves_distinct_memory_keys_for_repeated_steps() -> None:
+    mem = AdaMem(config=AdaMemConfig(novelty_threshold=0.9))
+
+    first = mem.observe(
+        "[step017.action] action: right",
+        metadata={"memory_key": "step017.action", "benchmark": "ama", "trajectory_step": 17},
+    )
+    second = mem.observe(
+        "[step018.action] action: right",
+        metadata={"memory_key": "step018.action", "benchmark": "ama", "trajectory_step": 18},
+    )
+
+    assert first.id != second.id
+    assert {item.metadata["memory_key"] for item in mem.store.all()} == {
+        "step017.action",
+        "step018.action",
+    }
+
+
 def test_supersession_hides_stale_fact_by_default() -> None:
     mem = AdaMem()
 

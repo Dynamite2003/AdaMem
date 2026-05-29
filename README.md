@@ -227,8 +227,10 @@ than merely retrieving a semantically similar observation.
 For open-ended trajectory questions, reports also include `Answerability
 Diagnostics`: answer-keyword recall from retrieved context, plus recall after
 adding a deterministic trajectory answer basis derived only from retrieved
-step/action/observation traces. This is an API-free debugging signal, not a
-replacement for LLM answer/judge accuracy.
+step/action/observation traces. The basis can also expose deterministic
+trajectory-state facts such as active rules, blocked actions, repeated
+unchanged observations, and inverse action pairs. This is an API-free debugging
+signal, not a replacement for LLM answer/judge accuracy.
 
 `benchmarks/dynamic_state_transfer.jsonl` is a local non-STALE smoke fixture for
 schedule, task status, preference, health/dietary, resource, workflow/runbook,
@@ -286,7 +288,9 @@ on lexical similarity. On the first five public AMA-Bench samples, this
 improves evidence support from `0/60` for `semantic_only` and `full` to
 `60/60`, while answer-string support remains `0/60`; that result is retrieval
 evidence only, not an answer-accuracy claim. The first answerability diagnostic
-on the same 60 questions shows only a small keyword-recall increase after the
-trajectory basis (`22.73%` to `24.81%`, matched queries `8/60` to `11/60`),
-so stronger state/causal summarization or API-backed answer synthesis is still
-required.
+on the same 60 questions showed only a small keyword-recall increase after the
+simple trajectory basis (`22.73%` to `24.81%`, matched queries `8/60` to
+`11/60`). After adding deterministic rule/blocking/no-progress relations, the
+structured basis reaches `32.25%` average keyword recall and `20/60` matched
+queries. This is a useful API-free signal, but stronger summarization and
+API-backed answer/judge scoring are still required.

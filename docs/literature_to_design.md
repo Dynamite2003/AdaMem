@@ -199,7 +199,8 @@ Current implementation:
 - JSONL reports now include answerability diagnostics: answer-keyword recall
   from retrieved context and from a deterministic trajectory answer basis.
   Gold answers are used only for evaluation; the basis is built from retrieved
-  step/action/observation traces.
+  step/action/observation traces and can include active-rule, blocked-action,
+  no-progress, state-reversion, and inverse-action facts.
 - The converter has been aligned with the public AMA-Bench Hugging Face schema:
   `episode_id`, `turn_idx`, `question_uuid`, and `type`. When no explicit
   evidence field exists, diagnostic evidence labels are inferred from `Step N`
@@ -230,6 +231,12 @@ Required next evidence:
   only from `22.73%` to `24.81%` and matched queries from `8/60` to `11/60`.
   Correct step evidence is necessary but not sufficient for open-ended causal
   trajectory answers.
+- A structured trajectory-state basis is stronger but still not a final answer
+  mechanism. After adding active-rule, blocked-action, and no-progress
+  relations, `trajectory_step_readout` reaches `32.25%` basis keyword recall
+  and `20/60` matched queries on the first five public AMA samples. This
+  supports the direction but still needs larger public runs and LLM judge
+  validation.
 
 ## Baseline Requirements
 

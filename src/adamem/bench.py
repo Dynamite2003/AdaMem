@@ -954,7 +954,133 @@ def _trajectory_basis_relations(steps: dict[int, dict[str, list[str]]]) -> list[
                 lines.append(
                     f"Steps {previous} and {current} have identical observations, indicating state reversion."
                 )
+    lines.extend(_trajectory_state_relations(steps, action_by_step, observation_texts))
     return lines
+
+
+def _trajectory_state_relations(
+    steps: dict[int, dict[str, list[str]]],
+    action_by_step: dict[int, str],
+    observation_texts: dict[int, str],
+) -> list[str]:
+    lines: list[str] = []
+    sorted_steps = sorted(steps)
+    for previous, current in zip(sorted_steps, sorted_steps[1:]):
+        previous_observation = observation_texts.get(previous)
+        current_observation = observation_texts.get(current)
+        current_action = action_by_step.get(current)
+        if previous_observation and current_observation and previous_observation == current_observation:
+            if current_action:
+                lines.append(
+                    f"Step {current} action {current_action} caused no observable state change; it was ineffective."
+                )
+            lines.append(f"Steps {previous}-{current} made no progress because the observation did not change.")
+
+    repeated: list[int] = []
+    for step in sorted_steps:
+        action = action_by_step.get(step)
+        if repeated and action_by_step.get(repeated[-1]) == action:
+            repeated.append(step)
+        else:
+            if len(repeated) >= 2:
+                lines.extend(_repeated_action_relations(repeated, action_by_step, observation_texts))
+            repeated = [step] if action else []
+    if len(repeated) >= 2:
+        lines.extend(_repeated_action_relations(repeated, action_by_step, observation_texts))
+
+    for step in sorted_steps:
+        if not steps[step]["observation"]:
+            continue
+        observation = steps[step]["observation"][0]
+        action = action_by_step.get(step)
+        lines.extend(_rule_object_relations(step, action, observation))
+    return _dedupe_preserve_order(lines)
+
+
+def _repeated_action_relations(
+    repeated_steps: list[int],
+    action_by_step: dict[int, str],
+    observation_texts: dict[int, str],
+) -> list[str]:
+    action = action_by_step.get(repeated_steps[0])
+    if not action:
+        return []
+    normalized = [observation_texts.get(step) for step in repeated_steps]
+    if normalized and all(item and item == normalized[0] for item in normalized):
+        return [
+            f"Steps {repeated_steps[0]}-{repeated_steps[-1]} repeat action {action} with unchanged observations; the action is blocked and makes no progress."
+        ]
+    return [f"Steps {repeated_steps[0]}-{repeated_steps[-1]} repeat action {action}."]
+
+
+def _rule_object_relations(step: int, action: str | None, observation: str) -> list[str]:
+    lines: list[str] = []
+    active_rules = _active_rules(observation)
+    for subject, predicate in active_rules:
+        lines.append(f"Step {step} active rule: {subject} is {predicate}.")
+        if predicate == "stop":
+            lines.append(f"Step {step} rule {subject} is stop makes {subject} objects impassable.")
+        if predicate == "win":
+            lines.append(f"Step {step} rule {subject} is win marks {subject} as a win object.")
+        if predicate == "you":
+            lines.append(f"Step {step} rule {subject} is you means the agent controls {subject}.")
+
+    if action:
+        blocking_object = _adjacent_object_for_action(observation, action)
+        if blocking_object:
+            predicates = [predicate for subject, predicate in active_rules if subject == blocking_object]
+            if "stop" in predicates:
+                lines.append(
+                    f"Step {step} action {action} is blocked by adjacent {blocking_object} due to {blocking_object} is stop."
+                )
+            else:
+                lines.append(f"Step {step} action {action} faces adjacent {blocking_object}.")
+    return lines
+
+
+def _active_rules(observation: str) -> list[tuple[str, str]]:
+    rules: list[tuple[str, str]] = []
+    in_rules = False
+    for raw_line in observation.splitlines():
+        line = raw_line.strip().lower()
+        if not line:
+            continue
+        if line.startswith("active rules"):
+            in_rules = True
+            continue
+        if line.startswith("objects on the map"):
+            break
+        if not in_rules:
+            continue
+        match = re.fullmatch(r"`?([a-z][a-z0-9_-]*)`?\s+is\s+`?([a-z][a-z0-9_-]*)`?", line)
+        if match:
+            rules.append((match.group(1), match.group(2)))
+    return rules
+
+
+def _adjacent_object_for_action(observation: str, action: str) -> str | None:
+    direction = {
+        "up": "up",
+        "down": "down",
+        "left": "left",
+        "right": "right",
+    }.get(action)
+    if not direction:
+        return None
+    pattern = re.compile(
+        rf"^([a-z][a-z0-9_-]*)\s+1\s+steps?\s+to\s+the\s+{direction}$"
+        if direction in {"left", "right"}
+        else rf"^([a-z][a-z0-9_-]*)\s+1\s+steps?\s+{direction}$",
+        flags=re.IGNORECASE,
+    )
+    for raw_line in observation.splitlines():
+        line = raw_line.strip().strip("`").lower()
+        if line.startswith("rule "):
+            continue
+        match = pattern.match(line)
+        if match:
+            return match.group(1)
+    return None
 
 
 def _first_action_word(text: str) -> str | None:
@@ -973,6 +1099,17 @@ def _inverse_actions(left: str, right: str) -> bool:
 
 def _normalize_observation(text: str) -> str:
     return " ".join(_keyword_tokens(text))
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        output.append(item)
+    return output
 
 
 def _metadata_group_value(metadata: dict[str, Any], field_name: str) -> str:

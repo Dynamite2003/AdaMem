@@ -607,6 +607,72 @@ def test_trajectory_answer_basis_marks_inverse_repeated_steps() -> None:
     assert record["basis_answer_keyword_recall"] > record["answer_keyword_recall"]
 
 
+def test_trajectory_answer_basis_extracts_blocked_rule_state() -> None:
+    observation = """Active rules:
+wall is stop
+baba is you
+
+Objects on the map:
+wall 1 step to the right
+rule `wall` 2 step to the left
+rule `stop` 1 step to the left
+"""
+    case = MemoryQACase(
+        id="ama_blocked_basis",
+        observations=[
+            ObservationSpec(
+                label="step017.action",
+                content="[step017.action] action: right",
+                kind="action",
+                metadata={"benchmark": "ama", "trajectory_step": 17, "memory_key": "step017.action"},
+            ),
+            ObservationSpec(
+                label="step017.observation",
+                content=f"[step017.observation] observation: {observation}",
+                kind="observation",
+                cause_labels=["step017.action"],
+                metadata={"benchmark": "ama", "trajectory_step": 17, "memory_key": "step017.observation"},
+            ),
+            ObservationSpec(
+                label="step018.action",
+                content="[step018.action] action: right",
+                kind="action",
+                metadata={"benchmark": "ama", "trajectory_step": 18, "memory_key": "step018.action"},
+            ),
+            ObservationSpec(
+                label="step018.observation",
+                content=f"[step018.observation] observation: {observation}",
+                kind="observation",
+                cause_labels=["step018.action"],
+                metadata={"benchmark": "ama", "trajectory_step": 18, "memory_key": "step018.observation"},
+            ),
+        ],
+        queries=[
+            QuerySpec(
+                id="blocked",
+                query="In steps 17 through 18, the agent repeatedly moves right but nothing changes. Why?",
+                expected_substrings=["wall"],
+                top_k=4,
+                metadata={
+                    "benchmark": "ama",
+                    "evidence": ["step017", "step018"],
+                    "answer": "The right movement is blocked by a wall because wall is stop, so the action makes no progress.",
+                },
+            ),
+        ],
+    )
+
+    results = run_benchmark(cases=[case], configs={
+        "trajectory_step_readout": baseline_registry()["trajectory_step_readout"].config,
+    })
+    record = benchmark_case_records(results)[0]
+
+    assert "rule wall is stop makes wall objects impassable" in record["answer_basis"]
+    assert "action right is blocked by adjacent wall due to wall is stop" in record["answer_basis"]
+    assert "repeat action right with unchanged observations" in record["answer_basis"]
+    assert record["basis_answer_keyword_recall"] > record["answer_keyword_recall"]
+
+
 def test_jsonl_benchmark_experiment_record_shape(tmp_path: Path) -> None:
     cases = load_jsonl_cases(Path("benchmarks/dynamic_state_transfer.jsonl"))[:1]
     specs = baseline_registry()

@@ -1261,3 +1261,48 @@ to a paper-facing claim and evaluation gate.
   - Result: `70 passed`.
   - `git diff --check`
   - Result: clean.
+
+## 2026-05-30 trajectory basis iteration
+
+- Fixed a trajectory-memory identity bug in `AdaMem.observe`:
+  - Near-duplicate memories with distinct `metadata["memory_key"]` are no
+    longer merged by novelty deduplication.
+  - This matters for repeated agent trajectories, where `step017.action:
+    right` and `step018.action: right` are semantically identical but represent
+    different temporal states.
+  - Added a unit test to preserve distinct step memory keys.
+- Extended deterministic AMA answer-basis diagnostics:
+  - Extracts active rules such as `wall is stop`, `key is win`, and `baba is
+    you` from retrieved observations.
+  - Adds derived facts for `stop`/`win`/`you` rules.
+  - Detects adjacent blockers for the current action, e.g. right action blocked
+    by adjacent wall due to `wall is stop`.
+  - Detects repeated same action with unchanged observations as blocked/no
+    progress.
+  - Keeps the basis query-scoped and answer-label-free.
+- Added tests for blocked-rule trajectory summaries:
+  - A `wall is stop` observation plus repeated right actions yields an
+    answer-basis explanation for blocked/no-progress behavior.
+- Re-ran the first five public AMA-Bench answer-mode records:
+  - Command:
+    `PYTHONPATH=src python -m adamem.eval --dataset /tmp/ama_first5.adamem.jsonl --baselines semantic_only full trajectory_step_readout --max-cases 5 --benchmark-report-output /tmp/ama_first5_structured_basis_report.md --experiment-output /tmp/ama_first5_structured_basis_eval.json`
+  - Exact answer-string support remains `0/60` for all baselines.
+  - Evidence support: `semantic_only` `2/60`, `full` `0/60`,
+    `trajectory_step_readout` `60/60`.
+  - Answerability diagnostics:
+    - `semantic_only`: keyword matched `6/60`, average recall `21.28%`,
+      basis matched `8/60`, basis average recall `22.01%`.
+    - `full`: keyword matched `10/60`, average recall `24.62%`, no
+      query-scoped basis records.
+    - `trajectory_step_readout`: keyword matched `10/60`, average recall
+      `25.03%`, basis keyword matched `20/60`, basis average recall `32.25%`.
+  - Interpretation: structured trajectory-state facts are meaningfully more
+    useful than simple step concatenation on this small public smoke subset,
+    but exact answer support remains zero. This supports the trajectory
+    basis direction while keeping the next gate as larger public runs and
+    API-backed answer/judge validation.
+- Re-ran deterministic validation:
+  - `python -m pytest`
+  - Result: `72 passed`.
+  - `git diff --check`
+  - Result: clean.
