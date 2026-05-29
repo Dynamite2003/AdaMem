@@ -609,6 +609,12 @@ def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() ->
     markdown = paper_readiness_markdown(summary)
 
     assert summary["status"] == "answer_candidate_with_model_coverage"
+    assert summary["paper_claim_ready"] is False
+    assert summary["paper_claim_blockers"] == [
+        "sota_candidate_without_sota_gate",
+        "named_mechanism_ablation_coverage",
+        "official_or_faithful_baseline_reproduction",
+    ]
     assert summary["gate_counts"] == {"answer_candidate": 1}
     assert summary["complete_study_model_group_count"] == 1
     assert summary["benchmark_coverage_complete"] is True
@@ -632,9 +638,88 @@ def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() ->
         "count": 1,
     } in summary["top_next_actions"]
     assert "answer_candidate_with_model_coverage" in markdown
+    assert "Paper claim ready: `False`" in markdown
+    assert "## Paper Claim Blockers" in markdown
     assert "Method coverage complete: `True`" in markdown
     assert "SOTA baseline reproduction ready: `False`" in markdown
     assert "## Baseline Reproduction Gaps" in markdown
+
+
+def test_paper_readiness_marks_paper_claim_ready_only_after_full_gates() -> None:
+    claim_rows = claim_matrix_rows([
+        {
+            "experiment": "sota.experiment.json",
+            "run_type": "stale_llm_judge",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "raw_output_count": 12,
+            "supported_claims": ["stale_answer_accuracy_candidate"],
+            "blocked_claims": {},
+            "warnings": [],
+            "claim_evidence": {},
+        }
+    ])
+    study_rows = study_model_coverage_rows([
+        _model_manifest(
+            "stale_complete_a.experiment.json",
+            answer_models=["openai:gpt-4o-mini"],
+            judge_models=["gemini:gemini-2.5-pro"],
+        ),
+        _model_manifest(
+            "stale_complete_b.experiment.json",
+            answer_models=["openai:gpt-5-mini"],
+            judge_models=["openai:gpt-5"],
+        ),
+    ])
+    benchmark_coverage = benchmark_coverage_summary([
+        {
+            "experiment": "stale.experiment.json",
+            "run_type": "stale_llm_judge",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "dataset_scope": {"scope": "benchmark_like", "claim_limited": False},
+        },
+        {
+            "experiment": "ama.experiment.json",
+            "run_type": "ama_public_answerability_pilot",
+            "dataset": "benchmarks/ama_bench.adamem.jsonl",
+            "dataset_scope": {"scope": "benchmark_like", "claim_limited": False},
+        },
+    ])
+    method_coverage = method_coverage_summary([
+        {
+            "experiment": "sota.experiment.json",
+            "baselines": [
+                "semantic_only",
+                "a_mem_evolution",
+                "state_readout",
+                "semantic_state_propagation_adjudication",
+                "semantic_llm_state_premise_correction",
+                "trajectory_step_readout",
+            ],
+            "baseline_provenance": {
+                "a_mem_evolution": {
+                    "category": "mainstream_approximation",
+                    "source_name": "A-MEM",
+                    "source_url": "https://arxiv.org/abs/2502.12110",
+                    "implementation_status": "official_reproduction",
+                    "reproduction_note": "Official A-MEM code path recorded by this experiment.",
+                    "reproduction_target_name": "A-MEM reproduction code",
+                    "reproduction_target_url": "https://github.com/WujiangXu/A-mem",
+                    "reproduction_target_note": "Official target used.",
+                },
+            },
+        }
+    ])
+
+    summary = paper_readiness_summary(
+        claim_rows,
+        study_rows,
+        benchmark_coverage=benchmark_coverage,
+        method_coverage=method_coverage,
+    )
+
+    assert summary["status"] == "sota_candidate_with_model_coverage"
+    assert summary["paper_claim_ready"] is True
+    assert summary["paper_claim_blockers"] == []
 
 
 def test_paper_next_steps_markdown_groups_actions() -> None:

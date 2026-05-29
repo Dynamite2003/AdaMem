@@ -774,7 +774,12 @@ Completed API-free foundations:
   Top-level `paper_readiness.json` and `paper_readiness.md` summarize
   directory-level gate counts, top next actions, complete vs incomplete
   study-level model coverage, benchmark coverage gaps, method coverage gaps,
-  and baseline-reproduction gaps.
+  and baseline-reproduction gaps. They also expose `paper_claim_ready` and
+  `paper_claim_blockers`, a conservative machine-readable gate for whether the
+  current artifact set can support the paper's main empirical claim. A run can
+  be `answer_candidate_with_model_coverage` while still having paper-claim
+  blockers such as missing official/faithful baseline reproduction, missing
+  named mechanism ablations, or incomplete benchmark coverage.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records

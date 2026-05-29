@@ -732,8 +732,16 @@ def paper_readiness_summary(
     complete_studies = [row for row in study_model_rows if row.get("complete")]
     incomplete_studies = [row for row in study_model_rows if not row.get("complete")]
     status = _paper_readiness_status(claim_rows, complete_studies)
+    paper_claim_blockers = _paper_claim_blockers(
+        status,
+        complete_studies,
+        benchmark_coverage=benchmark_coverage,
+        method_coverage=method_coverage,
+    )
     return {
         "status": status,
+        "paper_claim_ready": not paper_claim_blockers,
+        "paper_claim_blockers": paper_claim_blockers,
         "experiment_count": len(claim_rows),
         "gate_counts": gate_counts,
         "action_counts": action_counts,
@@ -773,6 +781,7 @@ def paper_readiness_summary(
 def paper_readiness_markdown(summary: dict[str, Any]) -> str:
     lines = ["# AdaMem Paper Readiness", ""]
     lines.append(f"Status: `{summary.get('status') or '<missing>'}`")
+    lines.append(f"Paper claim ready: `{bool(summary.get('paper_claim_ready'))}`")
     lines.append(f"Experiments: `{int(summary.get('experiment_count') or 0)}`")
     lines.append(
         "Study model groups: "
@@ -796,6 +805,12 @@ def paper_readiness_markdown(summary: dict[str, Any]) -> str:
         lines.append("- None.")
     for item in actions:
         lines.append(f"- `{item['action']}`: `{item['count']}`")
+    blockers = summary.get("paper_claim_blockers") or []
+    if blockers:
+        lines.append("")
+        lines.append("## Paper Claim Blockers")
+        for item in blockers:
+            lines.append(f"- `{item}`")
     incomplete = summary.get("incomplete_study_model_groups") or []
     if incomplete:
         lines.append("")
@@ -1028,6 +1043,35 @@ def _paper_readiness_status(
     if "diagnostic_ready" in gates:
         return "diagnostic_ready"
     return "needs_attention"
+
+
+def _paper_claim_blockers(
+    status: str,
+    complete_studies: list[dict[str, Any]],
+    *,
+    benchmark_coverage: dict[str, Any],
+    method_coverage: dict[str, Any],
+) -> list[str]:
+    blockers: list[str] = []
+    if status in {"no_experiments", "needs_attention"}:
+        blockers.append("attention_ready_experiment_records")
+    if status == "diagnostic_ready":
+        blockers.append("end_to_end_answer_or_stale_answer_evaluation")
+    if status == "answer_candidate_needs_model_coverage":
+        blockers.append("study_level_model_robustness")
+    if status == "answer_candidate_with_model_coverage":
+        blockers.append("sota_candidate_without_sota_gate")
+    if not complete_studies:
+        blockers.append("complete_answer_and_judge_model_group")
+    if not bool(benchmark_coverage.get("complete")):
+        blockers.append("benchmark_coverage_complete")
+    if not bool(method_coverage.get("complete")):
+        blockers.append("method_coverage_complete")
+    if method_coverage.get("missing_named_mechanism_ablations"):
+        blockers.append("named_mechanism_ablation_coverage")
+    if method_coverage.get("baseline_reproduction_gaps"):
+        blockers.append("official_or_faithful_baseline_reproduction")
+    return list(dict.fromkeys(blockers))
 
 
 def _next_action_counts(rows: list[dict[str, Any]]) -> dict[str, int]:

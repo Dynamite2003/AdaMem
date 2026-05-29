@@ -94,10 +94,20 @@ extraction on those true state cases.
   - Benchmark coverage gaps add `add_missing_benchmark_coverage`.
   This prevents batch readiness from hiding official-baseline work when
   individual claim rows are otherwise answer-candidate shaped.
+- Added a conservative paper-claim gate to `paper_readiness`:
+  - `paper_claim_ready`
+  - `paper_claim_blockers`
+- This separates the current artifact stage from whether the artifact set can
+  support the paper's main empirical claim. For example,
+  `answer_candidate_with_model_coverage` remains blocked when SOTA gate,
+  official/faithful baseline reproduction, named mechanism ablations, or
+  benchmark coverage are incomplete.
 - Validation:
   - `PYTHONPATH=src python -m pytest tests/test_experiments.py tests/test_reporting.py tests/test_claims.py tests/test_study_plan.py -q`
     -> `73 passed`
-  - `PYTHONPATH=src python -m pytest -q` -> `208 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q`
+    -> `18 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `209 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
   - CLI report-bundle smoke with a temporary experiment containing
@@ -105,6 +115,10 @@ extraction on those true state cases.
     `baseline_reproduction_plan` item with status
     `needs_official_or_faithful_run` and target
     `https://github.com/WujiangXu/A-mem`.
+  - CLI report-bundle smoke over `results/ama_public_20_light` confirmed
+    `paper_readiness.json` includes `paper_claim_ready=False` plus blockers
+    for end-to-end answer evaluation, model coverage, benchmark coverage,
+    method coverage, and named mechanism ablations.
 
 ### 2026-05-30 single-run method coverage artifacts
 
