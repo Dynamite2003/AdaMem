@@ -248,6 +248,10 @@ Current API-free state-aware baselines:
   readout and query-scoped filtering of raw evidence superseded by the same
   state slot. This isolates stale suppression from global historical evidence
   deletion.
+- `semantic_state_premise_correction`: semantic state adjudication plus an
+  ephemeral read-time correction when a query explicitly mentions a stale value
+  for a routed current-state slot. This isolates Premise Resistance behavior
+  from ordinary current-state readout.
 - `semantic_state_propagation_adjudication`: semantic state adjudication plus
   typed dependency propagation for indirectly invalidated state slots.
 - `state_readout`: deterministic state extraction plus authorized current-state
@@ -474,6 +478,10 @@ Completed API-free foundations:
 - State readout authorization boundary, which keeps derived state records out
   of ordinary direct retrieval unless the query is routed to an authorized
   state slot.
+- State premise correction, which injects an ephemeral current-state correction
+  only when a query mentions an inactive value for the same authorized state
+  slot. This targets STALE Premise Resistance and should be evaluated separately
+  from broader answer-prompt instructions.
 - Semantic-only state-aware ablations, so state mechanisms can be tested
   independently of default full AdaMem scoring.
 - Synthetic tests for State Resolution, Premise Resistance, and Implicit Policy

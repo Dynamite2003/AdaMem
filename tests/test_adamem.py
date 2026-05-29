@@ -415,6 +415,51 @@ def test_state_readout_resists_stale_query_premise() -> None:
     assert "Boston" in with_results[0].item.content
 
 
+def test_state_premise_correction_explicitly_flags_stale_premise() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_premise_correction=True,
+        )
+    )
+    mem.observe("[2026-01-01] user: I just moved into a place in Seattle.")
+    mem.observe("[2026-03-01] user: I relocated to Boston for a new job.")
+
+    results = mem.retrieve("Since I'm in Seattle, recommend a coffee shop near me.", top_k=2)
+
+    assert results[0].item.kind == "state_correction"
+    assert results[0].relation == "state_premise_correction"
+    assert results[0].item.metadata["ephemeral"] is True
+    assert results[0].item.metadata["state_slot"] == "location"
+    assert results[0].item.metadata["stale_value"] == "Seattle"
+    assert results[0].item.metadata["current_value"] == "Boston"
+    assert "Premise correction" in results[0].item.content
+    assert "stale location 'Seattle'" in results[0].item.content
+    assert "current value is 'Boston'" in results[0].item.content
+    assert all(item.kind != "state_correction" for item in mem.store.all())
+
+
+def test_state_premise_correction_does_not_fire_without_stale_value() -> None:
+    mem = _state_isolation_memory(use_state_readout=True)
+    mem.config.use_state_premise_correction = True
+
+    results = mem.retrieve("Any good weekend spots nearby?", top_k=2)
+
+    assert results[0].item.kind == "state"
+    assert all(result.item.kind != "state_correction" for result in results)
+
+
 def test_state_readout_supports_implicit_policy_adaptation_query() -> None:
     without_readout = _state_isolation_memory(use_state_readout=False)
     with_readout = _state_isolation_memory(use_state_readout=True)

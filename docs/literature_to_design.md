@@ -133,7 +133,35 @@ Required next evidence:
   saved in experiment records for reproducibility.
 - Add a no-answer/abstention diagnostic for irrelevant state.
 
-### 4. Propagation-Aware Invalidity
+### 4. Premise-Aware Current-State Correction
+
+Hypothesis:
+
+Premise Resistance needs more than retrieving the current state. When a query
+explicitly presupposes an inactive state value, the memory layer should expose
+that conflict as an authorized correction before answer generation.
+
+Current implementation:
+
+- `use_state_premise_correction` emits an ephemeral `state_correction` result
+  when a routed query mentions a stale value and an active value exists for the
+  same slot.
+- The correction result records `state_slot`, `stale_value`, `current_value`,
+  `source_state_id`, and `stale_state_id`, but is not persisted back into the
+  store.
+- `semantic_state_premise_correction` isolates this mechanism on top of
+  semantic-only state adjudication.
+
+Required next evidence:
+
+- Add STALE diagnostics that count correction opportunities and correction
+  hits separately from current-state recall.
+- Run Premise Resistance cases with real answer/judge models to test whether
+  explicit correction changes final answers rather than only retrieval traces.
+- Compare against prompt-only correction baselines to show the gain comes from
+  the memory readout mechanism.
+
+### 5. Propagation-Aware Invalidity
 
 Hypothesis:
 
@@ -158,7 +186,7 @@ Required next evidence:
   case.
 - Compare direct slot replacement against propagation on STALE T2-style cases.
 
-### 5. Paper-Grade Failure Taxonomy
+### 6. Paper-Grade Failure Taxonomy
 
 Hypothesis:
 
@@ -180,7 +208,7 @@ Required next evidence:
   answer-model, or judge ambiguity.
 - Include representative failures in experiment records.
 
-### 6. Causal Trajectory Evidence
+### 7. Causal Trajectory Evidence
 
 Hypothesis:
 

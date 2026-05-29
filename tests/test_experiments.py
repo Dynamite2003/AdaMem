@@ -31,6 +31,7 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
         "semantic_state_readout",
         "semantic_state_propagation",
         "semantic_state_adjudication",
+        "semantic_state_premise_correction",
         "semantic_state_propagation_adjudication",
         "state_readout",
         "state_propagation",
@@ -45,6 +46,7 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
     assert configs["semantic_state_readout"].use_graph is False
     assert configs["semantic_state_readout"].use_state_readout is True
     assert configs["semantic_state_adjudication"].use_state_source_adjudication is True
+    assert configs["semantic_state_premise_correction"].use_state_premise_correction is True
     assert configs["state_readout"].use_state_memory is True
     assert configs["state_readout"].use_state_readout is True
 

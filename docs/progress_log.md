@@ -1645,3 +1645,36 @@ to a paper-facing claim and evaluation gate.
   - Pilot smoke:
     `PYTHONPATH=src python -m adamem.pilot ama-public --limit 1 --source results/ama_public_20_light/ama_public_20.raw.jsonl --output-dir /tmp/adamem_pilot_smoke --baselines semantic_only full trajectory_step_readout --top-k 8 --answer-only --json`
   - Result: completed locally with `total_seconds=0.3877`.
+
+### 2026-05-30 state premise correction checkpoint
+
+- Added the first explicit Premise Resistance mechanism:
+  `use_state_premise_correction`.
+  - When a routed query mentions an inactive state value and an active value
+    exists for the same slot, AdaMem now emits an ephemeral `state_correction`
+    readout with the stale value, current value, active-state source id, and
+    stale-state id.
+  - The correction result is intentionally not stored back into memory, so it
+    acts as a read-time authorization/correction surface rather than a new
+    durable belief.
+  - This targets the STALE failure mode where a user query presupposes old
+    state, e.g. "Since I am in Seattle..." after the active location has
+    changed to Boston.
+- Added canonical baseline `semantic_state_premise_correction`, which layers
+  the correction mechanism on top of semantic-only state readout plus
+  state-source adjudication.
+- Added focused deterministic tests:
+  - A stale-premise location query surfaces `state_correction` before ordinary
+    state/readout evidence.
+  - A state-sensitive query without an explicit stale value does not create a
+    correction result.
+- Updated `docs/research_workflow.md` and `docs/literature_to_design.md` to
+  define the mechanism, ablation boundary, and required next evidence.
+- Claim boundary: this is currently a mechanism and trace-level improvement
+  only. It does not support an answer-accuracy or SOTA claim until STALE
+  Premise Resistance cases are evaluated with real answer/judge models.
+- Diagnostic caveat: generic substring support checks that penalize forbidden
+  old values are not yet appropriate for this baseline, because the correction
+  readout intentionally names the stale premise before rejecting it. Add
+  correction-opportunity and correction-hit diagnostics before using this
+  baseline in paper tables.

@@ -205,6 +205,21 @@ def baseline_registry() -> dict[str, BaselineSpec]:
             }),
         ),
         BaselineSpec(
+            name="semantic_state_premise_correction",
+            category="state_aware_ablation",
+            description=(
+                "Semantic state adjudication plus explicit ephemeral correction when a query "
+                "mentions a stale value for an authorized current-state slot."
+            ),
+            config=AdaMemConfig(**{
+                **semantic_only,
+                "use_state_memory": True,
+                "use_state_readout": True,
+                "use_state_source_adjudication": True,
+                "use_state_premise_correction": True,
+            }),
+        ),
+        BaselineSpec(
             name="semantic_state_propagation_adjudication",
             category="state_aware_ablation",
             description=(

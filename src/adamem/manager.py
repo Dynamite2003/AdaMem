@@ -117,6 +117,10 @@ class AdaMem:
             for state_result in self._state_readout(query, query_embedding, now=now):
                 candidates[state_result.item.id] = state_result
 
+        if self.config.use_state_premise_correction:
+            for correction_result in self._state_premise_correction_readout(query, query_embedding, now=now):
+                candidates[correction_result.item.id] = correction_result
+
         if self.config.use_temporal_kg_readout:
             for kg_result in self._temporal_kg_readout(query, query_embedding, now=now):
                 candidates[kg_result.item.id] = kg_result
@@ -161,7 +165,8 @@ class AdaMem:
 
         for result in ranked:
             result.item.access_count += 1
-            self.store.upsert(result.item)
+            if result.item.metadata.get("ephemeral") is not True:
+                self.store.upsert(result.item)
         return ranked
 
     def context(self, query: str, *, top_k: int = 6, max_chars: int = 1800) -> str:
@@ -474,6 +479,78 @@ class AdaMem:
             result.score = sum(result.contributions.values())
             results.append(result)
         return results
+
+    def _state_premise_correction_readout(
+        self,
+        query: str,
+        query_embedding: dict[str, float],
+        *,
+        now: str | None,
+    ) -> list[MemoryResult]:
+        relevant_slots = set(query_relevant_state_slots(query))
+        if not relevant_slots:
+            return []
+        query_text = query.lower()
+        corrections: list[MemoryResult] = []
+        active_states = [
+            item for item in self.store.all()
+            if item.active and item.kind == "state"
+        ]
+        stale_states = [
+            item for item in self.store.all()
+            if not item.active and item.kind == "state"
+        ]
+        for stale_state in stale_states:
+            slot = str(stale_state.metadata.get("state_slot") or "")
+            if not state_slot_matches_query(slot, relevant_slots):
+                continue
+            stale_value = str(stale_state.metadata.get("state_value") or "").strip()
+            if not stale_value or not _contains_phrase(query_text, stale_value):
+                continue
+            active_state = next(
+                (
+                    item for item in active_states
+                    if str(item.metadata.get("state_slot") or "") == slot
+                    and str(item.metadata.get("state_value") or "").strip().lower() != stale_value.lower()
+                ),
+                None,
+            )
+            if active_state is None:
+                continue
+            current_value = str(active_state.metadata.get("state_value") or "").strip()
+            correction = MemoryItem(
+                content=(
+                    f"Premise correction: the query mentions stale {slot} "
+                    f"'{stale_value}', but the current value is '{current_value}'.\n"
+                    f"Current state basis: {active_state.content}"
+                ),
+                kind="state_correction",
+                importance=1.0,
+                confidence=active_state.confidence,
+                valid_from=active_state.valid_from,
+                metadata={
+                    "derived": True,
+                    "ephemeral": True,
+                    "state_slot": slot,
+                    "stale_value": stale_value,
+                    "current_value": current_value,
+                    "source_state_id": active_state.id,
+                    "stale_state_id": stale_state.id,
+                },
+                embedding=self.embedder(_embedding_text(
+                    f"{slot} {stale_value} {current_value} premise correction",
+                    {
+                        "state_slot": slot,
+                        "stale_value": stale_value,
+                        "current_value": current_value,
+                    },
+                )),
+            )
+            result = self._score(correction, query_embedding, now=now, relation="state_premise_correction")
+            result.contributions["state_premise_correction"] = self.config.state_premise_correction_boost
+            result.score = sum(result.contributions.values())
+            corrections.append(result)
+        return corrections
 
     def _temporal_kg_readout(
         self,
@@ -984,6 +1061,14 @@ def _query_step_indices(query: str) -> set[int]:
     for match in re.finditer(r"\bstep\s+(\d+)\b", query, flags=re.IGNORECASE):
         steps.add(int(match.group(1)))
     return steps
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    tokens = tokenize(phrase)
+    if not tokens:
+        return False
+    pattern = r"\s+".join(re.escape(token) for token in tokens)
+    return re.search(rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", text) is not None
 
 
 def _append_metadata_value(metadata: dict[str, object], key: str, value: str) -> None:
