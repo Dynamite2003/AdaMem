@@ -2442,3 +2442,32 @@ to a paper-facing claim and evaluation gate.
   - `PYTHONPATH=src python -m pytest -q` -> `152 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+
+### 2026-05-30 batch paper next-step checklist
+
+- Extended batch `adamem.reporting` output with `paper_next_steps.md`.
+- Each claim-matrix row now includes:
+  - `next_actions`
+  - `next_action`
+- The next-action rules map claim audit evidence to API-free or API-required
+  follow-ups:
+  - `fix_claim_audit_warnings`
+  - `rerun_on_public_or_full_benchmark`
+  - `export_case_level_or_raw_records`
+  - `classify_experiment_run_type`
+  - `audit_missing_state_evidence`
+  - `inspect_representative_failure_attributions`
+  - `run_end_to_end_answer_and_judge_eval`
+  - `add_strong_baselines_and_judge_robustness`
+  - `prepare_sota_reproduction_packet`
+  - `defer_sota_until_answer_eval_and_strong_baselines`
+- Purpose:
+  - Turn a result directory into a deterministic tomorrow-morning workflow,
+    so API-enabled evaluation can start from a prioritized evidence checklist
+    rather than manual inspection of individual experiment JSON files.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q` -> `11 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py tests/test_claims.py -q` -> `21 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `153 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues

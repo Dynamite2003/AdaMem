@@ -134,11 +134,14 @@ def write_experiment_bundle_batch(
     claim_matrix = claim_matrix_rows(manifests)
     claim_matrix_json = output / "claim_matrix.json"
     claim_matrix_md = output / "claim_matrix.md"
+    next_steps_md = output / "paper_next_steps.md"
     claim_matrix_json.write_text(json.dumps(claim_matrix, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     claim_matrix_md.write_text(claim_matrix_markdown(claim_matrix), encoding="utf-8")
+    next_steps_md.write_text(paper_next_steps_markdown(claim_matrix), encoding="utf-8")
     batch_manifest["artifacts"] = {
         "claim_matrix_json": str(claim_matrix_json),
         "claim_matrix_markdown": str(claim_matrix_md),
+        "paper_next_steps_markdown": str(next_steps_md),
     }
     manifest_path = output / "batch_manifest.json"
     batch_manifest["manifest"] = str(manifest_path)
@@ -181,6 +184,8 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         gate, reasons = _claim_readiness_gate(row)
         row["readiness_gate"] = gate
         row["readiness_reasons"] = reasons
+        row["next_actions"] = _paper_next_actions(row)
+        row["next_action"] = row["next_actions"][0]
         rows.append(row)
     return rows
 
@@ -189,11 +194,14 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | gate | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs | top attribution |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs | top attribution |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     if not rows:
-        lines.append("| <none> | needs_attention | unknown | <none> | 0 | 0 | 0 | 0/0 | 0.00% | 0 | - |")
+        lines.append(
+            "| <none> | needs_attention | add_experiment_records | unknown | <none> | "
+            "0 | 0 | 0 | 0/0 | 0.00% | 0 | - |"
+        )
         return "\n".join(lines) + "\n"
     for row in rows:
         experiment = Path(str(row.get("experiment") or "<missing>")).name
@@ -201,6 +209,7 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
         matching = int(row.get("state_matching_questions") or 0)
         lines.append(
             f"| {experiment} | {row.get('readiness_gate') or '<missing>'} | "
+            f"{row.get('next_action') or '<missing>'} | "
             f"{row.get('dataset_scope') or 'unknown'} | "
             f"{row.get('run_type') or '<missing>'} | "
             f"{row['supported_claim_count']} | {row['blocked_claim_count']} | "
@@ -208,6 +217,36 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
             f"{float(row.get('state_available_rate') or 0.0):.2%} | "
             f"{row['paired_no_regression_count']} | "
             f"{_format_top_attribution(row)} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def paper_next_steps_markdown(rows: list[dict[str, Any]]) -> str:
+    lines = ["# AdaMem Paper Next Steps", ""]
+    if not rows:
+        lines.append("- `add_experiment_records`: no experiment records were found.")
+        return "\n".join(lines) + "\n"
+
+    action_counts: dict[str, int] = {}
+    for row in rows:
+        for action in row.get("next_actions") or []:
+            key = str(action)
+            action_counts[key] = action_counts.get(key, 0) + 1
+
+    lines.append("## Action Summary")
+    for action, count in sorted(action_counts.items(), key=lambda item: (-item[1], item[0])):
+        lines.append(f"- `{action}`: `{count}`")
+    lines.append("")
+    lines.append("## Experiment Checklist")
+    lines.append("| experiment | gate | actions | reasons |")
+    lines.append("| --- | --- | --- | --- |")
+    for row in rows:
+        experiment = Path(str(row.get("experiment") or "<missing>")).name
+        actions = ", ".join(f"`{action}`" for action in row.get("next_actions") or [])
+        reasons = ", ".join(f"`{reason}`" for reason in row.get("readiness_reasons") or [])
+        lines.append(
+            f"| {experiment} | {row.get('readiness_gate') or '<missing>'} | "
+            f"{actions or '`manual_review`'} | {reasons or '-'} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -254,6 +293,42 @@ def _has_diagnostic_claim(supported: set[str]) -> bool:
         or claim.endswith("_transfer")
         for claim in supported
     )
+
+
+def _paper_next_actions(row: dict[str, Any]) -> list[str]:
+    supported = set(str(claim) for claim in row.get("supported_claims") or [])
+    blocked = set(str(claim) for claim in row.get("blocked_claims") or [])
+    gate = str(row.get("readiness_gate") or "")
+    actions: list[str] = []
+
+    if int(row.get("warning_count") or 0) > 0:
+        actions.append("fix_claim_audit_warnings")
+    if bool(row.get("dataset_claim_limited")):
+        actions.append("rerun_on_public_or_full_benchmark")
+    if int(row.get("raw_output_count") or 0) == 0:
+        actions.append("export_case_level_or_raw_records")
+    if "unclassified_experiment" in supported:
+        actions.append("classify_experiment_run_type")
+
+    if int(row.get("state_expected_questions") or 0) > int(row.get("state_matching_questions") or 0):
+        actions.append("audit_missing_state_evidence")
+    if int(row.get("failure_attribution_count") or 0) > 0:
+        actions.append("inspect_representative_failure_attributions")
+
+    if _has_diagnostic_claim(supported) and (
+        "answer_accuracy" in blocked or "stale_answer_accuracy" in blocked
+    ):
+        actions.append("run_end_to_end_answer_and_judge_eval")
+    if gate == "answer_candidate":
+        actions.append("add_strong_baselines_and_judge_robustness")
+    elif gate == "sota_candidate":
+        actions.append("prepare_sota_reproduction_packet")
+    elif gate == "diagnostic_ready" and "sota" in blocked:
+        actions.append("defer_sota_until_answer_eval_and_strong_baselines")
+
+    if not actions:
+        actions.append("manual_review")
+    return list(dict.fromkeys(actions))
 
 
 def _diagnostic_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:

@@ -3,7 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from adamem.reporting import claim_matrix_markdown, claim_matrix_rows, main, write_experiment_bundle, write_experiment_bundle_batch
+from adamem.reporting import (
+    claim_matrix_markdown,
+    claim_matrix_rows,
+    main,
+    paper_next_steps_markdown,
+    write_experiment_bundle,
+    write_experiment_bundle_batch,
+)
 
 
 def test_write_experiment_bundle_for_answer_generation(tmp_path: Path) -> None:
@@ -112,6 +119,7 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     assert Path(manifest["manifest"]).exists()
     assert Path(manifest["artifacts"]["claim_matrix_json"]).exists()
     assert Path(manifest["artifacts"]["claim_matrix_markdown"]).exists()
+    assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()
     assert len(manifest["bundles"]) == 3
     for bundle in manifest["bundles"]:
         assert "claim_evidence" in bundle
@@ -125,6 +133,8 @@ def test_write_experiment_bundle_batch(tmp_path: Path) -> None:
     assert by_name["lme_v2_prepared.experiment.json"]["state_available_rate"] == 1.0
     assert by_name["lme_v2_prepared.experiment.json"]["readiness_gate"] == "diagnostic_ready"
     assert "answer_accuracy_blocked" in by_name["lme_v2_prepared.experiment.json"]["readiness_reasons"]
+    next_steps = Path(manifest["artifacts"]["paper_next_steps_markdown"]).read_text(encoding="utf-8")
+    assert "`run_end_to_end_answer_and_judge_eval`" in next_steps
 
 
 def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
@@ -144,6 +154,7 @@ def test_reporting_cli_accepts_directory_input(tmp_path: Path) -> None:
     assert manifest["experiment_count"] == 1
     assert manifest["bundles"][0]["record_kind"] == "answer_generation"
     assert Path(manifest["artifacts"]["claim_matrix_markdown"]).exists()
+    assert Path(manifest["artifacts"]["paper_next_steps_markdown"]).exists()
 
 
 def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
@@ -198,11 +209,46 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
             "diagnostic_or_mechanism_claim_only",
             "answer_accuracy_blocked",
         ],
+        "next_actions": [
+            "audit_missing_state_evidence",
+            "run_end_to_end_answer_and_judge_eval",
+        ],
+        "next_action": "audit_missing_state_evidence",
     }]
     assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
-    assert "| experiment | gate | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs | top attribution |" in markdown
+    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | no-reg pairs | top attribution |" in markdown
+
+
+def test_paper_next_steps_markdown_groups_actions() -> None:
+    rows = claim_matrix_rows([
+        {
+            "experiment": "stale_diag.experiment.json",
+            "run_type": "stale_retrieval_diagnostics",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "raw_output_count": 12,
+            "supported_claims": ["stale_retrieval_diagnostics"],
+            "blocked_claims": {
+                "stale_answer_accuracy": ["no answer generation"],
+                "sota": ["retrieval diagnostics cannot establish SOTA"],
+            },
+            "warnings": [],
+            "claim_evidence": {},
+            "diagnostic_evidence": {
+                "failure_attributions": {"ranking_failure": 3},
+            },
+        }
+    ])
+    markdown = paper_next_steps_markdown(rows)
+
+    assert rows[0]["next_actions"] == [
+        "inspect_representative_failure_attributions",
+        "run_end_to_end_answer_and_judge_eval",
+        "defer_sota_until_answer_eval_and_strong_baselines",
+    ]
+    assert "`inspect_representative_failure_attributions`: `1`" in markdown
+    assert "stale_diag.experiment.json" in markdown
 
 
 def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
@@ -244,11 +290,19 @@ def test_claim_matrix_marks_answer_candidate_and_attention_gates() -> None:
     assert by_name["answer.experiment.json"]["readiness_reasons"] == [
         "answer_accuracy_candidate_but_sota_blocked"
     ]
+    assert by_name["answer.experiment.json"]["next_action"] == (
+        "add_strong_baselines_and_judge_robustness"
+    )
     assert by_name["bad.experiment.json"]["readiness_gate"] == "needs_attention"
     assert by_name["bad.experiment.json"]["readiness_reasons"] == [
         "claim_audit_warnings_present",
         "no_case_level_or_raw_records",
         "unclassified_experiment",
+    ]
+    assert by_name["bad.experiment.json"]["next_actions"] == [
+        "fix_claim_audit_warnings",
+        "export_case_level_or_raw_records",
+        "classify_experiment_run_type",
     ]
     assert by_name["failure_analysis.experiment.json"]["readiness_gate"] == "diagnostic_ready"
 

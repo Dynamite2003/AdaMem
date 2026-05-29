@@ -661,7 +661,12 @@ Completed API-free foundations:
   `answer_candidate`, `sota_candidate`, or `needs_attention`, plus explicit
   reasons so paper scripts can filter results without parsing prose. Mechanism
   error-analysis claims count as diagnostic-ready only when the usual scope,
-  warning, and raw-record gates pass.
+  warning, and raw-record gates pass. Batch mode also writes
+  `paper_next_steps.md`, a deterministic action checklist that maps each
+  experiment to the next evidence step, such as rerunning on a public/full
+  benchmark, exporting case-level records, inspecting representative failure
+  attributions, running end-to-end answer/judge evaluation, or adding strong
+  baselines and judge robustness.
 - `adamem.compare`, a paired baseline comparison command for retrieval,
   answer-generation, and STALE judge records. Report bundles include its
   Markdown/JSON artifacts so paper tables can report gained/lost/net records
