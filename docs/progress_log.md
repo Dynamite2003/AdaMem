@@ -1875,3 +1875,31 @@ to a paper-facing claim and evaluation gate.
   - `python -m pytest -q` -> `119 passed`
   - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_state_adjudication semantic_state_premise_correction`
     kept both baselines at `7/7`.
+
+### 2026-05-30 unknown-current diagnostics and fixture
+
+- Added `benchmarks/unknown_current_state_transfer.jsonl` as a deterministic
+  local fixture for invalidated-without-replacement state:
+  - Old state: user moved to Seattle.
+  - New evidence: user no longer lives in Seattle.
+  - Queries cover State Resolution and Premise Resistance.
+- Hardened JSONL benchmark accounting:
+  - Unknown-current state traces are treated as resolved invalidated-value
+    mentions rather than ordinary forbidden stale support.
+  - `state_correction` traces now count as state-layer readout for
+    state-slot match and missing-readout diagnostics.
+  - Failure summaries now include an `unknown_current` aggregate and Markdown
+    `Unknown-Current State` section.
+  - `paper_metrics` now includes `unknown_current_rate` and
+    `unknown_current_correction_rate`.
+- Fixture run:
+  `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/unknown_current_state_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_premise_correction --benchmark-report-output /tmp/unknown_current_report.md --experiment-output /tmp/unknown_current_experiment.json`
+  - `semantic_only`: `0/2`
+  - `semantic_state_adjudication`: `2/2`
+  - `semantic_state_premise_correction`: `2/2`
+  - Unknown-current section: adjudication exposed `2` unknown-current records;
+    premise-correction exposed `1` unknown-current state record and `1`
+    unknown-current correction; both resolved `2` invalidated-value mentions
+    with `0` unresolved invalidated values.
+- Added test coverage:
+  - `test_unknown_current_transfer_fixture_favors_state_authority`

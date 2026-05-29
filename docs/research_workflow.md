@@ -33,6 +33,7 @@ PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/tiny_memory_qa.jsonl
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl
+PYTHONPATH=src python -m adamem.eval --dataset benchmarks/unknown_current_state_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_premise_correction
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 1 --experiment-output results/dynamic_state_transfer_smoke.json
 PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json benchmarks/longmemeval_s.adamem.jsonl
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/longmemeval_s.adamem.jsonl --baselines semantic_only semantic_state_readout semantic_state_propagation full state_readout state_propagation --max-cases 20 --experiment-output results/longmemeval_transfer_pilot.json
@@ -257,6 +258,8 @@ Current API-free state-aware baselines:
   `unknown_current` slot when new evidence invalidates an old value without
   providing a replacement. This prevents the memory layer from continuing to
   authorize stale values or hallucinating a new current value.
+  JSONL diagnostics report unknown-current records, corrections, and resolved
+  invalidated values separately from unresolved stale evidence.
 - `semantic_state_propagation_adjudication`: semantic state adjudication plus
   typed dependency propagation for indirectly invalidated state slots.
 - `state_readout`: deterministic state extraction plus authorized current-state

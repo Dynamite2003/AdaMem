@@ -863,20 +863,80 @@ def test_jsonl_benchmark_supports_unknown_current_state_correction() -> None:
     results = run_benchmark(
         [case],
         {
+            "semantic_state_adjudication": baseline_registry()["semantic_state_adjudication"].config,
             "semantic_state_premise_correction": (
                 baseline_registry()["semantic_state_premise_correction"].config
             ),
         },
     )
     records = benchmark_case_records(results)
-    record = records[0]
+    summary = benchmark_failure_summary(records)
+    report = benchmark_failure_report(records)
+    by_baseline = {record["baseline"]: record for record in records}
+    adjudication = by_baseline["semantic_state_adjudication"]
+    correction = by_baseline["semantic_state_premise_correction"]
 
-    assert results[0].passed == 1
-    assert record["premise_correction_count"] == 1
-    assert record["corrected_forbidden"] == ["Seattle"]
-    assert record["present_forbidden"] == []
-    assert record["trace"][0]["metadata"]["current_value"] == "unknown-current"
-    assert "current value is unknown" in record["trace"][0]["content"]
+    assert all(result.passed == 1 for result in results)
+    assert adjudication["premise_correction_count"] == 0
+    assert adjudication["corrected_forbidden"] == ["Seattle"]
+    assert adjudication["present_forbidden"] == []
+    assert adjudication["trace"][0]["metadata"]["state_status"] == "unknown_current"
+    assert correction["premise_correction_count"] == 1
+    assert correction["corrected_forbidden"] == ["Seattle"]
+    assert correction["present_forbidden"] == []
+    assert correction["trace"][0]["metadata"]["current_value"] == "unknown-current"
+    assert "current value is unknown" in correction["trace"][0]["content"]
+    assert summary["unknown_current"]["semantic_state_adjudication"]["unknown_current_records"] == 1
+    assert summary["unknown_current"]["semantic_state_premise_correction"]["unknown_current_records"] == 0
+    assert (
+        summary["unknown_current"]["semantic_state_premise_correction"][
+            "unknown_current_correction_records"
+        ]
+        == 1
+    )
+    assert (
+        summary["unknown_current"]["semantic_state_premise_correction"][
+            "resolved_invalidated_value_records"
+        ]
+        == 1
+    )
+    assert "## Unknown-Current State" in report
+
+
+def test_unknown_current_transfer_fixture_favors_state_authority() -> None:
+    cases = load_jsonl_cases(Path("benchmarks/unknown_current_state_transfer.jsonl"))
+    results = run_benchmark(
+        cases,
+        {
+            name: baseline_registry()[name].config
+            for name in (
+                "semantic_only",
+                "semantic_state_adjudication",
+                "semantic_state_premise_correction",
+            )
+        },
+    )
+    records = benchmark_case_records(results)
+    summary = benchmark_failure_summary(records)
+    by_baseline = {result.name: result for result in results}
+
+    assert by_baseline["semantic_only"].passed == 0
+    assert by_baseline["semantic_state_adjudication"].passed == 2
+    assert by_baseline["semantic_state_premise_correction"].passed == 2
+    assert summary["unknown_current"]["semantic_state_adjudication"]["unknown_current_records"] == 2
+    assert (
+        summary["unknown_current"]["semantic_state_premise_correction"][
+            "unknown_current_correction_records"
+        ]
+        == 1
+    )
+    assert (
+        summary["unknown_current"]["semantic_state_premise_correction"][
+            "resolved_invalidated_value_records"
+        ]
+        == 2
+    )
+    assert summary["pairwise_vs_first_baseline"]["semantic_state_adjudication"]["gained_passes"] == 2
 
 
 def test_jsonl_records_expose_state_pollution_metrics() -> None:

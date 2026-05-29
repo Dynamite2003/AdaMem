@@ -138,6 +138,7 @@ def benchmark_failure_summary(
         "failure_modes": {},
         "by_metadata": {},
         "state_readout_exposure": {},
+        "unknown_current": {},
         "premise_correction": {},
         "evidence_support": {},
         "answerability": {},
@@ -150,6 +151,7 @@ def benchmark_failure_summary(
         subset = [record for record in records if record["baseline"] == baseline]
         summary["by_baseline"][baseline] = _aggregate_records(subset)
         summary["state_readout_exposure"][baseline] = _state_exposure_aggregate(subset)
+        summary["unknown_current"][baseline] = _unknown_current_aggregate(subset)
         summary["premise_correction"][baseline] = _premise_correction_aggregate(subset)
         summary["evidence_support"][baseline] = _evidence_support_aggregate(subset)
         summary["answerability"][baseline] = _answerability_aggregate(subset)
@@ -235,10 +237,12 @@ def benchmark_failure_report(
         lines.append(
             "| baseline | support | accuracy | net vs reference | state slot match | "
             "state missing | slot mismatch | evidence support | graph evidence hit | "
-            "answer keyword recall | basis keyword recall | unmarked state exposure |"
+            "answer keyword recall | basis keyword recall | unmarked state exposure | "
+            "unknown-current | unknown-current correction |"
         )
         lines.append(
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+            "---: | ---: |"
         )
         for baseline, metrics in paper_metrics.items():
             lines.append(
@@ -251,7 +255,9 @@ def benchmark_failure_report(
                 f"{_format_optional_rate(metrics['graph_evidence_hit_rate'])} | "
                 f"{_format_optional_rate(metrics['answer_keyword_recall_avg'])} | "
                 f"{_format_optional_rate(metrics['basis_answer_keyword_recall_avg'])} | "
-                f"{_format_optional_rate(metrics['unmarked_state_exposure_rate'])} |"
+                f"{_format_optional_rate(metrics['unmarked_state_exposure_rate'])} | "
+                f"{_format_optional_rate(metrics['unknown_current_rate'])} | "
+                f"{_format_optional_rate(metrics['unknown_current_correction_rate'])} |"
             )
         lines.append("")
 
@@ -292,6 +298,24 @@ def benchmark_failure_report(
                 f"{aggregate['correction_items']} | "
                 f"{aggregate['corrected_forbidden_records']} | "
                 f"{aggregate['unresolved_forbidden_records']} |"
+            )
+        lines.append("")
+
+    unknown_current = summary.get("unknown_current", {})
+    if unknown_current:
+        lines.append("## Unknown-Current State")
+        lines.append(
+            "| baseline | queries | unknown-current records | unknown-current corrections | "
+            "resolved invalidated values | unresolved invalidated values |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+        for baseline, aggregate in unknown_current.items():
+            lines.append(
+                f"| {baseline} | {aggregate['total']} | "
+                f"{aggregate['unknown_current_records']} | "
+                f"{aggregate['unknown_current_correction_records']} | "
+                f"{aggregate['resolved_invalidated_value_records']} | "
+                f"{aggregate['unresolved_invalidated_value_records']} |"
             )
         lines.append("")
 
@@ -427,14 +451,10 @@ def _run_query(case_id: str, mem: AdaMem, query: QuerySpec) -> QueryEvalResult:
         for result in results
     ]
     text = "\n".join(retrieved).lower()
-    non_correction_text = "\n".join(
-        str(item.get("content") or "")
-        for item in trace
-        if not _is_premise_correction_trace(item)
-    ).lower()
+    unresolved_forbidden_text = _unresolved_forbidden_text(trace)
     has_expected = all(expected.lower() in text for expected in query.expected_substrings)
     has_forbidden = any(
-        forbidden.lower() in non_correction_text
+        forbidden.lower() in unresolved_forbidden_text
         for forbidden in query.forbidden_substrings
     )
     return QueryEvalResult(
@@ -454,11 +474,8 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
     text = "\n".join(query.retrieved).lower()
     correction_items = [item for item in query.trace if _is_premise_correction_trace(item)]
     correction_text = "\n".join(str(item.get("content") or "") for item in correction_items).lower()
-    non_correction_text = "\n".join(
-        str(item.get("content") or "")
-        for item in query.trace
-        if not _is_premise_correction_trace(item)
-    ).lower()
+    resolved_unknown_current_text = _resolved_unknown_current_text(query.trace)
+    unresolved_forbidden_text = _unresolved_forbidden_text(query.trace)
     missing_expected = [
         expected for expected in query.expected_substrings if expected.lower() not in text
     ]
@@ -492,11 +509,15 @@ def _query_record(baseline: str, query: QueryEvalResult) -> dict[str, Any]:
     ]
     present_forbidden = [
         forbidden for forbidden in query.forbidden_substrings
-        if forbidden.lower() in non_correction_text
+        if forbidden.lower() in unresolved_forbidden_text
     ]
     corrected_forbidden = [
         forbidden for forbidden in query.forbidden_substrings
-        if forbidden.lower() in correction_text and forbidden.lower() not in non_correction_text
+        if (
+            forbidden.lower() in correction_text
+            or forbidden.lower() in resolved_unknown_current_text
+        )
+        and forbidden.lower() not in unresolved_forbidden_text
     ]
     state_retrieval_count = _state_trace_count(query.trace)
     retrieved_state_slots = _state_trace_slots(query.trace)
@@ -651,6 +672,31 @@ def _premise_correction_aggregate(records: list[dict[str, Any]]) -> dict[str, An
     }
 
 
+def _unknown_current_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(records)
+    unknown_records = sum(1 for record in records if _record_has_unknown_current_state(record))
+    correction_records = sum(
+        1 for record in records if _record_has_unknown_current_correction(record)
+    )
+    resolved_records = sum(
+        1 for record in records
+        if record.get("corrected_forbidden") and _record_has_unknown_current_evidence(record)
+    )
+    unresolved_records = sum(
+        1 for record in records
+        if record.get("present_forbidden") and _record_has_unknown_current_evidence(record)
+    )
+    return {
+        "total": total,
+        "unknown_current_records": unknown_records,
+        "unknown_current_rate": unknown_records / total if total else 0.0,
+        "unknown_current_correction_records": correction_records,
+        "unknown_current_correction_rate": correction_records / total if total else 0.0,
+        "resolved_invalidated_value_records": resolved_records,
+        "unresolved_invalidated_value_records": unresolved_records,
+    }
+
+
 def _evidence_support_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     evidence_records = [record for record in records if record["expected_evidence"]]
     return {
@@ -731,6 +777,7 @@ def _paper_metrics_for_baseline(
     support = summary["by_baseline"][baseline]
     exposure = summary["state_readout_exposure"][baseline]
     correction = summary["premise_correction"][baseline]
+    unknown_current = summary["unknown_current"][baseline]
     evidence = summary["evidence_support"][baseline]
     answerability = summary["answerability"][baseline]
     pairwise = summary.get("pairwise_vs_first_baseline", {})
@@ -766,6 +813,8 @@ def _paper_metrics_for_baseline(
         "premise_correction_rate": correction["correction_rate"],
         "corrected_forbidden_rate": correction["corrected_forbidden_rate"],
         "unresolved_forbidden_rate": correction["unresolved_forbidden_rate"],
+        "unknown_current_rate": unknown_current["unknown_current_rate"],
+        "unknown_current_correction_rate": unknown_current["unknown_current_correction_rate"],
     }
 
 
@@ -829,8 +878,62 @@ def _state_trace_slots(trace: list[dict[str, Any]]) -> list[str]:
     return slots
 
 
+def _unresolved_forbidden_text(trace: list[dict[str, Any]]) -> str:
+    """Text where forbidden substrings still indicate stale support.
+
+    Correction traces and unknown-current state traces may mention old values
+    to explicitly invalidate them, so those mentions are resolved rather than
+    evidence that the stale value was retrieved as current support.
+    """
+
+    return "\n".join(
+        str(item.get("content") or "")
+        for item in trace
+        if not _is_premise_correction_trace(item)
+        and not _is_unknown_current_state_trace(item)
+    ).lower()
+
+
+def _resolved_unknown_current_text(trace: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        str(item.get("content") or "")
+        for item in trace
+        if _is_unknown_current_state_trace(item)
+    ).lower()
+
+
+def _record_has_unknown_current_state(record: dict[str, Any]) -> bool:
+    return any(_is_unknown_current_state_trace(item) for item in record.get("trace") or [])
+
+
+def _record_has_unknown_current_correction(record: dict[str, Any]) -> bool:
+    for item in record.get("trace") or []:
+        if not _is_premise_correction_trace(item):
+            continue
+        metadata = item.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("current_value") == "unknown-current":
+            return True
+    return False
+
+
+def _record_has_unknown_current_evidence(record: dict[str, Any]) -> bool:
+    return (
+        _record_has_unknown_current_state(record)
+        or _record_has_unknown_current_correction(record)
+    )
+
+
+def _is_unknown_current_state_trace(item: dict[str, Any]) -> bool:
+    metadata = item.get("metadata")
+    return (
+        item.get("kind") in {"state", "kg_fact", "salient_fact"}
+        and isinstance(metadata, dict)
+        and metadata.get("state_status") == "unknown_current"
+    )
+
+
 def _trace_is_state(item: dict[str, Any]) -> bool:
-    if item.get("kind") in {"state", "kg_fact", "salient_fact"}:
+    if item.get("kind") in {"state", "state_correction", "kg_fact", "salient_fact"}:
         return True
     contributions = item.get("contributions")
     return isinstance(contributions, dict) and "state_readout" in contributions
