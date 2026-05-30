@@ -33,6 +33,7 @@ PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --jso
 PYTHONPATH=src python -m adamem.cli demo --all-queries --json
 PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output results/adamem_state_demo.html
 PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --html-output results/adamem_state_demo_paper.html
+PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --bundle-output results/adamem_state_demo_bundle
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json
@@ -93,6 +94,10 @@ Outputs:
   state-adjudication trace baselines with provenance labels. These mainstream
   entries remain API-free approximations unless replaced by official or
   faithful reproductions.
+- Use `--bundle-output` when handing off a demo artifact. It writes
+  `index.html`, `demo_payload.json`, and `demo_manifest.json`; the manifest
+  records payload hash, command, commit, blocked claims, baseline profile, and
+  artifact paths.
 - Baseline synthetic/JSONL tables.
 - Baseline reproduction plan artifacts:
   `baseline_reproduction_plan.json` and

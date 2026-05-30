@@ -65,6 +65,8 @@ extraction on those true state cases.
   `PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output results/adamem_state_demo.html`.
 - Added
   `PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --html-output results/adamem_state_demo_paper.html`.
+- Added
+  `PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --bundle-output results/adamem_state_demo_bundle`.
 - Purpose:
   - Give the project a fast, API-free inspection workflow before tomorrow's
     key-enabled runs.
@@ -93,6 +95,10 @@ extraction on those true state cases.
     `reproduction_note`.
   - Artifact provenance records `created_at`, current git `commit`, generating
     `command`, and a SHA-256 hash of the demo payload before artifact attachment.
+  - `--bundle-output` writes a handoff directory with `index.html`,
+    `demo_payload.json`, and `demo_manifest.json`; the manifest records
+    artifact paths, payload hash, command, commit, baseline profile, summary,
+    and blocked claims.
   - In `--all-queries` mode, an aggregate per-baseline summary with pass counts,
     failed query ids, surfaced state slots, and `state_adjudication` trace
     counts.
@@ -105,7 +111,7 @@ extraction on those true state cases.
   - Source-label trace for the authorized current state and the suppressed old
     raw evidence, without copying the stale value into the adjudication notice.
 - Validation:
-  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `6 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `7 passed`
   - `PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json`
     -> both demo baselines passed the retrieval-support check; the trace
     baseline surfaced a `state_adjudication` notice with `new_runtime` as the
@@ -127,6 +133,10 @@ extraction on those true state cases.
     -> emitted `adamem.demo_provenance.v1` with a 64-character payload hash,
     git commit, and command provenance. Generated HTML contains the artifact
     provenance renderer and embedded provenance JSON.
+  - `PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --bundle-output /tmp/adamem_demo_bundle --json`
+    -> wrote `index.html`, `demo_payload.json`, and `demo_manifest.json`; the
+    manifest schema is `adamem.demo_bundle.v1` and its payload hash matches the
+    payload provenance hash.
   - Browser automation was attempted for the static HTML artifact, but this
     environment does not have the `playwright` Node module installed; keep a
     screenshot-level browser check as the next demo-polish step.

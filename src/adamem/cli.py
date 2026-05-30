@@ -5,6 +5,7 @@ import hashlib
 import json
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from adamem.baselines import baseline_registry
@@ -68,6 +69,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     demo.add_argument("--json", action="store_true", help="Emit a machine-readable demo artifact")
     demo.add_argument("--html-output", help="Write a self-contained interactive HTML demo")
+    demo.add_argument("--bundle-output", help="Write a demo bundle directory with HTML, payload JSON, and manifest")
 
     args = parser.parse_args(argv)
     command = ["adamem", *(argv or sys.argv[1:])]
@@ -94,11 +96,17 @@ def main(argv: list[str] | None = None) -> None:
         except ValueError as exc:
             parser.error(str(exc))
         _attach_demo_provenance(payload, command=command)
+        if args.bundle_output:
+            bundle = _write_demo_bundle(payload, args.bundle_output)
+            payload.setdefault("artifacts", {}).update(bundle["artifacts"])
+            payload["bundle_manifest"] = bundle
         if args.html_output:
             html_path = write_demo_html(payload, args.html_output)
             payload.setdefault("artifacts", {})["html"] = str(html_path)
         if args.json:
             print(json.dumps(payload, indent=2, sort_keys=True))
+        elif args.bundle_output:
+            print(f"wrote demo bundle: {payload['artifacts']['bundle_manifest']}")
         elif args.html_output:
             print(f"wrote HTML demo: {payload['artifacts']['html']}")
         else:
@@ -289,6 +297,56 @@ def _attach_demo_provenance(payload: dict[str, Any], *, command: list[str]) -> N
 def _demo_payload_hash(payload: dict[str, Any]) -> str:
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _write_demo_bundle(payload: dict[str, Any], output_dir: str | Path) -> dict[str, Any]:
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    html_path = output / "index.html"
+    payload_path = output / "demo_payload.json"
+    manifest_path = output / "demo_manifest.json"
+    artifacts = {
+        "html": str(html_path),
+        "payload_json": str(payload_path),
+        "bundle_manifest": str(manifest_path),
+    }
+    payload.setdefault("artifacts", {}).update(artifacts)
+    write_demo_html(payload, html_path)
+    payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest = _demo_bundle_manifest(payload, output_dir=output, artifacts=artifacts)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest
+
+
+def _demo_bundle_manifest(
+    payload: dict[str, Any],
+    *,
+    output_dir: Path,
+    artifacts: dict[str, str],
+) -> dict[str, Any]:
+    provenance = payload.get("provenance") or {}
+    evidence_boundary = payload.get("evidence_boundary") or {}
+    summary = payload.get("summary") or {}
+    return {
+        "schema_version": "adamem.demo_bundle.v1",
+        "output_dir": str(output_dir),
+        "created_at": provenance.get("created_at"),
+        "commit": provenance.get("commit"),
+        "command": provenance.get("command") or [],
+        "payload_sha256": provenance.get("payload_sha256"),
+        "payload_hash_algorithm": provenance.get("payload_hash_algorithm"),
+        "payload_hash_scope": provenance.get("payload_hash_scope"),
+        "dataset": payload.get("dataset"),
+        "case_id": payload.get("case_id"),
+        "mode": payload.get("mode"),
+        "baseline_profile": payload.get("baseline_profile"),
+        "baseline_names": payload.get("baseline_names") or [],
+        "query_count": payload.get("query_count", 1),
+        "summary": summary,
+        "claim_boundary": payload.get("claim_boundary"),
+        "blocked_claims": evidence_boundary.get("blocked_claims") or {},
+        "artifacts": artifacts,
+    }
 
 
 def _select_case(cases: list[MemoryQACase], case_id: str) -> MemoryQACase:

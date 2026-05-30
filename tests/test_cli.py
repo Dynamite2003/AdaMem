@@ -171,3 +171,39 @@ def test_demo_paper_profile_html_includes_baseline_sources(tmp_path: Path, capsy
     assert "Zep/Graphiti" in html
     assert "Mem0" in html
     assert "api_free_approximation" in html
+
+
+def test_demo_bundle_writes_manifest_payload_and_html(tmp_path: Path, capsys) -> None:
+    output = tmp_path / "bundle"
+
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--bundle-output",
+        str(output),
+        "--json",
+    ])
+
+    payload = json.loads(capsys.readouterr().out)
+    manifest = payload["bundle_manifest"]
+    assert manifest["schema_version"] == "adamem.demo_bundle.v1"
+    assert manifest["payload_sha256"] == payload["provenance"]["payload_sha256"]
+    assert manifest["blocked_claims"]["answer_accuracy"]
+    assert manifest["baseline_profile"] == "paper"
+    assert manifest["query_count"] == 9
+
+    html_path = Path(manifest["artifacts"]["html"])
+    payload_path = Path(manifest["artifacts"]["payload_json"])
+    manifest_path = Path(manifest["artifacts"]["bundle_manifest"])
+    assert html_path.exists()
+    assert payload_path.exists()
+    assert manifest_path.exists()
+    assert json.loads(payload_path.read_text(encoding="utf-8"))["provenance"]["payload_sha256"] == (
+        manifest["payload_sha256"]
+    )
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == manifest
+    assert "Artifact Provenance" in html_path.read_text(encoding="utf-8")
