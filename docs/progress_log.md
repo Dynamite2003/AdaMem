@@ -91,6 +91,8 @@ extraction on those true state cases.
   - Each baseline payload includes source/provenance fields such as
     `source_name`, `source_url`, `implementation_status`, and
     `reproduction_note`.
+  - Artifact provenance records `created_at`, current git `commit`, generating
+    `command`, and a SHA-256 hash of the demo payload before artifact attachment.
   - In `--all-queries` mode, an aggregate per-baseline summary with pass counts,
     failed query ids, surfaced state slots, and `state_adjudication` trace
     counts.
@@ -103,7 +105,7 @@ extraction on those true state cases.
   - Source-label trace for the authorized current state and the suppressed old
     raw evidence, without copying the stale value into the adjudication notice.
 - Validation:
-  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `5 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `6 passed`
   - `PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json`
     -> both demo baselines passed the retrieval-support check; the trace
     baseline surfaced a `state_adjudication` notice with `new_runtime` as the
@@ -121,6 +123,10 @@ extraction on those true state cases.
     `a_mem_evolution` passed `0/9`; `zep_temporal_kg`, `mem0_extraction`, and
     `semantic_state_adjudication_trace` passed `9/9`. This remains local
     mechanism evidence, not a public benchmark or SOTA claim.
+  - `PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --html-output /tmp/adamem_state_demo_paper.html --json`
+    -> emitted `adamem.demo_provenance.v1` with a 64-character payload hash,
+    git commit, and command provenance. Generated HTML contains the artifact
+    provenance renderer and embedded provenance JSON.
   - Browser automation was attempted for the static HTML artifact, but this
     environment does not have the `playwright` Node module installed; keep a
     screenshot-level browser check as the next demo-polish step.

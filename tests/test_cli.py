@@ -19,6 +19,17 @@ def test_demo_json_compares_adjudication_trace_baselines(capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema_version"] == "adamem.demo.v1"
     assert "not paper evidence" in payload["claim_boundary"]
+    assert payload["provenance"]["schema_version"] == "adamem.demo_provenance.v1"
+    assert payload["provenance"]["command"] == [
+        "adamem",
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--query-id",
+        "current_runtime_status",
+        "--json",
+    ]
+    assert len(payload["provenance"]["payload_sha256"]) == 64
     assert payload["evidence_boundary"]["artifact_type"] == "api_free_mechanism_demo"
     assert "answer_accuracy" in payload["evidence_boundary"]["blocked_claims"]
     assert "sota" in payload["evidence_boundary"]["blocked_claims"]
@@ -130,6 +141,8 @@ def test_demo_writes_interactive_html_artifact(tmp_path: Path, capsys) -> None:
     html = output.read_text(encoding="utf-8")
     assert "AdaMem State Authority Demo" in html
     assert "Evidence Boundary" in html
+    assert "Artifact Provenance" in html
+    assert payload["provenance"]["payload_sha256"] in html
     assert "demo-data" in html
     assert "not paper evidence" in html
     assert "No answer model is called" in html

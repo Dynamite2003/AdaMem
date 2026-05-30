@@ -103,6 +103,9 @@ def demo_html(payload: dict[str, Any]) -> str:
     .boundary {{
       padding: 0 22px 12px;
     }}
+    .provenance {{
+      padding: 0 22px 12px;
+    }}
     .summary-card {{
       background: var(--surface);
       border: 1px solid var(--line);
@@ -116,6 +119,18 @@ def demo_html(payload: dict[str, Any]) -> str:
       border-radius: 8px;
       padding: 12px;
       box-shadow: var(--shadow);
+    }}
+    .provenance-card {{
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }}
+    .provenance-card h2 {{
+      margin: 0 0 8px;
+      font-size: 14px;
+      line-height: 1.25;
     }}
     .boundary-card h2 {{
       margin: 0 0 8px;
@@ -343,6 +358,7 @@ def demo_html(payload: dict[str, Any]) -> str:
     </header>
     <section class="summary" id="summary"></section>
     <section class="boundary" id="boundary"></section>
+    <section class="provenance" id="provenance"></section>
     <main>
       <aside class="sidebar" id="queryList"></aside>
       <section class="detail" id="detail"></section>
@@ -377,6 +393,7 @@ def demo_html(payload: dict[str, Any]) -> str:
       document.getElementById('queryCount').textContent = queries.length + ' queries';
       renderSummary();
       renderBoundary();
+      renderProvenance();
       renderQueryList();
       renderDetail();
     }}
@@ -438,6 +455,25 @@ def demo_html(payload: dict[str, Any]) -> str:
         return '<div class="empty">&lt;none&gt;</div>';
       }}
       return `<ul class="boundary-list">${{items.map((item) => `<li>${{escapeHtml(item)}}</li>`).join('')}}</ul>`;
+    }}
+
+    function renderProvenance() {{
+      const provenance = payload.provenance || {{}};
+      const commit = provenance.commit ? provenance.commit.slice(0, 12) : '<none>';
+      const hash = provenance.payload_sha256 ? provenance.payload_sha256.slice(0, 16) : '<none>';
+      const command = (provenance.command || []).join(' ');
+      document.getElementById('provenance').innerHTML = `
+        <article class="provenance-card">
+          <h2>Artifact Provenance</h2>
+          <div class="metric-row">
+            <span class="chip">commit: ${{escapeHtml(commit)}}</span>
+            <span class="chip">payload: ${{escapeHtml(hash)}}</span>
+            <span class="chip">profile: ${{escapeHtml(payload.baseline_profile || '<none>')}}</span>
+          </div>
+          <div class="section-label">Command</div>
+          <pre>${{escapeHtml(command || '<none>')}}</pre>
+        </article>
+      `;
     }}
 
     function renderQueryList() {{

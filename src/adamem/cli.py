@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import sys
+from datetime import datetime, timezone
 from typing import Any
 
 from adamem.baselines import baseline_registry
 from adamem.bench import MemoryQACase, QuerySpec, load_jsonl_cases
 from adamem.demo_html import write_demo_html
+from adamem.experiments import current_git_commit
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem, MemoryResult
 from adamem.store import JsonMemoryStore
@@ -66,6 +70,7 @@ def main(argv: list[str] | None = None) -> None:
     demo.add_argument("--html-output", help="Write a self-contained interactive HTML demo")
 
     args = parser.parse_args(argv)
+    command = ["adamem", *(argv or sys.argv[1:])]
 
     if args.command == "add":
         mem = AdaMem(store=JsonMemoryStore(args.store))
@@ -88,6 +93,7 @@ def main(argv: list[str] | None = None) -> None:
             )
         except ValueError as exc:
             parser.error(str(exc))
+        _attach_demo_provenance(payload, command=command)
         if args.html_output:
             html_path = write_demo_html(payload, args.html_output)
             payload.setdefault("artifacts", {})["html"] = str(html_path)
@@ -266,6 +272,23 @@ def _demo_evidence_boundary() -> dict[str, Any]:
             "Attach claim-audit and paper-readiness artifacts before making paper claims.",
         ],
     }
+
+
+def _attach_demo_provenance(payload: dict[str, Any], *, command: list[str]) -> None:
+    payload["provenance"] = {
+        "schema_version": "adamem.demo_provenance.v1",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "commit": current_git_commit(),
+        "command": command,
+        "payload_hash_algorithm": "sha256",
+        "payload_hash_scope": "full demo payload before provenance/artifacts attachment",
+        "payload_sha256": _demo_payload_hash(payload),
+    }
+
+
+def _demo_payload_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _select_case(cases: list[MemoryQACase], case_id: str) -> MemoryQACase:
