@@ -119,6 +119,7 @@ def build_paper_study_plan(
     state_extractor_model: str = "<state_extractor_provider>:<state_extractor_model>",
     top_k: int = 8,
     max_context_chars: int = 4000,
+    demo_bundle: str | Path | None = None,
 ) -> dict[str, Any]:
     output = Path(output_dir)
     if stale_dataset is None:
@@ -206,6 +207,8 @@ def build_paper_study_plan(
             top_k=top_k,
         ))
     commands.append(_reporting_command(output))
+    if demo_bundle is not None:
+        commands.append(_demo_readiness_handoff_command(output, demo_bundle=demo_bundle))
 
     all_baselines = sorted({
         baseline
@@ -274,6 +277,7 @@ def build_paper_study_plan(
             "adamem.reporting must produce claim_matrix, method_coverage, benchmark_coverage, study_model_coverage, and paper_readiness artifacts.",
             "No answer-accuracy or SOTA claim is valid until raw outputs are cached and non-mock answer/judge models pass robustness gates.",
             "STALE remains the primary benchmark; transfer results are used for generality and no-regression evidence.",
+            "If a demo bundle is attached, adamem.cli demo-readiness must consume the reporting paper_readiness artifact before the demo is treated as paper-backed.",
         ],
     }
     plan["plan_fingerprint"] = plan_fingerprint(plan)
@@ -372,6 +376,7 @@ def build_api_pilot_settings_template(
         "state_extractor_model": "openai:gpt-4o-mini",
         "top_k": 8,
         "max_context_chars": 4000,
+        "demo_bundle": "results/adamem_state_demo_bundle",
         "required_env_vars": [
             "OPENAI_API_KEY",
             "GEMINI_API_KEY",
@@ -480,6 +485,7 @@ def build_study_plan_from_settings(
             state_extractor_model=settings.get("state_extractor_model") or "<state_extractor_provider>:<state_extractor_model>",
             top_k=int(settings.get("top_k") or 8),
             max_context_chars=int(settings.get("max_context_chars") or 4000),
+            demo_bundle=settings.get("demo_bundle"),
         )
     attach_settings_provenance(
         plan,
@@ -1598,6 +1604,43 @@ def _reporting_command(output: Path) -> PlannedCommand:
     )
 
 
+def _demo_readiness_handoff_command(output: Path, *, demo_bundle: str | Path) -> PlannedCommand:
+    report_dir = output / "report_bundle"
+    readiness = output / "demo_readiness.json"
+    paper_readiness = report_dir / "paper_readiness.json"
+    command = [
+        "python",
+        "-m",
+        "adamem.cli",
+        "demo-readiness",
+        str(demo_bundle),
+        "--evidence-manifest",
+        str(paper_readiness),
+        "--json",
+        "--output",
+        str(readiness),
+    ]
+    return PlannedCommand(
+        name="demo_readiness_handoff",
+        stage="demo_handoff",
+        purpose="Attach reporting paper-readiness evidence to the interactive demo bundle readiness gate.",
+        claim_boundary=(
+            "demo handoff only; paper claims remain blocked unless the reporting "
+            "paper_readiness artifact is paper-ready"
+        ),
+        command=command,
+        outputs={
+            "demo_bundle": str(demo_bundle),
+            "paper_readiness_json": str(paper_readiness),
+            "demo_readiness_json": str(readiness),
+        },
+        notes=[
+            "Run after paper_report_bundle.",
+            "The command exits non-zero if the demo bundle fails walkthrough verification.",
+        ],
+    )
+
+
 def _command_dict(command: PlannedCommand) -> dict[str, Any]:
     data = asdict(command)
     data["shell"] = command.shell()
@@ -1962,6 +2005,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--top-k", type=int)
     parser.add_argument("--max-context-chars", type=int)
     parser.add_argument(
+        "--demo-bundle",
+        help="Add a final demo-readiness handoff command for this demo bundle path.",
+    )
+    parser.add_argument(
         "--check-env",
         action="store_true",
         help="Also check whether required provider credential environment variables are set.",
@@ -2060,6 +2107,7 @@ def main(argv: list[str] | None = None) -> None:
                     state_extractor_model=args.state_extractor_model or "<state_extractor_provider>:<state_extractor_model>",
                     top_k=args.top_k if args.top_k is not None else 8,
                     max_context_chars=args.max_context_chars if args.max_context_chars is not None else 4000,
+                    demo_bundle=args.demo_bundle,
                 )
             artifacts = write_paper_study_plan(plan, output_dir)
     except ValueError as exc:

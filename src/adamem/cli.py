@@ -87,6 +87,7 @@ def main(argv: list[str] | None = None) -> None:
         ),
     )
     demo_readiness.add_argument("--json", action="store_true", help="Emit a machine-readable readiness report")
+    demo_readiness.add_argument("--output", help="Write the readiness report to this path")
 
     args = parser.parse_args(argv)
     command = ["adamem", *(argv or sys.argv[1:])]
@@ -141,10 +142,19 @@ def main(argv: list[str] | None = None) -> None:
             args.bundle,
             evidence_manifests=tuple(args.evidence_manifest),
         )
+        rendered = (
+            json.dumps(report, indent=2, sort_keys=True)
+            if args.json
+            else _format_demo_bundle_paper_readiness(report)
+        )
+        if args.output:
+            output_path = Path(args.output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(rendered.rstrip() + "\n", encoding="utf-8")
         if args.json:
-            print(json.dumps(report, indent=2, sort_keys=True))
+            print(rendered)
         else:
-            print(_format_demo_bundle_paper_readiness(report))
+            print(rendered)
         if not report["walkthrough_ready"]:
             raise SystemExit(1)
 

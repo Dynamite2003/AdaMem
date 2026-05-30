@@ -37,6 +37,7 @@ PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper 
 PYTHONPATH=src python -m adamem.cli verify-demo results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --evidence-manifest results/paper_study_bundle/paper_readiness.json --json
+PYTHONPATH=src python -m adamem.study_plan --output-dir results/stale_api_packet --no-data-prep --no-ama --stale-dataset benchmarks/stale.adamem.jsonl --transfer-dataset benchmarks/dynamic_state_transfer.jsonl --answer-model openai:gpt-4o-mini --answer-model gemini:gemini-1.5-flash --judge-model openai:gpt-4o-mini --judge-model gemini:gemini-1.5-flash --state-extractor-model openai:gpt-4o-mini --demo-bundle results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json
@@ -114,6 +115,10 @@ Outputs:
   `paper_readiness.json` outputs containing `paper_readiness`; paper claims are
   unblocked only when the demo is verified and every attached evidence manifest
   reports `paper_claim_ready=True`.
+- Use `adamem.study_plan --demo-bundle ...` for API-backed STALE packets that
+  should end by wiring reporting output back into the demo readiness gate. The
+  generated `demo_readiness_handoff` command consumes
+  `report_bundle/paper_readiness.json` and writes `demo_readiness.json`.
 - Baseline synthetic/JSONL tables.
 - Baseline reproduction plan artifacts:
   `baseline_reproduction_plan.json` and

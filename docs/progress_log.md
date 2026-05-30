@@ -57,6 +57,40 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 STALE API packet demo handoff
+
+- Added `--output` to `adamem.cli demo-readiness` so readiness reports can be
+  written as formal JSON/Markdown artifacts while still printing to stdout.
+- Added optional `demo_bundle` support to paper study plans:
+  - Python API: `build_paper_study_plan(..., demo_bundle=...)`
+  - CLI: `PYTHONPATH=src python -m adamem.study_plan ... --demo-bundle results/adamem_state_demo_bundle`
+- When `demo_bundle` is provided, the generated plan appends
+  `demo_readiness_handoff` after the reporting command. It runs:
+  `python -m adamem.cli demo-readiness <demo_bundle> --evidence-manifest <output>/report_bundle/paper_readiness.json --json --output <output>/demo_readiness.json`.
+- Purpose:
+  - Make the minimum API-backed STALE run packet end with a machine-checkable
+    demo-readiness artifact.
+  - Ensure future real answer/judge evidence is connected to the interactive
+    demo through the same paper-readiness gate, not through manual narrative.
+  - Keep the command key-free in the repo; provider credentials are still
+    checked through study-plan env validation, not stored in plan JSON.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py tests/test_study_plan.py -q`
+    -> `55 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `248 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - Generated a no-data-prep/no-AMA API packet at `/tmp/adamem_stale_api_packet`
+    with OpenAI/Gemini answer and judge model labels plus
+    `--demo-bundle results/adamem_state_demo_bundle`.
+  - The generated plan was execution-ready for the selected existing datasets,
+    and command stages included:
+    `answer_judge=4`, `diagnostic=1`, `mechanism_ablation=1`, `transfer=1`,
+    `reporting=1`, and `demo_handoff=1`.
+  - The generated command index confirmed `demo_readiness_handoff` consumes
+    `/tmp/adamem_stale_api_packet/report_bundle/paper_readiness.json` and writes
+    `/tmp/adamem_stale_api_packet/demo_readiness.json`.
+
 ### 2026-05-30 demo readiness evidence manifests
 
 - Extended `adamem.cli demo-readiness` with repeatable

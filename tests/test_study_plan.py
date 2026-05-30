@@ -150,6 +150,35 @@ def test_build_paper_study_plan_can_include_lme_v2_prepared_workflow(tmp_path: P
     assert plan["data_sources"]["longmemeval_v2_questions"] == str(questions)
 
 
+def test_build_paper_study_plan_can_attach_demo_readiness_handoff(tmp_path: Path) -> None:
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=tmp_path / "stale.jsonl",
+        transfer_dataset=tmp_path / "transfer.jsonl",
+        stale_source=None,
+        transfer_source=None,
+        ama_output_source=None,
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+        demo_bundle=tmp_path / "demo_bundle",
+    )
+
+    handoff = plan["commands"][-1]
+    listing = study_plan_command_listing(plan)[-1]
+
+    assert handoff["name"] == "demo_readiness_handoff"
+    assert handoff["stage"] == "demo_handoff"
+    assert "--evidence-manifest" in handoff["command"]
+    assert "--output" in handoff["command"]
+    assert handoff["outputs"]["paper_readiness_json"].endswith(
+        "report_bundle/paper_readiness.json"
+    )
+    assert handoff["outputs"]["demo_readiness_json"].endswith("demo_readiness.json")
+    assert listing["required_env_vars"] == []
+    assert "paper_readiness artifact" in handoff["claim_boundary"]
+
+
 def test_validate_paper_study_plan_requires_lme_v2_prepared_sources(tmp_path: Path) -> None:
     stale_dataset = tmp_path / "stale.jsonl"
     transfer_dataset = tmp_path / "transfer.jsonl"

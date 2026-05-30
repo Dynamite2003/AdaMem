@@ -477,3 +477,34 @@ def test_demo_readiness_marks_paper_ready_with_ready_external_evidence(
     assert report["next_actions"] == [
         "attach_paper_readiness_report_to_demo_walkthrough",
     ]
+
+
+def test_demo_readiness_output_writes_machine_readable_report(tmp_path: Path, capsys) -> None:
+    bundle = tmp_path / "bundle"
+    output = tmp_path / "demo_readiness.json"
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--bundle-output",
+        str(bundle),
+        "--json",
+    ])
+    capsys.readouterr()
+
+    main([
+        "demo-readiness",
+        str(bundle),
+        "--json",
+        "--output",
+        str(output),
+    ])
+
+    printed = json.loads(capsys.readouterr().out)
+    written = json.loads(output.read_text(encoding="utf-8"))
+    assert printed == written
+    assert written["schema_version"] == "adamem.demo_paper_readiness.v1"
+    assert written["walkthrough_ready"] is True
