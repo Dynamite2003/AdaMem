@@ -6,6 +6,7 @@ from typing import Any
 
 from adamem.baselines import baseline_registry
 from adamem.bench import MemoryQACase, QuerySpec, load_jsonl_cases
+from adamem.demo_html import write_demo_html
 from adamem.manager import AdaMem
 from adamem.schema import MemoryItem, MemoryResult
 from adamem.store import JsonMemoryStore
@@ -41,6 +42,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     demo.add_argument("--top-k", type=int, default=None)
     demo.add_argument("--json", action="store_true", help="Emit a machine-readable demo artifact")
+    demo.add_argument("--html-output", help="Write a self-contained interactive HTML demo")
 
     args = parser.parse_args(argv)
 
@@ -63,8 +65,13 @@ def main(argv: list[str] | None = None) -> None:
             )
         except ValueError as exc:
             parser.error(str(exc))
+        if args.html_output:
+            html_path = write_demo_html(payload, args.html_output)
+            payload.setdefault("artifacts", {})["html"] = str(html_path)
         if args.json:
             print(json.dumps(payload, indent=2, sort_keys=True))
+        elif args.html_output:
+            print(f"wrote HTML demo: {payload['artifacts']['html']}")
         else:
             print(_format_demo(payload))
 

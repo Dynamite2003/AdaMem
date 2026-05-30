@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from adamem.cli import main
 
@@ -75,3 +76,26 @@ def test_demo_all_queries_summarizes_state_family_sweep(capsys) -> None:
     assert "workflow.checkout_deploys.rollback" in (
         summary["semantic_state_adjudication_trace"]["state_slots"]
     )
+
+
+def test_demo_writes_interactive_html_artifact(tmp_path: Path, capsys) -> None:
+    output = tmp_path / "adamem_state_demo.html"
+
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--html-output",
+        str(output),
+        "--json",
+    ])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["artifacts"]["html"] == str(output)
+    html = output.read_text(encoding="utf-8")
+    assert "AdaMem State Authority Demo" in html
+    assert "demo-data" in html
+    assert "not paper evidence" in html
+    assert "semantic_state_adjudication_trace" in html
+    assert "state_adjudication" in html

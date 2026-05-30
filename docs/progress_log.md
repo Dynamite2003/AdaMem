@@ -61,6 +61,8 @@ extraction on those true state cases.
 
 - Added `PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json`.
 - Added `PYTHONPATH=src python -m adamem.cli demo --all-queries --json`.
+- Added
+  `PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output results/adamem_state_demo.html`.
 - Purpose:
   - Give the project a fast, API-free inspection workflow before tomorrow's
     key-enabled runs.
@@ -78,10 +80,13 @@ extraction on those true state cases.
   - In `--all-queries` mode, an aggregate per-baseline summary with pass counts,
     failed query ids, surfaced state slots, and `state_adjudication` trace
     counts.
+  - In `--html-output` mode, a self-contained static HTML dashboard with query
+    selection, baseline comparison cards, retrieved context, and source/suppressed
+    trace metadata.
   - Source-label trace for the authorized current state and the suppressed old
     raw evidence, without copying the stale value into the adjudication notice.
 - Validation:
-  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `3 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `4 passed`
   - `PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json`
     -> both demo baselines passed the retrieval-support check; the trace
     baseline surfaced a `state_adjudication` notice with `new_runtime` as the
@@ -90,6 +95,11 @@ extraction on those true state cases.
     -> both demo baselines passed `9/9`; `semantic_state_adjudication_trace`
     surfaced `8` adjudication notices across schedule, task, preference,
     resource, workflow, runtime, role, and manager state slots.
+  - `PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output /tmp/adamem_state_demo.html --json`
+    -> wrote a static HTML artifact with embedded `adamem.demo.v1` payload.
+  - Browser automation was attempted for the static HTML artifact, but this
+    environment does not have the `playwright` Node module installed; keep a
+    screenshot-level browser check as the next demo-polish step.
 
 ### 2026-05-30 state adjudication trace
 
