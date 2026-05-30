@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from adamem.baselines import baseline_reproduction_packet_template
+from adamem.cli import main as cli_main
 from adamem.study_plan import (
     STUDY_SETTINGS_SCHEMA_VERSION,
     build_paper_study_plan,
@@ -11,6 +13,7 @@ from adamem.study_plan import (
     load_paper_study_plan,
     load_study_settings,
     main,
+    paper_study_validation_markdown,
     parse_model_spec,
     plan_fingerprint,
     run_study_plan,
@@ -21,6 +24,30 @@ from adamem.study_plan import (
     write_paper_study_plan,
     write_study_settings_template,
 )
+
+
+def _write_ready_baseline_packet(tmp_path: Path, name: str = "a_mem_evolution") -> Path:
+    records = tmp_path / f"{name}.records.jsonl"
+    records.write_text(f'{{"case_id":"q1","baseline":"{name}"}}\n', encoding="utf-8")
+    packet = baseline_reproduction_packet_template(name)
+    packet["implementation_status"] = "official_reproduction"
+    packet["evidence"].update({
+        "external_repo_commit": "abc1234",
+        "adapter_or_command": f"python run_{name}.py --split stale_ids.txt",
+        "dataset_split_and_question_ids": "results/stale_split/question_ids.jsonl",
+        "model_provider_model_and_sampling_settings": "openai:gpt-4o-mini temperature=0 seed=0",
+        "prompt_or_memory_policy_if_applicable": f"official {name} memory policy at abc1234",
+        "raw_case_records_path": str(records),
+        "metric_mapping_to_adamem_outputs": "Maps answer text and retrieved context to AdaMem stale_llm_judge records.",
+        "license_and_dependency_notes": "Local reproduction environment and license notes recorded.",
+    })
+    packet["baseline_provenance_update"].update({
+        "implementation_status": "official_reproduction",
+        "reproduction_note": f"Official {name} code path run on the same STALE split.",
+    })
+    packet_path = tmp_path / f"{name}.reproduction_packet.json"
+    packet_path.write_text(json.dumps(packet, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return packet_path
 
 
 def test_parse_model_spec_requires_provider_and_model() -> None:
@@ -207,6 +234,113 @@ def test_build_paper_study_plan_passes_baseline_packets_to_reporting(tmp_path: P
     )
 
 
+def test_validate_paper_study_plan_checks_baseline_reproduction_packet_readiness(
+    tmp_path: Path,
+) -> None:
+    stale = tmp_path / "stale.jsonl"
+    transfer = tmp_path / "transfer.jsonl"
+    for path in [stale, transfer]:
+        path.write_text("", encoding="utf-8")
+    missing_packet = tmp_path / "missing.reproduction_packet.json"
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=stale,
+        transfer_dataset=transfer,
+        stale_source=None,
+        transfer_source=None,
+        ama_output_source=None,
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+        baseline_reproduction_packets=[missing_packet],
+    )
+
+    validation = validate_paper_study_plan(plan, root=tmp_path)
+
+    assert validation["execution_ready"] is False
+    assert "baseline_reproduction_packets_ready" in validation["missing_requirements"]
+    assert validation["invalid_baseline_reproduction_packets"] == [str(missing_packet)]
+    assert validation["baseline_reproduction_packet_checks"][0]["exists"] is False
+    assert validation["baseline_reproduction_packet_checks"][0]["blockers"] == [
+        "baseline_reproduction_packet_missing"
+    ]
+
+
+def test_validate_paper_study_plan_accepts_ready_baseline_packet_and_demo_bundle(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    stale = tmp_path / "stale.jsonl"
+    transfer = tmp_path / "transfer.jsonl"
+    for path in [stale, transfer]:
+        path.write_text("", encoding="utf-8")
+    packet = _write_ready_baseline_packet(tmp_path)
+    bundle = tmp_path / "demo_bundle"
+    cli_main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--bundle-output",
+        str(bundle),
+        "--json",
+    ])
+    capsys.readouterr()
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=stale,
+        transfer_dataset=transfer,
+        stale_source=None,
+        transfer_source=None,
+        ama_output_source=None,
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+        baseline_reproduction_packets=[packet],
+        demo_bundle=bundle,
+    )
+
+    validation = validate_paper_study_plan(plan, root=tmp_path)
+    markdown = paper_study_validation_markdown(validation)
+
+    assert validation["execution_ready"] is True
+    assert validation["invalid_baseline_reproduction_packets"] == []
+    assert validation["baseline_reproduction_packet_checks"][0][
+        "ready_for_sota_baseline_claim"
+    ] is True
+    assert validation["demo_bundle_check"]["valid"] is True
+    assert "Baseline Reproduction Packets" in markdown
+    assert "Demo Bundle" in markdown
+
+
+def test_validate_paper_study_plan_rejects_invalid_demo_bundle(tmp_path: Path) -> None:
+    stale = tmp_path / "stale.jsonl"
+    transfer = tmp_path / "transfer.jsonl"
+    for path in [stale, transfer]:
+        path.write_text("", encoding="utf-8")
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=stale,
+        transfer_dataset=transfer,
+        stale_source=None,
+        transfer_source=None,
+        ama_output_source=None,
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+        demo_bundle=tmp_path / "missing_demo_bundle",
+    )
+
+    validation = validate_paper_study_plan(plan, root=tmp_path)
+
+    assert validation["execution_ready"] is False
+    assert "demo_bundle_verified" in validation["missing_requirements"]
+    assert validation["demo_bundle_check"]["exists"] is False
+    assert validation["demo_bundle_check"]["valid"] is False
+
+
 def test_validate_paper_study_plan_requires_lme_v2_prepared_sources(tmp_path: Path) -> None:
     stale_dataset = tmp_path / "stale.jsonl"
     transfer_dataset = tmp_path / "transfer.jsonl"
@@ -357,6 +491,7 @@ def test_load_study_settings_rejects_credential_fields(tmp_path: Path) -> None:
 
 
 def test_build_study_plan_from_settings_uses_api_pilot_models(tmp_path: Path) -> None:
+    packet = _write_ready_baseline_packet(tmp_path)
     settings = {
         "schema_version": STUDY_SETTINGS_SCHEMA_VERSION,
         "profile": "paper",
@@ -372,7 +507,7 @@ def test_build_study_plan_from_settings_uses_api_pilot_models(tmp_path: Path) ->
         "judge_models": ["openai:gpt-j", "gemini:gemini-j"],
         "state_extractor_model": "openai:gpt-extractor",
         "baseline_reproduction_packets": [
-            str(tmp_path / "a_mem.reproduction_packet.json"),
+            str(packet),
         ],
         "top_k": 4,
         "max_context_chars": 1200,
@@ -400,7 +535,7 @@ def test_build_study_plan_from_settings_uses_api_pilot_models(tmp_path: Path) ->
         command for command in plan["commands"]
         if command["name"] == "paper_report_bundle"
     )
-    assert str(tmp_path / "a_mem.reproduction_packet.json") in reporting["command"]
+    assert str(packet) in reporting["command"]
     assert plan["settings_provenance"]["schema_version"] == STUDY_SETTINGS_SCHEMA_VERSION
     assert plan["settings_provenance"]["settings_fingerprint"] == settings_fingerprint(settings)
     assert plan["settings_provenance"]["output_dir_overridden"] is False

@@ -57,6 +57,35 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 study-plan evidence preflight
+
+- Extended `validate_paper_study_plan` so API-pilot plans now preflight the
+  external evidence artifacts they reference:
+  - every `baseline_reproduction_packets` path is loaded and verified with
+    `verify_baseline_reproduction_packet`;
+  - plans with a `demo_readiness_handoff` verify the referenced demo bundle
+    with the same checks used by `adamem.cli verify-demo`.
+- Purpose:
+  - Catch missing or incomplete official/faithful baseline evidence before a
+    STALE API run reaches reporting.
+  - Catch stale, corrupted, or absent demo bundles before the final
+    `paper_readiness.json -> demo_readiness.json` handoff.
+  - Keep paper-readiness blockers machine-checkable instead of relying on a
+    manual checklist.
+- Behavior:
+  - Invalid supplied baseline packets add
+    `baseline_reproduction_packets_ready` to
+    `paper_study_validation.missing_requirements`.
+  - Invalid supplied demo bundles add `demo_bundle_verified`.
+  - The validation JSON and Markdown now include packet-level blockers,
+    missing evidence, demo verification errors, and the resolved paths used by
+    the preflight.
+- Validation:
+  - `python -m pytest tests/test_study_plan.py` -> `45 passed`
+  - `python -m pytest` -> `258 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+
 ### 2026-05-30 study-plan baseline packet wiring
 
 - Added repeatable `--baseline-reproduction-packet PATH` to

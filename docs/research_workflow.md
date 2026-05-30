@@ -190,8 +190,10 @@ Outputs:
   providers and environment variables required by each command. The
   validation artifacts report missing dataset paths, whether a missing target
   can be prepared from an available source, default model placeholders,
-  model-count gaps, method-coverage gaps, and whether the post-run reporting
-  command is present. By default, generated full benchmark JSONL files are
+  model-count gaps, method-coverage gaps, whether supplied baseline
+  reproduction packets are ready for SOTA claims, whether a supplied demo
+  bundle passes verification, and whether the post-run reporting command is
+  present. By default, generated full benchmark JSONL files are
   written under `OUTPUT_DIR/data/` instead of `benchmarks/`, because full
   conversions can be large and should not become tracked fixtures by accident.
 - Paper-study plans can include the prepared LongMemEval-V2 transfer workflow

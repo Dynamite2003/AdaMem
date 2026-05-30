@@ -13,6 +13,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from adamem.baselines import (
+    load_baseline_reproduction_packet,
+    verify_baseline_reproduction_packet,
+)
 from adamem.reporting import method_coverage_summary
 
 
@@ -881,6 +885,16 @@ def validate_paper_study_plan(
     commands = list(plan.get("commands") or [])
     command_stages = _count_values(command.get("stage") for command in commands)
     reporting_command_present = any(command.get("stage") == "reporting" for command in commands)
+    baseline_packet_checks = _baseline_packet_validation_checks(
+        plan.get("baseline_reproduction_packets") or (),
+        root=root_path,
+    )
+    invalid_baseline_packets = [
+        check["path"]
+        for check in baseline_packet_checks
+        if not bool(check.get("ready_for_sota_baseline_claim"))
+    ]
+    demo_bundle_checks = _demo_bundle_validation_check(plan, root=root_path)
 
     missing_requirements: list[str] = []
     if missing_datasets:
@@ -901,6 +915,10 @@ def validate_paper_study_plan(
         missing_requirements.append("provider_credentials_available")
     if not fingerprint_matches_recorded:
         missing_requirements.append("plan_fingerprint_matches_recorded")
+    if invalid_baseline_packets:
+        missing_requirements.append("baseline_reproduction_packets_ready")
+    if demo_bundle_checks and not bool(demo_bundle_checks.get("valid")):
+        missing_requirements.append("demo_bundle_verified")
 
     return {
         "schema_version": "adamem.paper_study_validation.v1",
@@ -938,10 +956,100 @@ def validate_paper_study_plan(
         "mainstream_api_free_approximations": list(
             method_coverage.get("mainstream_api_free_approximations") or []
         ),
+        "baseline_reproduction_packet_checks": baseline_packet_checks,
+        "invalid_baseline_reproduction_packets": invalid_baseline_packets,
+        "demo_bundle_check": demo_bundle_checks,
         "command_count": len(commands),
         "command_stage_counts": command_stages,
         "reporting_command_present": reporting_command_present,
     }
+
+
+def _baseline_packet_validation_checks(
+    packet_paths: Iterable[Any],
+    *,
+    root: Path,
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    for raw_path in packet_paths:
+        path_text = str(raw_path)
+        resolved = _resolve_validation_path(path_text, root=root)
+        check: dict[str, Any] = {
+            "path": path_text,
+            "resolved_path": str(resolved),
+            "exists": resolved.exists(),
+            "ready_for_sota_baseline_claim": False,
+            "blockers": [],
+            "warnings": [],
+            "missing_evidence": [],
+        }
+        if not resolved.exists():
+            check["blockers"] = ["baseline_reproduction_packet_missing"]
+            checks.append(check)
+            continue
+        try:
+            packet = load_baseline_reproduction_packet(resolved)
+            report = verify_baseline_reproduction_packet(packet, packet_path=resolved)
+        except Exception as exc:  # pragma: no cover - exact JSON errors vary by Python version
+            check["blockers"] = ["baseline_reproduction_packet_unreadable"]
+            check["error"] = str(exc)
+            checks.append(check)
+            continue
+        check.update({
+            "schema_version": report.get("schema_version"),
+            "baseline": report.get("baseline"),
+            "implementation_status": report.get("implementation_status"),
+            "ready_for_sota_baseline_claim": bool(
+                report.get("ready_for_sota_baseline_claim")
+            ),
+            "blockers": list(report.get("blockers") or []),
+            "warnings": list(report.get("warnings") or []),
+            "missing_evidence": list(report.get("missing_evidence") or []),
+            "raw_case_records_path": report.get("raw_case_records_path"),
+        })
+        checks.append(check)
+    return checks
+
+
+def _demo_bundle_validation_check(plan: dict[str, Any], *, root: Path) -> dict[str, Any] | None:
+    demo_bundle = None
+    for command in plan.get("commands") or []:
+        if command.get("name") == "demo_readiness_handoff":
+            demo_bundle = (command.get("outputs") or {}).get("demo_bundle")
+            break
+    if demo_bundle in {None, ""}:
+        return None
+    path_text = str(demo_bundle)
+    resolved = _resolve_validation_path(path_text, root=root)
+    try:
+        from adamem.cli import _verify_demo_bundle
+
+        report = _verify_demo_bundle(resolved)
+    except Exception as exc:  # pragma: no cover - defensive boundary for CLI helper drift
+        return {
+            "path": path_text,
+            "resolved_path": str(resolved),
+            "exists": resolved.exists(),
+            "valid": False,
+            "errors": [str(exc)],
+            "warnings": [],
+        }
+    return {
+        "path": path_text,
+        "resolved_path": str(resolved),
+        "exists": resolved.exists(),
+        "valid": bool(report.get("valid")),
+        "errors": list(report.get("errors") or []),
+        "warnings": list(report.get("warnings") or []),
+        "checks": dict(report.get("checks") or {}),
+        "manifest": report.get("manifest"),
+        "payload_sha256": report.get("payload_sha256"),
+    }
+
+
+def _resolve_validation_path(path_text: str, *, root: Path) -> Path:
+    path = Path(path_text)
+    return path if path.is_absolute() else root / path
 
 
 def paper_study_validation_markdown(validation: dict[str, Any]) -> str:
@@ -1038,6 +1146,33 @@ def paper_study_validation_markdown(validation: dict[str, Any]) -> str:
         "- API-free mainstream approximations: "
         + (", ".join(f"`{item}`" for item in approximations) if approximations else "`none`")
     )
+    packet_checks = validation.get("baseline_reproduction_packet_checks") or []
+    if packet_checks:
+        lines.append("")
+        lines.append("## Baseline Reproduction Packets")
+        for check in packet_checks:
+            blockers = check.get("blockers") or []
+            lines.append(
+                f"- `{check.get('path')}` ready "
+                f"`{bool(check.get('ready_for_sota_baseline_claim'))}`"
+                + (
+                    " blockers "
+                    + ", ".join(f"`{item}`" for item in blockers)
+                    if blockers
+                    else ""
+                )
+            )
+    demo_check = validation.get("demo_bundle_check")
+    if demo_check:
+        lines.append("")
+        lines.append("## Demo Bundle")
+        lines.append(f"- Path: `{demo_check.get('path')}`")
+        lines.append(f"- Verified: `{bool(demo_check.get('valid'))}`")
+        errors = demo_check.get("errors") or []
+        lines.append(
+            "- Errors: "
+            + (", ".join(f"`{item}`" for item in errors) if errors else "`none`")
+        )
     lines.append("")
     lines.append("## Commands")
     lines.append(f"- Total: `{int(validation.get('command_count') or 0)}`")
