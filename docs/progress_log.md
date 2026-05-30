@@ -57,6 +57,24 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 LME-V2 prepared text split workflow
+
+- Added a one-command API-free LongMemEval-V2 preparation path:
+  `PYTHONPATH=src python -m adamem.lme_v2 prepare-text-split ...`.
+- The workflow runs question audit, deterministic text-transfer split
+  selection, trajectory manifest generation, sanitized selected-trajectory
+  extraction, prepared-split validation, and state-evidence auditing into one
+  reproducible output directory.
+- Purpose:
+  - Reduce tomorrow's API-key handoff to execution and inspection instead of
+    manually replaying preparation steps.
+  - Keep label hygiene explicit: answers/eval strings remain outside runtime
+    trajectory records, and the command records that policy in its summary.
+  - Make LongMemEval-V2 transfer readiness measurable before spending
+    answer-model or judge-model budget.
+- Recommended next command once raw LongMemEval-V2 files are local:
+  `PYTHONPATH=src python -m adamem.lme_v2 prepare-text-split --questions data/longmemeval-v2/questions.jsonl --haystack data/longmemeval-v2/haystacks/lme_v2_small.json --trajectories data/longmemeval-v2/trajectories.jsonl --output-dir results/longmemeval_v2_text_transfer_60_prepared --transfer-per-type 10 --control-per-group 10 --json`.
+
 ### 2026-05-30 LME-V2 router precision tightening
 
 - Tightened state query intent gates after inspecting public LongMemEval-V2

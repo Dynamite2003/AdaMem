@@ -15,6 +15,9 @@ LONGMEMEVAL_V2_QUESTIONS_URL = (
 LONGMEMEVAL_V2_SMALL_HAYSTACK_URL = (
     "https://huggingface.co/datasets/xiaowu0162/longmemeval-v2/raw/main/haystacks/lme_v2_small.json"
 )
+LONGMEMEVAL_V2_TRAJECTORIES_URL = (
+    "https://huggingface.co/datasets/xiaowu0162/longmemeval-v2/raw/main/trajectories.jsonl"
+)
 
 STATE_TRANSFER_TYPE_TERMS = (
     "dynamic",
@@ -282,6 +285,127 @@ def write_longmemeval_v2_prepared_state_evidence_audit(
         "report_path": str(report_path),
         "summary": summary,
     }
+
+
+def write_longmemeval_v2_prepared_text_split(
+    output_dir: str | Path,
+    *,
+    questions_source: str | Path = LONGMEMEVAL_V2_QUESTIONS_URL,
+    haystack_source: str | Path = LONGMEMEVAL_V2_SMALL_HAYSTACK_URL,
+    trajectories_source: str | Path,
+    transfer_per_type: int = 10,
+    control_per_group: int = 10,
+    include_image_required: bool = False,
+    require_haystack: bool = True,
+    max_records: int | None = None,
+    max_candidates_per_question: int = 50,
+) -> dict[str, Any]:
+    """Run the API-free LongMemEval-V2 text-transfer preparation workflow."""
+
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    question_audit = write_longmemeval_v2_question_audit(
+        questions_source,
+        output / "question_audit",
+        haystack_source=haystack_source,
+    )
+    split = write_longmemeval_v2_transfer_split(
+        question_audit["records_path"],
+        output / "transfer_split",
+        transfer_per_type=transfer_per_type,
+        control_per_group=control_per_group,
+        include_image_required=include_image_required,
+        require_haystack=require_haystack,
+    )
+    trajectory_manifest = write_longmemeval_v2_trajectory_manifest(
+        split["records_path"],
+        haystack_source,
+        output / "trajectory_manifest",
+    )
+    extracted = write_longmemeval_v2_extracted_trajectories(
+        trajectory_manifest["trajectory_ids_path"],
+        trajectories_source,
+        output / "selected_trajectories",
+        max_records=max_records,
+    )
+    validation = write_longmemeval_v2_prepared_split_validation(
+        split["records_path"],
+        questions_source,
+        haystack_source,
+        extracted["selected_trajectories_path"],
+        output / "validation",
+    )
+    state_evidence = write_longmemeval_v2_prepared_state_evidence_audit(
+        split["records_path"],
+        haystack_source,
+        extracted["selected_trajectories_path"],
+        output / "state_evidence",
+        max_candidates_per_question=max_candidates_per_question,
+    )
+    summary = {
+        "questions_source": str(questions_source),
+        "haystack_source": str(haystack_source),
+        "trajectories_source": str(trajectories_source),
+        "transfer_per_type": transfer_per_type,
+        "control_per_group": control_per_group,
+        "include_image_required": include_image_required,
+        "require_haystack": require_haystack,
+        "max_records": max_records,
+        "max_candidates_per_question": max_candidates_per_question,
+        "question_audit_summary": question_audit["summary"],
+        "transfer_split_summary": split["summary"],
+        "trajectory_manifest_summary": trajectory_manifest["summary"],
+        "extract_summary": extracted["summary"],
+        "validation_summary": validation["summary"],
+        "state_evidence_summary": state_evidence["summary"],
+        "prepared": (
+            bool(validation["summary"].get("valid"))
+            and bool(extracted["summary"].get("completed_all_requested"))
+        ),
+        "label_policy": (
+            "question answers/eval labels are excluded from audit and split records; "
+            "selected trajectories are sanitized runtime fields only"
+        ),
+    }
+    summary_path = output / "longmemeval_v2_prepared_text_split.summary.json"
+    report_path = output / "longmemeval_v2_prepared_text_split.report.md"
+    _write_json(summary_path, summary)
+    report_path.write_text(longmemeval_v2_prepared_text_split_report(summary), encoding="utf-8")
+    return {
+        "output_dir": str(output),
+        "summary_path": str(summary_path),
+        "report_path": str(report_path),
+        "question_audit": question_audit,
+        "transfer_split": split,
+        "trajectory_manifest": trajectory_manifest,
+        "extracted_trajectories": extracted,
+        "validation": validation,
+        "state_evidence": state_evidence,
+        "summary": summary,
+    }
+
+
+def longmemeval_v2_prepared_text_split_report(summary: Mapping[str, Any]) -> str:
+    validation = summary.get("validation_summary") or {}
+    state_evidence = summary.get("state_evidence_summary") or {}
+    split = summary.get("transfer_split_summary") or {}
+    extract = summary.get("extract_summary") or {}
+    lines = [
+        "# LongMemEval-V2 Prepared Text Split",
+        "",
+        f"Prepared: `{bool(summary.get('prepared'))}`",
+        f"Validation valid: `{bool(validation.get('valid'))}`",
+        f"Selected questions: `{split.get('total_selected', 0)}`",
+        f"Requested trajectories: `{extract.get('requested_trajectories', 0)}`",
+        f"Matched trajectories: `{extract.get('matched_trajectories', 0)}`",
+        f"Missing trajectories: `{extract.get('missing_trajectories', 0)}`",
+        f"State-evidence questions: `{state_evidence.get('with_matching_state_evidence', 0)}`",
+        f"State-available rate: `{_format_rate(state_evidence.get('state_available_rate'))}`",
+        "",
+        "Label policy: "
+        + str(summary.get("label_policy") or ""),
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def longmemeval_v2_prepared_state_evidence_records(
@@ -1523,6 +1647,22 @@ def main(argv: list[str] | None = None) -> None:
     state_evidence.add_argument("--max-candidates-per-question", type=int, default=50)
     state_evidence.add_argument("--json", action="store_true")
 
+    prepared = sub.add_parser(
+        "prepare-text-split",
+        help="Run the API-free LongMemEval-V2 text split preparation workflow",
+    )
+    prepared.add_argument("--questions", default=LONGMEMEVAL_V2_QUESTIONS_URL)
+    prepared.add_argument("--haystack", default=LONGMEMEVAL_V2_SMALL_HAYSTACK_URL)
+    prepared.add_argument("--trajectories", default=LONGMEMEVAL_V2_TRAJECTORIES_URL)
+    prepared.add_argument("--output-dir", type=Path, required=True)
+    prepared.add_argument("--transfer-per-type", type=int, default=10)
+    prepared.add_argument("--control-per-group", type=int, default=10)
+    prepared.add_argument("--include-image-required", action="store_true")
+    prepared.add_argument("--allow-missing-haystack", action="store_true")
+    prepared.add_argument("--max-records", type=int)
+    prepared.add_argument("--max-candidates-per-question", type=int, default=50)
+    prepared.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "question-audit":
         result = write_longmemeval_v2_question_audit(
@@ -1598,6 +1738,24 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             print(f"wrote LongMemEval-V2 prepared state-evidence audit to {args.output_dir}")
+            print(f"report: {result['report_path']}")
+    elif args.command == "prepare-text-split":
+        result = write_longmemeval_v2_prepared_text_split(
+            args.output_dir,
+            questions_source=args.questions,
+            haystack_source=args.haystack,
+            trajectories_source=args.trajectories,
+            transfer_per_type=args.transfer_per_type,
+            control_per_group=args.control_per_group,
+            include_image_required=args.include_image_required,
+            require_haystack=not args.allow_missing_haystack,
+            max_records=args.max_records,
+            max_candidates_per_question=args.max_candidates_per_question,
+        )
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"wrote LongMemEval-V2 prepared text split to {args.output_dir}")
             print(f"report: {result['report_path']}")
 
 

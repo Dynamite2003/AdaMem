@@ -17,6 +17,7 @@ from adamem.lme_v2 import (
     write_longmemeval_v2_extracted_trajectories,
     write_longmemeval_v2_prepared_split_validation,
     write_longmemeval_v2_prepared_state_evidence_audit,
+    write_longmemeval_v2_prepared_text_split,
     write_longmemeval_v2_question_audit,
     write_longmemeval_v2_trajectory_manifest,
     write_longmemeval_v2_transfer_split,
@@ -652,6 +653,78 @@ def test_write_longmemeval_v2_prepared_state_evidence_audit_outputs_artifacts(tm
     assert "Prepared State Evidence Audit" in report
     assert "State Families" in report
     assert "| runtime | 1 | 1 | 0 | 1 |" in report
+
+
+def test_write_longmemeval_v2_prepared_text_split_runs_full_api_free_pipeline(tmp_path: Path) -> None:
+    questions = tmp_path / "questions.jsonl"
+    questions.write_text(
+        json.dumps({
+            "id": "q_runtime",
+            "domain": "enterprise",
+            "environment": "workarena",
+            "question_type": "dynamic-environment",
+            "question": "Is the staging build runner offline?",
+            "answer": "No",
+            "eval_function": "norm_phrase_set_match",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    haystack = tmp_path / "haystack.json"
+    haystack.write_text(json.dumps({"q_runtime": ["traj-runtime"]}), encoding="utf-8")
+    trajectories = tmp_path / "trajectories.jsonl"
+    trajectories.write_text(
+        json.dumps({
+            "id": "traj-runtime",
+            "domain": "enterprise",
+            "environment": "workarena",
+            "question": "must not leak",
+            "answer": "must not leak",
+            "eval_function": "must_not_leak",
+            "states": [
+                {
+                    "state_index": 0,
+                    "accessibility_tree": "The staging build runner status is offline.",
+                }
+            ],
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    result = write_longmemeval_v2_prepared_text_split(
+        tmp_path / "prepared",
+        questions_source=questions,
+        haystack_source=haystack,
+        trajectories_source=trajectories,
+        transfer_per_type=1,
+        control_per_group=0,
+    )
+    summary = result["summary"]
+    selected = [
+        json.loads(line)
+        for line in Path(result["extracted_trajectories"]["selected_trajectories_path"]).read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+
+    assert summary["prepared"] is True
+    assert summary["validation_summary"]["valid"] is True
+    assert summary["transfer_split_summary"]["total_selected"] == 1
+    assert summary["state_evidence_summary"]["with_matching_state_evidence"] == 1
+    assert Path(result["summary_path"]).exists()
+    assert Path(result["report_path"]).exists()
+    assert selected == [
+        {
+            "id": "traj-runtime",
+            "domain": "enterprise",
+            "environment": "workarena",
+            "states": [
+                {
+                    "state_index": 0,
+                    "accessibility_tree": "The staging build runner status is offline.",
+                }
+            ],
+        }
+    ]
 
 
 def test_state_slot_family_groups_cross_benchmark_slots() -> None:

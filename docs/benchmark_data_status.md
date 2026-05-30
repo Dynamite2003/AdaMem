@@ -165,6 +165,15 @@ PYTHONPATH=src python -m adamem.lme_v2 state-evidence-audit \
   --output-dir results/longmemeval_v2_text_transfer_60_state_evidence \
   --json
 
+PYTHONPATH=src python -m adamem.lme_v2 prepare-text-split \
+  --questions data/longmemeval-v2/questions.jsonl \
+  --haystack data/longmemeval-v2/haystacks/lme_v2_small.json \
+  --trajectories data/longmemeval-v2/trajectories.jsonl \
+  --output-dir results/longmemeval_v2_text_transfer_60_prepared \
+  --transfer-per-type 10 \
+  --control-per-group 10 \
+  --json
+
 PYTHONPATH=src python -m adamem.pilot lme-v2-prepared \
   --questions data/longmemeval-v2/questions.jsonl \
   --trajectories data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl \
@@ -232,6 +241,11 @@ Latest text-only transfer split:
   runtime text contains deterministic state patches matching each selected
   question's routed state slots. Use this before API-backed transfer runs so
   state-aware failures can be separated from state-unavailable split selection.
+- `prepare-text-split` now bundles question audit, split selection,
+  trajectory manifest generation, sanitized selected-trajectory extraction,
+  prepared validation, and state-evidence audit. Prefer this one-command path
+  when regenerating the text-only transfer subset from raw public files, then
+  keep its summary and report with the downstream pilot artifacts.
 - The split records can drive exact conversion after the trajectory file is
   available:
 
