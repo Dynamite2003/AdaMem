@@ -57,6 +57,39 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 dependency propagation diagnostics
+
+- Added JSONL benchmark diagnostics for dependency-derived unknown-current
+  state, separate from direct unknown-current extraction.
+- Trace metadata now includes:
+  - `dependency_invalidated_by_state_id`
+  - `dependency_invalidated_by_slot`
+- `benchmark_failure_summary` now includes a `dependency_propagation`
+  aggregate per baseline:
+  - dependency unknown-current records and rate;
+  - dependency unknown-current correction records and rate;
+  - resolved and unresolved dependency invalidated values;
+  - parent state slots that caused dependency invalidation.
+- `paper_metrics` now exposes:
+  - `dependency_unknown_current_rate`
+  - `dependency_unknown_current_correction_rate`
+- Markdown benchmark reports now include a `Dependency Propagation` section.
+- Purpose:
+  - Make the newly added propagation mechanism measurable in public benchmark
+    runs and ablation tables, instead of hiding it inside aggregate
+    unknown-current counts.
+  - Support paper error analysis by separating direct invalidated-without-
+    replacement updates from parent-slot invalidation of downstream state.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_employer_dependency_transfer_fixture_favors_dependency_propagation tests/test_eval.py::test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata tests/test_eval.py::test_jsonl_benchmark_failure_summary_groups_by_metadata -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/employer_dependency_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication --experiment-output /tmp/adamem_dependency_metrics_experiment.json --benchmark-cases-output /tmp/adamem_dependency_metrics_records.jsonl --benchmark-report-output /tmp/adamem_dependency_metrics_report.md --json`
+    -> dependency trace metadata exposed on the passing
+    `semantic_state_propagation_adjudication` record.
+  - `PYTHONPATH=src python -m pytest -q` -> `214 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+
 ### 2026-05-30 employer dependency propagation to unknown-current
 
 - Extended typed state dependency propagation from direct invalidation only to

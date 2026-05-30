@@ -1288,16 +1288,40 @@ def test_employer_dependency_transfer_fixture_favors_dependency_propagation() ->
     )
     records = benchmark_case_records(results)
     summary = benchmark_failure_summary(records)
+    report = benchmark_failure_report(records)
     by_baseline = {result.name: result for result in results}
+    by_record = {record["baseline"]: record for record in records}
 
     assert by_baseline["semantic_only"].passed == 0
     assert by_baseline["semantic_state_adjudication"].passed == 0
     assert by_baseline["semantic_state_propagation_adjudication"].passed == 1
+    trace_metadata = by_record["semantic_state_propagation_adjudication"]["trace"][0]["metadata"]
+    assert trace_metadata["dependency_invalidated_by_slot"] == "organization.employer"
+    assert trace_metadata["state_status"] == "unknown_current"
     assert (
         summary["unknown_current"]["semantic_state_propagation_adjudication"][
             "unknown_current_records"
         ]
         == 1
+    )
+    assert summary["dependency_propagation"]["semantic_state_adjudication"][
+        "dependency_unknown_current_records"
+    ] == 0
+    assert summary["dependency_propagation"]["semantic_state_propagation_adjudication"] == {
+        "total": 1,
+        "dependency_unknown_current_records": 1,
+        "dependency_unknown_current_rate": 1.0,
+        "dependency_unknown_current_correction_records": 0,
+        "dependency_unknown_current_correction_rate": 0.0,
+        "resolved_dependency_invalidated_value_records": 1,
+        "unresolved_dependency_invalidated_value_records": 0,
+        "dependency_parent_slots": ["organization.employer"],
+    }
+    assert (
+        summary["paper_metrics"]["semantic_state_propagation_adjudication"][
+            "dependency_unknown_current_rate"
+        ]
+        == 1.0
     )
     assert (
         summary["pairwise_vs_first_baseline"]["semantic_state_propagation_adjudication"][
@@ -1305,6 +1329,7 @@ def test_employer_dependency_transfer_fixture_favors_dependency_propagation() ->
         ]
         == 1
     )
+    assert "## Dependency Propagation" in report
 
 
 def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata() -> None:

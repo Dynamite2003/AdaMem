@@ -149,6 +149,7 @@ def benchmark_failure_summary(
         "by_metadata": {},
         "state_readout_exposure": {},
         "unknown_current": {},
+        "dependency_propagation": {},
         "premise_correction": {},
         "state_source_trace": {},
         "evidence_support": {},
@@ -164,6 +165,7 @@ def benchmark_failure_summary(
         summary["by_baseline"][baseline] = _aggregate_records(subset)
         summary["state_readout_exposure"][baseline] = _state_exposure_aggregate(subset)
         summary["unknown_current"][baseline] = _unknown_current_aggregate(subset)
+        summary["dependency_propagation"][baseline] = _dependency_propagation_aggregate(subset)
         summary["state_memory_inventory"][baseline] = state_inventory_aggregate(subset)
         summary["premise_correction"][baseline] = _premise_correction_aggregate(subset)
         summary["state_source_trace"][baseline] = _state_source_trace_aggregate(subset)
@@ -258,12 +260,13 @@ def benchmark_failure_report(
             "| baseline | support | accuracy | net vs reference | state slot match | "
             "state missing | slot mismatch | evidence support | graph evidence hit | "
             "answer keyword recall | basis keyword recall | unmarked state exposure | "
-            "unknown-current | unknown-current correction | state source trace | "
+            "unknown-current | unknown-current correction | dependency unknown-current | "
+            "dependency correction | state source trace | "
             "correction source trace |"
         )
         lines.append(
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-            "---: | ---: | ---: | ---: |"
+            "---: | ---: | ---: | ---: | ---: | ---: |"
         )
         for baseline, metrics in paper_metrics.items():
             lines.append(
@@ -279,6 +282,8 @@ def benchmark_failure_report(
                 f"{_format_optional_rate(metrics['unmarked_state_exposure_rate'])} | "
                 f"{_format_optional_rate(metrics['unknown_current_rate'])} | "
                 f"{_format_optional_rate(metrics['unknown_current_correction_rate'])} | "
+                f"{_format_optional_rate(metrics['dependency_unknown_current_rate'])} | "
+                f"{_format_optional_rate(metrics['dependency_unknown_current_correction_rate'])} | "
                 f"{_format_optional_rate(metrics['state_source_trace_rate'])} | "
                 f"{_format_optional_rate(metrics['state_correction_source_trace_rate'])} |"
             )
@@ -357,6 +362,26 @@ def benchmark_failure_report(
                 f"{aggregate['unknown_current_correction_records']} | "
                 f"{aggregate['resolved_invalidated_value_records']} | "
                 f"{aggregate['unresolved_invalidated_value_records']} |"
+            )
+        lines.append("")
+
+    dependency = summary.get("dependency_propagation", {})
+    if dependency:
+        lines.append("## Dependency Propagation")
+        lines.append(
+            "| baseline | queries | dependency states | dependency corrections | "
+            "resolved invalidated values | unresolved invalidated values | parent slots |"
+        )
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | --- |")
+        for baseline, aggregate in dependency.items():
+            parent_slots = ", ".join(aggregate["dependency_parent_slots"])
+            lines.append(
+                f"| {baseline} | {aggregate['total']} | "
+                f"{aggregate['dependency_unknown_current_records']} | "
+                f"{aggregate['dependency_unknown_current_correction_records']} | "
+                f"{aggregate['resolved_dependency_invalidated_value_records']} | "
+                f"{aggregate['unresolved_dependency_invalidated_value_records']} | "
+                f"{parent_slots} |"
             )
         lines.append("")
 
@@ -755,6 +780,8 @@ def _compact_trace_item(item: dict[str, Any]) -> dict[str, Any]:
             for key in (
                 "state_slot",
                 "state_status",
+                "dependency_invalidated_by_slot",
+                "dependency_invalidated_by_state_id",
                 "source_observation_label",
                 "stale_source_observation_label",
                 "source_id",
@@ -870,6 +897,41 @@ def _unknown_current_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         "unknown_current_correction_rate": correction_records / total if total else 0.0,
         "resolved_invalidated_value_records": resolved_records,
         "unresolved_invalidated_value_records": unresolved_records,
+    }
+
+
+def _dependency_propagation_aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(records)
+    state_records = sum(
+        1 for record in records
+        if _record_has_dependency_unknown_current_state(record)
+    )
+    correction_records = sum(
+        1 for record in records
+        if _record_has_dependency_unknown_current_correction(record)
+    )
+    resolved_records = sum(
+        1 for record in records
+        if record.get("corrected_forbidden") and _record_has_dependency_unknown_current_evidence(record)
+    )
+    unresolved_records = sum(
+        1 for record in records
+        if record.get("present_forbidden") and _record_has_dependency_unknown_current_evidence(record)
+    )
+    parent_slots = sorted({
+        slot
+        for record in records
+        for slot in _dependency_parent_slots(record)
+    })
+    return {
+        "total": total,
+        "dependency_unknown_current_records": state_records,
+        "dependency_unknown_current_rate": state_records / total if total else 0.0,
+        "dependency_unknown_current_correction_records": correction_records,
+        "dependency_unknown_current_correction_rate": correction_records / total if total else 0.0,
+        "resolved_dependency_invalidated_value_records": resolved_records,
+        "unresolved_dependency_invalidated_value_records": unresolved_records,
+        "dependency_parent_slots": parent_slots,
     }
 
 
@@ -995,6 +1057,7 @@ def _paper_metrics_for_baseline(
     exposure = summary["state_readout_exposure"][baseline]
     correction = summary["premise_correction"][baseline]
     unknown_current = summary["unknown_current"][baseline]
+    dependency = summary["dependency_propagation"][baseline]
     source_trace = summary["state_source_trace"][baseline]
     evidence = summary["evidence_support"][baseline]
     answerability = summary["answerability"][baseline]
@@ -1033,6 +1096,10 @@ def _paper_metrics_for_baseline(
         "unresolved_forbidden_rate": correction["unresolved_forbidden_rate"],
         "unknown_current_rate": unknown_current["unknown_current_rate"],
         "unknown_current_correction_rate": unknown_current["unknown_current_correction_rate"],
+        "dependency_unknown_current_rate": dependency["dependency_unknown_current_rate"],
+        "dependency_unknown_current_correction_rate": (
+            dependency["dependency_unknown_current_correction_rate"]
+        ),
         "state_source_trace_rate": source_trace["state_source_trace_rate"],
         "state_correction_source_trace_rate": source_trace["state_correction_source_trace_rate"],
         "state_correction_stale_source_trace_rate": (
@@ -1155,12 +1222,59 @@ def _record_has_unknown_current_evidence(record: dict[str, Any]) -> bool:
     )
 
 
+def _record_has_dependency_unknown_current_state(record: dict[str, Any]) -> bool:
+    return any(_is_dependency_unknown_current_state_trace(item) for item in record.get("trace") or [])
+
+
+def _record_has_dependency_unknown_current_correction(record: dict[str, Any]) -> bool:
+    for item in record.get("trace") or []:
+        if not _is_premise_correction_trace(item):
+            continue
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        if (
+            metadata.get("current_value") == "unknown-current"
+            and metadata.get("dependency_invalidated_by_slot")
+        ):
+            return True
+    return False
+
+
+def _record_has_dependency_unknown_current_evidence(record: dict[str, Any]) -> bool:
+    return (
+        _record_has_dependency_unknown_current_state(record)
+        or _record_has_dependency_unknown_current_correction(record)
+    )
+
+
+def _dependency_parent_slots(record: dict[str, Any]) -> list[str]:
+    slots: list[str] = []
+    for item in record.get("trace") or []:
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        slot = metadata.get("dependency_invalidated_by_slot")
+        if slot:
+            slots.append(str(slot))
+    return slots
+
+
 def _is_unknown_current_state_trace(item: dict[str, Any]) -> bool:
     metadata = item.get("metadata")
     return (
         item.get("kind") in {"state", "kg_fact", "salient_fact"}
         and isinstance(metadata, dict)
         and metadata.get("state_status") == "unknown_current"
+    )
+
+
+def _is_dependency_unknown_current_state_trace(item: dict[str, Any]) -> bool:
+    metadata = item.get("metadata")
+    return (
+        _is_unknown_current_state_trace(item)
+        and isinstance(metadata, dict)
+        and bool(metadata.get("dependency_invalidated_by_slot"))
     )
 
 
@@ -1263,6 +1377,8 @@ def _trace_metadata(
         "state_value",
         "state_status",
         "invalidated_state_value",
+        "dependency_invalidated_by_state_id",
+        "dependency_invalidated_by_slot",
         "stale_value",
         "current_value",
         "kg_relation",
@@ -1284,11 +1400,20 @@ def _trace_metadata(
         if source_state := state_items_by_id.get(str(source_state_id)):
             if source_label := _state_source_label(source_state, source_labels):
                 metadata["source_observation_label"] = source_label
+            _copy_state_dependency_metadata(source_state, metadata)
     if stale_state_id := metadata.get("stale_state_id"):
         if stale_state := state_items_by_id.get(str(stale_state_id)):
             if stale_label := _state_source_label(stale_state, source_labels):
                 metadata["stale_source_observation_label"] = stale_label
     return metadata
+
+
+def _copy_state_dependency_metadata(state: MemoryItem, metadata: dict[str, Any]) -> None:
+    for key in ("dependency_invalidated_by_state_id", "dependency_invalidated_by_slot"):
+        if key in metadata:
+            continue
+        if key in state.metadata:
+            metadata[key] = state.metadata[key]
 
 
 def _state_source_label(state: MemoryItem, source_labels: dict[str, str]) -> str | None:

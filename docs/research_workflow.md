@@ -367,7 +367,9 @@ Current API-free state-aware baselines:
   JSONL diagnostics report unknown-current records, corrections, and resolved
   invalidated values separately from unresolved stale evidence.
 - `semantic_state_propagation_adjudication`: semantic state adjudication plus
-  typed dependency propagation for indirectly invalidated state slots.
+  typed dependency propagation for indirectly invalidated state slots. JSONL
+  diagnostics expose dependency-derived unknown-current records separately, so
+  this mechanism can be audited apart from direct unknown-current extraction.
 - `state_readout`: deterministic state extraction plus authorized current-state
   readout for state-sensitive queries.
 - `state_propagation`: state readout plus typed dependency propagation from a
@@ -613,6 +615,9 @@ Completed API-free foundations:
   extractor hook.
 - Dynamic state readout for wildcard slots such as `task.*.status`.
 - State dependency propagation from changed slots to dependent slots.
+- Dependency-propagation diagnostics for JSONL runs, including
+  dependency-derived unknown-current readouts, dependency-derived corrections,
+  resolved invalidated values, and parent slots.
 - State readout authorization boundary, which keeps derived state records out
   of ordinary direct retrieval unless the query is routed to an authorized
   state slot.
