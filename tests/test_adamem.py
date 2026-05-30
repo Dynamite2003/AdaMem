@@ -987,6 +987,161 @@ def test_state_readout_handles_runtime_status_slot() -> None:
     assert "offline" not in results[0].item.content
 
 
+def test_state_readout_handles_environment_gotcha_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: On the shopping checkout page, the gotcha is use guest checkout first.")
+    mem.observe("[2026-02-01] user: On the shopping checkout page, the gotcha is apply the coupon after shipping.")
+
+    states = [
+        item
+        for item in mem.store.all()
+        if item.kind == "state" and item.metadata.get("state_slot") == "environment.shopping_checkout_page.gotcha"
+    ]
+    active_values = [item.metadata.get("state_value") for item in states if item.active]
+    inactive_values = [item.metadata.get("state_value") for item in states if not item.active]
+
+    assert active_values == ["apply the coupon after shipping"]
+    assert inactive_values == ["use guest checkout first"]
+
+    results = mem.retrieve("What gotcha should I remember for the shopping checkout page?", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert results[0].item.metadata["state_slot"] == "environment.shopping_checkout_page.gotcha"
+    assert "apply the coupon after shipping" in results[0].item.content
+    assert "guest checkout" not in results[0].item.content
+
+
+def test_state_readout_handles_tool_output_slot() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_graph=False,
+            use_mmr=False,
+            use_state_memory=True,
+            use_state_readout=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: The search tool returned zero results.")
+    mem.observe("[2026-02-01] user: The search tool returned three matching tickets.")
+
+    states = [
+        item
+        for item in mem.store.all()
+        if item.kind == "state" and item.metadata.get("state_slot") == "tool.search.last_output"
+    ]
+    active_values = [item.metadata.get("state_value") for item in states if item.active]
+    inactive_values = [item.metadata.get("state_value") for item in states if not item.active]
+
+    assert active_values == ["three matching tickets"]
+    assert inactive_values == ["zero results"]
+
+    results = mem.retrieve("What did the search tool return?", top_k=3)
+
+    assert results[0].item.kind == "state"
+    assert results[0].item.metadata["state_slot"] == "tool.search.last_output"
+    assert "three matching tickets" in results[0].item.content
+    assert "zero results" not in results[0].item.content
+
+
+def test_state_premise_correction_handles_environment_gotcha_and_tool_output() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: On the shopping checkout page, the gotcha is use guest checkout first.")
+    mem.observe("[2026-02-01] user: On the shopping checkout page, the gotcha is apply the coupon after shipping.")
+    mem.observe("[2026-01-01] user: The search tool returned zero results.")
+    mem.observe("[2026-02-01] user: The search tool returned three matching tickets.")
+
+    gotcha = mem.retrieve("Should I still use guest checkout first as the checkout gotcha?", top_k=1)
+    tool = mem.retrieve("Since the search tool returned zero results, what did it return?", top_k=1)
+
+    assert gotcha[0].item.kind == "state_correction"
+    assert gotcha[0].item.metadata["state_slot"] == "environment.shopping_checkout_page.gotcha"
+    assert gotcha[0].item.metadata["stale_value"] == "use guest checkout first"
+    assert gotcha[0].item.metadata["current_value"] == "apply the coupon after shipping"
+    assert tool[0].item.kind == "state_correction"
+    assert tool[0].item.metadata["state_slot"] == "tool.search.last_output"
+    assert tool[0].item.metadata["stale_value"] == "zero results"
+    assert tool[0].item.metadata["current_value"] == "three matching tickets"
+
+
+def test_state_unknown_current_handles_environment_gotcha_and_tool_output() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+
+    mem.observe("[2026-01-01] user: On the shopping checkout page, the gotcha is use guest checkout first.")
+    mem.observe("[2026-02-01] user: On the shopping checkout page, the gotcha is no longer use guest checkout first.")
+    mem.observe("[2026-01-01] user: The search tool returned zero results.")
+    mem.observe("[2026-02-01] user: The search tool output is no longer zero results.")
+
+    active_unknown = {
+        item.metadata["state_slot"]: item
+        for item in mem.store.all()
+        if item.kind == "state"
+        and item.active
+        and item.metadata.get("state_status") == "unknown_current"
+    }
+
+    assert active_unknown["environment.shopping_checkout_page.gotcha"].metadata[
+        "invalidated_state_value"
+    ] == "use guest checkout first"
+    assert active_unknown["tool.search.last_output"].metadata["invalidated_state_value"] == "zero results"
+
+    gotcha = mem.retrieve("Should I use guest checkout first as the checkout gotcha?", top_k=1)
+    tool = mem.retrieve("Did the search tool return zero results?", top_k=1)
+
+    assert gotcha[0].item.kind == "state_correction"
+    assert gotcha[0].item.metadata["current_value"] == "unknown-current"
+    assert tool[0].item.kind == "state_correction"
+    assert tool[0].item.metadata["current_value"] == "unknown-current"
+
+
 def test_state_readout_handles_role_and_manager_slots() -> None:
     mem = AdaMem(
         config=AdaMemConfig(
@@ -1220,6 +1375,10 @@ def test_query_state_router_uses_word_boundaries_and_intent_gates() -> None:
     assert query_relevant_state_slots("What is the migration status?") == ["task.*.status"]
     assert query_relevant_state_slots("What time can I meet with the user?") == ["schedule.availability"]
     assert query_relevant_state_slots("Is the staging build runner offline?") == ["runtime.*.status"]
+    assert query_relevant_state_slots("What gotcha should I remember for checkout?") == [
+        "environment.*.gotcha"
+    ]
+    assert query_relevant_state_slots("What did the search tool return?") == ["tool.*.last_output"]
     assert query_relevant_state_slots("What role should guide my responsibilities?") == ["role.current"]
     assert query_relevant_state_slots("Who is my manager for approvals?") == ["relationship.manager"]
     assert query_relevant_state_slots("Given the user's peanut allergy, what meal constraint applies?") == [
@@ -1241,6 +1400,8 @@ def test_query_state_router_uses_word_boundaries_and_intent_gates() -> None:
     assert query_relevant_state_slots("What is the total number of online courses I've completed?") == []
     assert query_relevant_state_slots("What is the total number of comments on my Facebook Live session?") == []
     assert query_relevant_state_slots("Who managed the 2024 project retrospective?") == []
+    assert query_relevant_state_slots("What was the result of the soccer game?") == []
+    assert query_relevant_state_slots("What did my friend return to the library?") == []
 
 
 def test_state_authorization_can_be_disabled_for_ablation() -> None:

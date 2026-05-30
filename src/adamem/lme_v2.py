@@ -1174,6 +1174,10 @@ def state_slot_family(slot: str) -> str:
         return "resource"
     if normalized.startswith("workflow."):
         return "workflow"
+    if normalized.startswith("environment."):
+        return "environment"
+    if normalized.startswith("tool."):
+        return "tool_output"
     if normalized.startswith("task."):
         return "task"
     if normalized.startswith("location") or normalized.startswith("local."):

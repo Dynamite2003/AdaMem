@@ -163,7 +163,8 @@ state-aware memory layer:
 - Extract candidate state updates from new observations.
 - Assign each state to a typed slot such as location, schedule, preference,
   health constraint, relationship, task status, resource status,
-  workflow/runbook rule, or runtime/tool status.
+  workflow/runbook rule, runtime/tool status, environment gotcha, or tool
+  output fact.
 - Mark each slot value as active, stale, replaced, or unknown-current.
 - Propagate invalidation through a small dependency topology between state
   slots.

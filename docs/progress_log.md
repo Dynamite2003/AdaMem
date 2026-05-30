@@ -29,9 +29,9 @@ API-free variant combines authorized state readout with query-scoped
 state-source adjudication. The deterministic state extractor now covers
 location, schedule availability, beverage preference, task status,
 health/dietary constraints, resource status, workflow/runbook rules, and
-runtime/tool status, role, and manager relationship state, and can represent
-unknown-current invalidations when new evidence says an old state is no longer
-valid without naming a replacement.
+runtime/tool status, environment gotchas, tool-output facts, role, and manager
+relationship state, and can represent unknown-current invalidations when new
+evidence says an old state is no longer valid without naming a replacement.
 The latest public-transfer diagnostic shows the next
 method bottleneck clearly: state-sensitive query routing must be precise before
 state-readout metrics are meaningful. The first LongMemEval-S inferred-state
@@ -56,6 +56,32 @@ extraction on those true state cases.
 - Breaking API changes are allowed when useful, but must be documented.
 
 ## Resume Checkpoint
+
+### 2026-05-30 environment gotcha and tool-output state slots
+
+- Added LongMemEval-V2/AMA-inspired non-personal state slots to the
+  deterministic state layer:
+  - `environment.*.gotcha`
+  - `tool.*.last_output`
+- These slots use the existing state-authority path:
+  - active/stale replacement by `memory_key`;
+  - `unknown_current` invalidation without a replacement value;
+  - authorized state readout;
+  - stale-premise correction;
+  - state-family grouping for LongMemEval-V2 reports.
+- Paper motivation:
+  - LongMemEval-V2 explicitly evaluates web-agent memory for environment
+    gotchas and premise awareness.
+  - AMA-Bench highlights objective tool/trajectory information and causality
+    as a gap in similarity-only memory.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py::test_state_readout_handles_environment_gotcha_slot tests/test_adamem.py::test_state_readout_handles_tool_output_slot tests/test_adamem.py::test_state_premise_correction_handles_environment_gotcha_and_tool_output tests/test_adamem.py::test_state_unknown_current_handles_environment_gotcha_and_tool_output tests/test_adamem.py::test_query_state_router_uses_word_boundaries_and_intent_gates tests/test_lme_v2.py::test_state_slot_family_groups_cross_benchmark_slots -q`
+    -> `6 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py tests/test_lme_v2.py -q`
+    -> `69 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `230 passed`
 
 ### 2026-05-30 LongMemEval-V2 prepared workflow in study plans
 

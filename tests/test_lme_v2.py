@@ -52,12 +52,22 @@ def test_longmemeval_v2_question_audit_marks_state_transfer_candidates() -> None
             "answer": "There is no such module.",
             "eval_function": "llm_abstention_checker|require_non_empty=true",
         },
+        {
+            "id": "gotcha_q",
+            "domain": "web",
+            "environment": "shopping",
+            "question_type": "errors-gotchas",
+            "question": "What gotcha should I remember for the checkout page?",
+            "answer": "Apply coupons after shipping.",
+            "eval_function": "norm_phrase_set_match",
+        },
     ]
     records = list(longmemeval_v2_question_audit_records(
         questions,
         haystacks={
             "dynamic_q": ["traj1", "traj2"],
             "static_q": ["traj3"],
+            "gotcha_q": ["traj4"],
         },
     ))
     by_id = {record["id"]: record for record in records}
@@ -71,16 +81,20 @@ def test_longmemeval_v2_question_audit_marks_state_transfer_candidates() -> None
     assert by_id["procedure_abs_q"]["state_transfer_candidate"] is True
     assert by_id["procedure_abs_q"]["eval_function_family"] == "llm_abstention_checker"
     assert by_id["procedure_abs_q"]["haystack_size"] is None
+    assert by_id["gotcha_q"]["state_transfer_candidate"] is True
+    assert by_id["gotcha_q"]["candidate_reasons"] == ["question_type", "query_state_slot"]
+    assert by_id["gotcha_q"]["state_slot"] == "environment.*.gotcha"
     assert by_id["static_q"]["state_transfer_candidate"] is False
     assert all("answer" not in record for record in records)
-    assert summary["total_questions"] == 3
-    assert summary["state_transfer_candidate_questions"] == 2
-    assert summary["inferred_state_slot_questions"] == 2
-    assert summary["with_haystack_questions"] == 2
+    assert summary["total_questions"] == 4
+    assert summary["state_transfer_candidate_questions"] == 3
+    assert summary["inferred_state_slot_questions"] == 3
+    assert summary["with_haystack_questions"] == 3
     assert summary["missing_haystack_questions"] == 1
     assert summary["by_question_type"]["dynamic-environment"]["state_transfer_candidates"] == 1
     assert summary["by_state_slot"]["runtime.*.status"] == 1
-    assert summary["by_candidate_reason"]["question_type"] == 2
+    assert summary["by_state_slot"]["environment.*.gotcha"] == 1
+    assert summary["by_candidate_reason"]["question_type"] == 3
 
 
 def test_write_longmemeval_v2_question_audit_outputs_records_summary_and_report(tmp_path: Path) -> None:
@@ -637,6 +651,8 @@ def test_state_slot_family_groups_cross_benchmark_slots() -> None:
     assert state_slot_family("runtime.staging_build_runner_status.status") == "runtime"
     assert state_slot_family("resource.database.status") == "resource"
     assert state_slot_family("workflow.checkout") == "workflow"
+    assert state_slot_family("environment.checkout_page.gotcha") == "environment"
+    assert state_slot_family("tool.search.last_output") == "tool_output"
     assert state_slot_family("location") == "location"
     assert state_slot_family("local.gym") == "location"
     assert state_slot_family("organization.employer") == "employment"

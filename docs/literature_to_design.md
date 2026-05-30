@@ -301,7 +301,8 @@ Current implementation:
   old value.
 - The deterministic extractor covers unknown-current invalidations for
   location, resource status, workflow/runbook rules, runtime/tool status,
-  beverage preference, role, and manager relationship state.
+  environment gotchas, tool-output facts, beverage preference, role, and
+  manager relationship state.
 - The deterministic extractor now also covers current role and manager
   relationship state, with slots `role.current` and `relationship.manager`.
 - JSONL reports now separate unknown-current records, unknown-current
@@ -347,11 +348,16 @@ Current implementation:
 - Runtime/tool status uses dynamic slots such as
   `runtime.staging_build_runner.status` and route through
   `runtime.*.status`.
+- Environment gotchas use dynamic slots such as
+  `environment.shopping_checkout_page.gotcha` and route through
+  `environment.*.gotcha`.
+- Tool-output facts use dynamic slots such as `tool.search.last_output` and
+  route through `tool.*.last_output`.
 - Role and manager relationship state use `role.current` and
   `relationship.manager`.
 - Tests verify beverage, schedule, task, health, resource, workflow, runtime,
-  role, and manager queries surface the intended active slot rather than
-  unrelated state.
+  environment-gotcha, tool-output, role, and manager queries surface the
+  intended active slot rather than unrelated state.
 - JSONL benchmark summaries now report state-readout exposure, including
   unmarked-query state exposure, so prompt pollution can be measured rather
   than inferred.
@@ -374,7 +380,9 @@ Current implementation:
 
 Required next evidence:
 
-- Add relationship, user-role, environment-gotcha, and tool-output fact slots.
+- Track whether the new environment-gotcha and tool-output slots appear in
+  LongMemEval-V2 prepared state-evidence audits once the local trajectory data
+  is restored.
 - Track state-readout exposure on every public transfer pilot and use failures
   to tune query routing or replace it with a documented intent classifier.
 - Report state-readout missing, slot-mismatch, and unmarked-exposure rates
@@ -812,8 +820,9 @@ metrics.
    LongMemEval-S should stay in the workflow as broad retrieval-transfer and
    no-regression evidence, but the full-file audit shows it is too sparse in
    state-available cases to carry AdaMem's main transfer claim.
-3. Add relationship, user-role, environment-gotcha, and tool-output fact state
-   slots.
+3. Audit the new relationship, user-role, environment-gotcha, and tool-output
+   state slots on LongMemEval-V2 prepared trajectories once the local sources
+   are available.
 4. Scale the public AMA-Bench trajectory pilot beyond the first five samples
    and test whether step evidence recall transfers once richer state/causal
    summarization or an LLM judge is added.

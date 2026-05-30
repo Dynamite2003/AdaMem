@@ -631,6 +631,103 @@ RUNTIME_NOUNS = {
     "tool",
 }
 
+ENVIRONMENT_GOTCHA_PATTERNS = [
+    re.compile(
+        r"\b(?:for|in|on)\s+(?P<environment>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?),?\s+"
+        r"(?:the\s+)?(?P<label>gotcha|caveat|quirk|warning|workaround)\s+"
+        r"(?:is|was)\s+(?P<value>[A-Za-z0-9 _/'\":.,-]{2,100})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?P<environment>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?P<label>gotcha|caveat|quirk|warning|workaround)\s+"
+        r"(?:is|was)\s+(?P<value>[A-Za-z0-9 _/'\":.,-]{2,100})",
+        re.I,
+    ),
+]
+
+ENVIRONMENT_GOTCHA_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(
+        r"\b(?:for|in|on)\s+(?P<environment>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?),?\s+"
+        r"(?:the\s+)?(?P<label>gotcha|caveat|quirk|warning|workaround)\s+"
+        r"(?:is|was)\s+no\s+longer\s+(?P<value>[A-Za-z0-9 _/'\":.,-]{2,100})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?P<environment>[A-Za-z][A-Za-z0-9 _/'-]{2,50}?)\s+"
+        r"(?P<label>gotcha|caveat|quirk|warning|workaround)\s+"
+        r"(?:is|was)\s+not\s+(?P<value>[A-Za-z0-9 _/'\":.,-]{2,100})\s+anymore",
+        re.I,
+    ),
+]
+
+ENVIRONMENT_GOTCHA_QUERY_TERMS = {
+    "caveat",
+    "gotcha",
+    "quirk",
+    "trap",
+    "warning",
+    "watch out",
+    "workaround",
+}
+
+ENVIRONMENT_QUERY_TERMS = {
+    "environment",
+    "page",
+    "site",
+    "task",
+    "workflow",
+}
+
+TOOL_OUTPUT_PATTERNS = [
+    re.compile(
+        r"\b(?:the\s+)?(?P<tool>[A-Za-z][A-Za-z0-9 _/'-]{1,50}?)\s+"
+        r"(?:tool|command|api|endpoint)\s+"
+        r"(?:returned|returns|responded\s+with|outputs?)\s+"
+        r"(?P<value>[A-Za-z0-9 _/'\":.,-]{1,100})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?P<tool>[A-Za-z][A-Za-z0-9 _/'-]{1,50}?)\s+"
+        r"(?:tool|command|api|endpoint)\s+"
+        r"(?:output|result|response)\s+(?:is|was)\s+"
+        r"(?P<value>[A-Za-z0-9 _/'\":.,-]{1,100})",
+        re.I,
+    ),
+]
+
+TOOL_OUTPUT_UNKNOWN_CURRENT_PATTERNS = [
+    re.compile(
+        r"\b(?:the\s+)?(?P<tool>[A-Za-z][A-Za-z0-9 _/'-]{1,50}?)\s+"
+        r"(?:tool|command|api|endpoint)\s+"
+        r"(?:output|result|response)\s+(?:is|was)\s+no\s+longer\s+"
+        r"(?P<value>[A-Za-z0-9 _/'\":.,-]{1,100})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?P<tool>[A-Za-z][A-Za-z0-9 _/'-]{1,50}?)\s+"
+        r"(?:tool|command|api|endpoint)\s+"
+        r"(?:does\s+not|doesn[’']t|no\s+longer)\s+return\s+"
+        r"(?P<value>[A-Za-z0-9 _/'\":.,-]{1,100})",
+        re.I,
+    ),
+]
+
+TOOL_OUTPUT_QUERY_TERMS = {
+    "output",
+    "result",
+    "response",
+    "return",
+    "returned",
+}
+
+TOOL_OBJECT_TERMS = {
+    "api",
+    "command",
+    "endpoint",
+    "tool",
+}
+
 ROLE_PATTERNS = [
     re.compile(
         r"\b(?:my\s+)?(?:current\s+)?(?:role|job\s+title|title|position)\s+is\s+"
@@ -876,6 +973,32 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
             status="unknown_current",
             invalidates_value=status,
         ))
+    environment_gotcha_unknown_current = _extract_environment_gotcha_unknown_current(content)
+    if environment_gotcha_unknown_current:
+        environment, value = environment_gotcha_unknown_current
+        patches.append(StatePatch(
+            slot=f"environment.{environment}.gotcha",
+            value="unknown-current",
+            evidence=content,
+            status="unknown_current",
+            invalidates_value=value,
+        ))
+    elif environment_gotcha := _extract_environment_gotcha(content):
+        environment, value = environment_gotcha
+        patches.append(StatePatch(slot=f"environment.{environment}.gotcha", value=value, evidence=content))
+    tool_output_unknown_current = _extract_tool_output_unknown_current(content)
+    if tool_output_unknown_current:
+        tool, value = tool_output_unknown_current
+        patches.append(StatePatch(
+            slot=f"tool.{tool}.last_output",
+            value="unknown-current",
+            evidence=content,
+            status="unknown_current",
+            invalidates_value=value,
+        ))
+    elif tool_output := _extract_tool_output(content):
+        tool, value = tool_output
+        patches.append(StatePatch(slot=f"tool.{tool}.last_output", value=value, evidence=content))
     role_unknown_current = _extract_role_unknown_current(content)
     if role_unknown_current:
         patches.append(StatePatch(
@@ -943,6 +1066,10 @@ def query_relevant_state_slots(query: str) -> list[str]:
         slots.append("workflow.*")
     if _has_runtime_intent(text):
         slots.append("runtime.*.status")
+    if _has_environment_gotcha_intent(text):
+        slots.append("environment.*.gotcha")
+    if _has_tool_output_intent(text):
+        slots.append("tool.*.last_output")
     if _has_role_intent(text):
         slots.append("role.current")
     if _has_manager_intent(text):
@@ -1070,6 +1197,20 @@ def _has_runtime_intent(text: str) -> bool:
         return True
     status_terms = {"available", "blocked", "degraded", "down", "fixed", "healthy", "offline", "online", "status", "up"}
     return _has_any_term(text, {"job", "service", "system", "tool"}) and _has_any_term(text, status_terms)
+
+
+def _has_environment_gotcha_intent(text: str) -> bool:
+    if _has_any_term(text, ENVIRONMENT_GOTCHA_QUERY_TERMS):
+        return True
+    if _has_any_phrase(text, {"what should i know", "what should the agent know"}):
+        return _has_any_term(text, ENVIRONMENT_QUERY_TERMS)
+    return False
+
+
+def _has_tool_output_intent(text: str) -> bool:
+    if _has_any_term(text, TOOL_OBJECT_TERMS) and _has_any_term(text, TOOL_OUTPUT_QUERY_TERMS):
+        return True
+    return False
 
 
 def _has_role_intent(text: str) -> bool:
@@ -1317,6 +1458,54 @@ def _extract_runtime_unknown_current(content: str) -> tuple[str, str] | None:
     return None
 
 
+def _extract_environment_gotcha(content: str) -> tuple[str, str] | None:
+    for pattern in ENVIRONMENT_GOTCHA_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        environment = _clean_state_phrase(match.group("environment"))
+        value = _clean_state_phrase(match.group("value"))
+        if environment and value:
+            return _slug(environment), value
+    return None
+
+
+def _extract_environment_gotcha_unknown_current(content: str) -> tuple[str, str] | None:
+    for pattern in ENVIRONMENT_GOTCHA_UNKNOWN_CURRENT_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        environment = _clean_state_phrase(match.group("environment"))
+        value = _clean_state_phrase(match.group("value"))
+        if environment and value:
+            return _slug(environment), value
+    return None
+
+
+def _extract_tool_output(content: str) -> tuple[str, str] | None:
+    for pattern in TOOL_OUTPUT_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        tool = _clean_tool_name(match.group("tool"))
+        value = _clean_tool_output(match.group("value"))
+        if tool and value:
+            return _slug(tool), value
+    return None
+
+
+def _extract_tool_output_unknown_current(content: str) -> tuple[str, str] | None:
+    for pattern in TOOL_OUTPUT_UNKNOWN_CURRENT_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        tool = _clean_tool_name(match.group("tool"))
+        value = _clean_tool_output(match.group("value"))
+        if tool and value:
+            return _slug(tool), value
+    return None
+
+
 def _extract_role(content: str) -> str | None:
     for pattern in ROLE_PATTERNS:
         match = pattern.search(content)
@@ -1423,6 +1612,16 @@ def _clean_resource_name(raw: str) -> str:
             break
         kept.append(stripped)
     return " ".join(kept).strip()
+
+
+def _clean_tool_name(raw: str) -> str:
+    value = _clean_state_phrase(raw)
+    value = re.sub(r"\s+(?:tool|command|api|endpoint)$", "", value)
+    return value.strip()
+
+
+def _clean_tool_output(raw: str) -> str:
+    return _clean_state_phrase(raw)
 
 
 def _clean_role_name(raw: str) -> str:

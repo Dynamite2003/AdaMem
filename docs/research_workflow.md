@@ -956,7 +956,9 @@ Next API-free work:
    and `semantic_state_propagation_adjudication` to check whether the mini
    stale-exposure gains hold beyond two smoke cases.
 6. Broaden typed state slots beyond location, beverage preference, schedule
-   availability, and task status.
+   availability, and task status. The current deterministic extractor now
+   includes environment-gotcha and tool-output slots; the next step is to
+   audit them on LongMemEval-V2 prepared trajectories and AMA-style tool logs.
 7. Add faithful local baselines for mainstream memory systems after reviewing
    their code and licenses.
 8. Run the LLM extractor ablations with real provider keys on STALE and at
