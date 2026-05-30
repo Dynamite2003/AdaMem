@@ -242,6 +242,41 @@ extraction on those true state cases.
   - `git diff --check` -> no issues
   - `PYTHONPATH=src python -m pytest -q` -> `222 passed`
 
+### 2026-05-30 STALE opportunity-grouped paper tables
+
+- Extended the default STALE table grouping fields to include:
+  - `expected_state_slot`
+  - `dependency_source_slot`
+  - `dependency_target_family`
+- The STALE retrieval paper table generator already supported arbitrary query
+  group fields; this change makes opportunity-level metrics appear by default
+  whenever the converted/pipeline dataset carries evaluation-only opportunity
+  labels.
+- Purpose:
+  - Move mechanism analysis from failure-count summaries into reproducible
+    metric tables.
+  - Make paper tables directly compare state/dependency opportunity subsets
+    across baselines, including current recall, stale exposure, premise
+    correction opportunity, and premise correction hit rate.
+- Local smoke:
+  - `PYTHONPATH=src python -m adamem.stale_pipeline benchmarks/stale_mini.jsonl --input-format adamem-jsonl --output-dir /tmp/adamem_stale_opportunity_table_smoke --run-name stale_mini_opportunity_tables --baselines semantic_only semantic_state_propagation_adjudication --max-cases 2 --json`
+    -> ran successfully.
+  - The generated paper tables now include:
+    - `By expected_state_slot`
+    - `By dependency_source_slot`
+    - `By dependency_target_family`
+  - On the local `local_context` subset, `semantic_only` had `50.00%` stale
+    exposure while `semantic_state_propagation_adjudication` had `0.00%` stale
+    exposure. This is a mini-smoke diagnostic only, not a paper claim.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_tables.py::test_paper_table_summary_supports_stale_retrieval_diagnostics tests/test_tables.py::test_paper_table_markdown_supports_stale_retrieval_diagnostic_experiment -q`
+    -> `2 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_tables.py tests/test_stale.py tests/test_stale_pipeline.py -q`
+    -> `33 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `222 passed`
+
 ### 2026-05-30 day-end checkpoint after dependency evidence
 
 - Current git state before this checkpoint:

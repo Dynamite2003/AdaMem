@@ -258,6 +258,19 @@ def test_paper_table_summary_supports_stale_retrieval_diagnostics() -> None:
         for row in summary["by_group"]["dim"]
     }
     assert dim_rows[("1", "semantic_state_premise_correction")]["premise_correction_hit_rate"] == 1.0
+    state_rows = {
+        (row["value"], row["baseline"]): row
+        for row in summary["by_group"]["expected_state_slot"]
+    }
+    assert state_rows[("location", "semantic_state_premise_correction")]["queries"] == 2
+    dependency_rows = {
+        (row["value"], row["baseline"]): row
+        for row in summary["by_group"]["dependency_target_family"]
+    }
+    assert dependency_rows[("local_context", "semantic_state_premise_correction")]["queries"] == 1
+    assert dependency_rows[("local_context", "semantic_state_premise_correction")][
+        "premise_correction_hit_rate"
+    ] == 0.0
 
 
 def test_paper_table_markdown_supports_stale_retrieval_diagnostic_experiment(tmp_path: Path) -> None:
@@ -285,6 +298,8 @@ def test_paper_table_markdown_supports_stale_retrieval_diagnostic_experiment(tmp
     assert "| semantic_state_premise_correction | 2 | 100.00% | 0.00% |" in markdown
     assert "## By dim" in markdown
     assert "| 1 | semantic_state_premise_correction | 1 | 100.00% | 0.00% | 100.00% | 100.00% |" in markdown
+    assert "## By expected_state_slot" in markdown
+    assert "## By dependency_target_family" in markdown
 
 
 def _record(
@@ -407,6 +422,9 @@ def _stale_diagnostic_record(*, name: str, correction_hits: list[bool]) -> dict[
             "old_supports": 2,
             "max_old_support_staleness": 0.0,
             "trace": [],
+            "expected_state_slot": "location",
+            "dependency_source_slot": "location" if index > 0 else "",
+            "dependency_target_family": "local_context" if index > 0 else "",
         }
         for index, hit in enumerate(correction_hits)
     ]

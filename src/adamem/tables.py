@@ -11,7 +11,13 @@ from adamem.bench import benchmark_failure_summary
 
 
 DEFAULT_GROUP_FIELDS = ("question_type", "dimension", "state_slot", "abstention")
-DEFAULT_STALE_GROUP_FIELDS = ("dim", "stale_type")
+DEFAULT_STALE_GROUP_FIELDS = (
+    "dim",
+    "stale_type",
+    "expected_state_slot",
+    "dependency_source_slot",
+    "dependency_target_family",
+)
 
 
 def load_benchmark_records(path: str | Path) -> list[dict[str, Any]]:
