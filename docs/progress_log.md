@@ -63,6 +63,8 @@ extraction on those true state cases.
 - Added `PYTHONPATH=src python -m adamem.cli demo --all-queries --json`.
 - Added
   `PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output results/adamem_state_demo.html`.
+- Added
+  `PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --html-output results/adamem_state_demo_paper.html`.
 - Purpose:
   - Give the project a fast, API-free inspection workflow before tomorrow's
     key-enabled runs.
@@ -71,12 +73,24 @@ extraction on those true state cases.
   - Sweep the local dynamic-state fixture across all current state families so
     the demo can reveal broad mechanism regressions before larger benchmark
     runs.
+  - Let the demo compare AdaMem's state-authority mechanism against raw
+    retrieval plus A-MEM-, Zep/Graphiti-, and Mem0-inspired API-free baselines,
+    while preserving the strong-baseline/SOTA blocker.
   - Keep the claim boundary explicit: the output is a mechanism demo, not
     paper evidence, SOTA evidence, or end-to-end answer accuracy.
 - Output:
   - JSON or Markdown artifact with dataset, case, query, expected/forbidden
     retrieval-support strings, per-baseline retrieved content, score
     contributions, and trace metadata.
+  - Baseline profile support:
+    - `focused`: `semantic_state_adjudication`,
+      `semantic_state_adjudication_trace`.
+    - `paper`: `semantic_only`, `a_mem_evolution`, `zep_temporal_kg`,
+      `mem0_extraction`, `semantic_state_adjudication_trace`.
+    - explicit `--baselines ...` for custom matrices.
+  - Each baseline payload includes source/provenance fields such as
+    `source_name`, `source_url`, `implementation_status`, and
+    `reproduction_note`.
   - In `--all-queries` mode, an aggregate per-baseline summary with pass counts,
     failed query ids, surfaced state slots, and `state_adjudication` trace
     counts.
@@ -89,7 +103,7 @@ extraction on those true state cases.
   - Source-label trace for the authorized current state and the suppressed old
     raw evidence, without copying the stale value into the adjudication notice.
 - Validation:
-  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `4 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `5 passed`
   - `PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json`
     -> both demo baselines passed the retrieval-support check; the trace
     baseline surfaced a `state_adjudication` notice with `new_runtime` as the
@@ -101,6 +115,12 @@ extraction on those true state cases.
   - `PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output /tmp/adamem_state_demo.html --json`
     -> wrote a static HTML artifact with embedded `adamem.demo.v1` payload and
     structured evidence-boundary metadata.
+  - `PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --json`
+    -> emitted a five-baseline matrix with A-MEM, Zep/Graphiti, and Mem0
+    provenance labels. On the local fixture, `semantic_only` and
+    `a_mem_evolution` passed `0/9`; `zep_temporal_kg`, `mem0_extraction`, and
+    `semantic_state_adjudication_trace` passed `9/9`. This remains local
+    mechanism evidence, not a public benchmark or SOTA claim.
   - Browser automation was attempted for the static HTML artifact, but this
     environment does not have the `playwright` Node module installed; keep a
     screenshot-level browser check as the next demo-polish step.

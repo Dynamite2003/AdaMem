@@ -32,6 +32,7 @@ python -m pytest
 PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json
 PYTHONPATH=src python -m adamem.cli demo --all-queries --json
 PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output results/adamem_state_demo.html
+PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --html-output results/adamem_state_demo_paper.html
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json
@@ -87,6 +88,11 @@ Outputs:
 - Optional static HTML demo output from `adamem.cli demo --html-output`.
   This is a self-contained interactive inspection page that can be opened
   directly in a browser without a server or API key.
+- For paper walkthroughs, use `--baseline-profile paper` to include raw
+  retrieval, A-MEM-style, Zep/Graphiti-style, Mem0-style, and AdaMem
+  state-adjudication trace baselines with provenance labels. These mainstream
+  entries remain API-free approximations unless replaced by official or
+  faithful reproductions.
 - Baseline synthetic/JSONL tables.
 - Baseline reproduction plan artifacts:
   `baseline_reproduction_plan.json` and

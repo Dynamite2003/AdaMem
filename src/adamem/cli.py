@@ -13,6 +13,16 @@ from adamem.store import JsonMemoryStore
 
 
 _DEMO_BASELINES = ("semantic_state_adjudication", "semantic_state_adjudication_trace")
+_DEMO_BASELINE_PROFILES = {
+    "focused": _DEMO_BASELINES,
+    "paper": (
+        "semantic_only",
+        "a_mem_evolution",
+        "zep_temporal_kg",
+        "mem0_extraction",
+        "semantic_state_adjudication_trace",
+    ),
+}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -41,6 +51,17 @@ def main(argv: list[str] | None = None) -> None:
         help="Run every query in the selected case instead of one query",
     )
     demo.add_argument("--top-k", type=int, default=None)
+    demo.add_argument(
+        "--baseline-profile",
+        choices=sorted(_DEMO_BASELINE_PROFILES),
+        default="focused",
+        help="Choose a predefined demo baseline matrix",
+    )
+    demo.add_argument(
+        "--baselines",
+        nargs="+",
+        help="Override the baseline profile with explicit baseline names",
+    )
     demo.add_argument("--json", action="store_true", help="Emit a machine-readable demo artifact")
     demo.add_argument("--html-output", help="Write a self-contained interactive HTML demo")
 
@@ -62,6 +83,8 @@ def main(argv: list[str] | None = None) -> None:
                 query_id=args.query_id,
                 all_queries=args.all_queries,
                 top_k=args.top_k,
+                baseline_names=tuple(args.baselines or _DEMO_BASELINE_PROFILES[args.baseline_profile]),
+                baseline_profile=args.baseline_profile if not args.baselines else "custom",
             )
         except ValueError as exc:
             parser.error(str(exc))
@@ -83,10 +106,16 @@ def _run_demo(
     query_id: str,
     all_queries: bool,
     top_k: int | None,
+    baseline_names: tuple[str, ...],
+    baseline_profile: str,
 ) -> dict[str, Any]:
     case = _select_case(load_jsonl_cases(dataset), case_id)
     queries = case.queries if all_queries else [_select_query(case, query_id)]
-    query_payloads = [_run_demo_query(case, query, top_k=top_k) for query in queries]
+    _validate_demo_baselines(baseline_names)
+    query_payloads = [
+        _run_demo_query(case, query, top_k=top_k, baseline_names=baseline_names)
+        for query in queries
+    ]
     common = {
         "schema_version": "adamem.demo.v1",
         "claim_boundary": (
@@ -96,6 +125,8 @@ def _run_demo(
         "evidence_boundary": _demo_evidence_boundary(),
         "dataset": dataset,
         "case_id": case.id,
+        "baseline_profile": baseline_profile,
+        "baseline_names": list(baseline_names),
         "comparison_note": (
             "The trace baseline should surface a state_adjudication notice when "
             "query-scoped state authority suppresses stale raw evidence."
@@ -116,11 +147,17 @@ def _run_demo(
     }
 
 
-def _run_demo_query(case: MemoryQACase, query: QuerySpec, *, top_k: int | None) -> dict[str, Any]:
+def _run_demo_query(
+    case: MemoryQACase,
+    query: QuerySpec,
+    *,
+    top_k: int | None,
+    baseline_names: tuple[str, ...],
+) -> dict[str, Any]:
     query_top_k = top_k if top_k is not None else query.top_k
     specs = baseline_registry()
     baseline_payloads = []
-    for name in _DEMO_BASELINES:
+    for name in baseline_names:
         spec = specs[name]
         mem = AdaMem(config=spec.config)
         source_labels = _observe_case(mem, case)
@@ -132,6 +169,10 @@ def _run_demo_query(case: MemoryQACase, query: QuerySpec, *, top_k: int | None) 
                 "name": spec.name,
                 "category": spec.category,
                 "description": spec.description,
+                "source_name": spec.source_name,
+                "source_url": spec.source_url,
+                "implementation_status": spec.implementation_status,
+                "reproduction_note": spec.reproduction_note,
                 "passed": _retrieval_support_passed(
                     retrieved,
                     expected=query.expected_substrings,
@@ -149,6 +190,16 @@ def _run_demo_query(case: MemoryQACase, query: QuerySpec, *, top_k: int | None) 
         "forbidden_substrings": query.forbidden_substrings,
         "baselines": baseline_payloads,
     }
+
+
+def _validate_demo_baselines(baseline_names: tuple[str, ...]) -> None:
+    if not baseline_names:
+        raise ValueError("at least one demo baseline is required")
+    registry = baseline_registry()
+    unknown = [name for name in baseline_names if name not in registry]
+    if unknown:
+        available = ", ".join(sorted(registry))
+        raise ValueError(f"unknown demo baseline(s): {', '.join(unknown)}; available: {available}")
 
 
 def _demo_summary(query_payloads: list[dict[str, Any]]) -> dict[str, Any]:

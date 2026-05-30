@@ -83,6 +83,35 @@ def test_demo_all_queries_summarizes_state_family_sweep(capsys) -> None:
     )
 
 
+def test_demo_paper_profile_includes_mainstream_baseline_provenance(capsys) -> None:
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--json",
+    ])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["baseline_profile"] == "paper"
+    assert payload["baseline_names"] == [
+        "semantic_only",
+        "a_mem_evolution",
+        "zep_temporal_kg",
+        "mem0_extraction",
+        "semantic_state_adjudication_trace",
+    ]
+    first_query = payload["queries"][0]
+    by_name = {baseline["name"]: baseline for baseline in first_query["baselines"]}
+    assert by_name["a_mem_evolution"]["source_name"] == "A-MEM"
+    assert by_name["a_mem_evolution"]["implementation_status"] == "api_free_approximation"
+    assert by_name["zep_temporal_kg"]["source_name"] == "Zep/Graphiti"
+    assert by_name["mem0_extraction"]["source_name"] == "Mem0"
+    assert payload["summary"]["by_baseline"]["semantic_state_adjudication_trace"]["passed"] == 9
+
+
 def test_demo_writes_interactive_html_artifact(tmp_path: Path, capsys) -> None:
     output = tmp_path / "adamem_state_demo.html"
 
@@ -106,3 +135,26 @@ def test_demo_writes_interactive_html_artifact(tmp_path: Path, capsys) -> None:
     assert "No answer model is called" in html
     assert "semantic_state_adjudication_trace" in html
     assert "state_adjudication" in html
+
+
+def test_demo_paper_profile_html_includes_baseline_sources(tmp_path: Path, capsys) -> None:
+    output = tmp_path / "adamem_state_demo_paper.html"
+
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--html-output",
+        str(output),
+    ])
+
+    message = capsys.readouterr().out
+    assert str(output) in message
+    html = output.read_text(encoding="utf-8")
+    assert "A-MEM" in html
+    assert "Zep/Graphiti" in html
+    assert "Mem0" in html
+    assert "api_free_approximation" in html

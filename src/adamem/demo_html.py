@@ -244,6 +244,13 @@ def demo_html(payload: dict[str, Any]) -> str:
       font-size: 13px;
       font-weight: 720;
     }}
+    .baseline-source {{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      margin-bottom: 8px;
+      overflow-wrap: anywhere;
+    }}
     .section-label {{
       color: var(--muted);
       text-transform: uppercase;
@@ -480,6 +487,9 @@ def demo_html(payload: dict[str, Any]) -> str:
           <div class="baseline-name">
             <span>${{escapeHtml(baseline.name)}}</span>
             <span class="pass-pill ${{baseline.passed ? '' : 'fail'}}">${{baseline.passed ? 'PASS' : 'FAIL'}}</span>
+          </div>
+          <div class="baseline-source">
+            ${{escapeHtml(baseline.source_name || baseline.category)}} · ${{escapeHtml(baseline.implementation_status || 'unknown')}}
           </div>
           <div class="section-label">Retrieved</div>
           ${{baseline.retrieved.length ? baseline.retrieved.map((item) => `<pre>${{escapeHtml(item)}}</pre>`).join('') : '<div class="empty">&lt;none&gt;</div>'}}
