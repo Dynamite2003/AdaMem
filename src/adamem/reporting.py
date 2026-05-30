@@ -38,6 +38,8 @@ def write_experiment_bundle(
     group_fields = tuple(group_fields or ())
 
     audit = audit_experiment(experiment)
+    experiment_payload = _load_json(experiment)
+    opportunity_evidence = _opportunity_evidence(experiment_payload)
     audit_md = output / f"{stem}.claim_audit.md"
     audit_json = output / f"{stem}.claim_audit.json"
     audit_md.write_text(claim_audit_markdown(audit), encoding="utf-8")
@@ -56,6 +58,7 @@ def write_experiment_bundle(
         "blocked_claims": audit["blocked_claims"],
         "claim_evidence": audit.get("claim_evidence") or {},
         "diagnostic_evidence": {},
+        "opportunity_evidence": opportunity_evidence,
         "warnings": audit.get("warnings") or [],
         "artifacts": {
             "claim_audit_markdown": str(audit_md),
@@ -255,6 +258,7 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         dependency = retrieval.get("dependency_propagation") or {}
         dataset_scope = manifest.get("dataset_scope") or {}
         diagnostic = manifest.get("diagnostic_evidence") or {}
+        opportunity = manifest.get("opportunity_evidence") or {}
         top_attribution, top_attribution_count = _top_count(diagnostic.get("failure_attributions") or {})
         dependency_state_records, dependency_correction_records = _dependency_propagation_counts(dependency)
         row = {
@@ -279,6 +283,14 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "dependency_state_records": dependency_state_records,
             "dependency_correction_records": dependency_correction_records,
             "dependency_parent_slots": _dependency_parent_slots(dependency),
+            "stale_opportunity_queries": int(opportunity.get("queries") or 0),
+            "stale_state_opportunity_queries": int(opportunity.get("state_labeled_queries") or 0),
+            "stale_dependency_opportunity_queries": int(opportunity.get("dependency_labeled_queries") or 0),
+            "stale_opportunity_state_slots": dict(opportunity.get("state_slots") or {}),
+            "stale_opportunity_dependency_families": dict(opportunity.get("dependency_families") or {}),
+            "stale_opportunity_observation_violations": int(
+                opportunity.get("observation_metadata_violations") or 0
+            ),
             "baseline_coverage_complete": bool(baseline_coverage.get("complete")),
             "baseline_category_count": int(baseline_coverage.get("category_count") or 0),
             "missing_baseline_groups": list(baseline_coverage.get("missing_groups") or []),
@@ -880,13 +892,13 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | dependency evidence | baseline gaps | baseline repro | model gaps | repro gaps | no-reg pairs | top attribution |",
-        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | ---: | --- |",
+        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | dependency evidence | stale opportunities | baseline gaps | baseline repro | model gaps | repro gaps | no-reg pairs | top attribution |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | ---: | --- |",
     ]
     if not rows:
         lines.append(
             "| <none> | needs_attention | add_experiment_records | unknown | <none> | "
-            "0 | 0 | 0 | 0/0 | 0.00% | - | - | - | - | - | 0 | - |"
+            "0 | 0 | 0 | 0/0 | 0.00% | - | - | - | - | - | - | 0 | - |"
         )
         return "\n".join(lines) + "\n"
     for row in rows:
@@ -902,6 +914,7 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
             f"{row['warning_count']} | {matching}/{expected} | "
             f"{float(row.get('state_available_rate') or 0.0):.2%} | "
             f"{_format_dependency_evidence(row)} | "
+            f"{_format_stale_opportunity_evidence(row)} | "
             f"{_format_missing_baseline_groups(row)} | "
             f"{_format_baseline_reproduction(row)} | "
             f"{_format_missing_model_requirements(row)} | "
@@ -948,6 +961,8 @@ def _claim_readiness_gate(row: dict[str, Any]) -> tuple[str, list[str]]:
         reasons.append("dataset_scope_claim_limited")
     if int(row.get("raw_output_count") or 0) == 0:
         reasons.append("no_case_level_or_raw_records")
+    if int(row.get("stale_opportunity_observation_violations") or 0) > 0:
+        reasons.append("stale_opportunity_metadata_leakage")
     if "unclassified_experiment" in supported:
         reasons.append("unclassified_experiment")
     if reasons:
@@ -1141,6 +1156,8 @@ def _paper_next_actions(row: dict[str, Any]) -> list[str]:
         actions.append("rerun_on_public_or_full_benchmark")
     if int(row.get("raw_output_count") or 0) == 0:
         actions.append("export_case_level_or_raw_records")
+    if int(row.get("stale_opportunity_observation_violations") or 0) > 0:
+        actions.append("fix_stale_opportunity_metadata_leakage")
     if "unclassified_experiment" in supported:
         actions.append("classify_experiment_run_type")
 
@@ -1183,6 +1200,37 @@ def _diagnostic_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:
         "failure_attributions": attribution_counts(records_with_attributions),
         "failure_attributions_by_baseline": attribution_counts_by_baseline(records_with_attributions),
         "examples_by_failure_attribution": _examples_by_failure_attribution(records_with_attributions),
+    }
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _opportunity_evidence(experiment: dict[str, Any]) -> dict[str, Any]:
+    notes = experiment.get("notes")
+    if not isinstance(notes, dict):
+        return {}
+    summary = notes.get("stale_opportunity_summary")
+    if not isinstance(summary, dict):
+        return {}
+    return {
+        "queries": int(summary.get("queries") or 0),
+        "state_labeled_queries": int(summary.get("state_labeled_queries") or 0),
+        "dependency_labeled_queries": int(summary.get("dependency_labeled_queries") or 0),
+        "state_slots": {
+            str(key): int(value or 0)
+            for key, value in (summary.get("state_slots") or {}).items()
+        },
+        "dependency_families": {
+            str(key): int(value or 0)
+            for key, value in (summary.get("dependency_families") or {}).items()
+        },
+        "observation_metadata_violations": int(summary.get("observation_metadata_violations") or 0),
     }
 
 
@@ -1334,6 +1382,33 @@ def _format_dependency_evidence(row: dict[str, Any]) -> str:
         return "-"
     parents = ", ".join(str(slot) for slot in row.get("dependency_parent_slots") or []) or "parents?"
     return f"{baselines} baselines; state {states}; correction {corrections}; {parents}"
+
+
+def _format_stale_opportunity_evidence(row: dict[str, Any]) -> str:
+    queries = int(row.get("stale_opportunity_queries") or 0)
+    state_queries = int(row.get("stale_state_opportunity_queries") or 0)
+    dependency_queries = int(row.get("stale_dependency_opportunity_queries") or 0)
+    violations = int(row.get("stale_opportunity_observation_violations") or 0)
+    if queries == 0 and state_queries == 0 and dependency_queries == 0 and violations == 0:
+        return "-"
+    slots = row.get("stale_opportunity_state_slots") or {}
+    families = row.get("stale_opportunity_dependency_families") or {}
+    slot_text = _format_count_map(slots)
+    family_text = _format_count_map(families)
+    return (
+        f"q {queries}; state {state_queries}; dep {dependency_queries}; "
+        f"slots {slot_text}; families {family_text}; obs-viol {violations}"
+    )
+
+
+def _format_count_map(counts: dict[str, Any]) -> str:
+    if not counts:
+        return "-"
+    parts = [
+        f"{key}:{int(value or 0)}"
+        for key, value in sorted(counts.items(), key=lambda item: str(item[0]))
+    ]
+    return ", ".join(parts)
 
 
 def _format_missing_baseline_groups(row: dict[str, Any]) -> str:

@@ -653,6 +653,9 @@ Completed API-free foundations:
   derived from STALE metadata for grouping and opportunity audits only; they
   must not be written into observation metadata or consumed by the proposed
   runtime memory method.
+- Report bundles surface STALE opportunity coverage from experiment notes as
+  `opportunity_evidence`, and claim matrices include a `stale opportunities`
+  column plus leakage-sensitive readiness actions.
 - Semantic-only state-aware ablations, so state mechanisms can be tested
   independently of default full AdaMem scoring.
 - Synthetic tests for State Resolution, Premise Resistance, and Implicit Policy

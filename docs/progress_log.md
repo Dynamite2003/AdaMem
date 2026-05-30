@@ -161,6 +161,49 @@ extraction on those true state cases.
   - `git diff --check` -> no issues
   - `PYTHONPATH=src python -m pytest -q` -> `221 passed`
 
+### 2026-05-30 STALE opportunity evidence in report bundles
+
+- Rechecked the paper motivation against current sources:
+  - STALE emphasizes the gap between retrieving updated evidence and acting on
+    it, including stale-premise and state-propagation failures.
+  - LongMemEval-V2 treats dynamic state tracking and premise awareness as
+    first-class web-agent memory abilities.
+- Added report-bundle support for STALE opportunity coverage:
+  - `write_experiment_bundle` now extracts `stale_opportunity_summary` from
+    experiment notes into top-level `opportunity_evidence`.
+  - Batch claim-matrix rows now include STALE opportunity counts:
+    total queries, state-labeled queries, dependency-labeled queries, state
+    slot counts, dependency-family counts, and observation-metadata violation
+    counts.
+  - Claim-matrix Markdown now includes a `stale opportunities` column.
+  - Observation metadata violations now force `needs_attention` with next
+    action `fix_stale_opportunity_metadata_leakage`.
+- Purpose:
+  - Let paper report bundles answer whether a STALE diagnostic run actually
+    exercises state/dependency opportunities before using it as mechanism
+    evidence.
+  - Keep the leakage boundary visible in the same artifact used for paper
+    readiness, not only in converter tests.
+- Local smoke:
+  - Ran `adamem.reporting` on
+    `/tmp/adamem_stale_pipeline_annotated_smoke/stale_mini_annotated_pipeline.experiment.json`
+    and confirmed the bundle manifest exposes:
+    `queries=6`, `state_labeled_queries=6`,
+    `dependency_labeled_queries=4`, `state_slots={"location": 6}`,
+    `dependency_families={"location->local_context": 4}`,
+    `observation_metadata_violations=0`.
+  - Ran directory-mode `adamem.reporting` and confirmed
+    `claim_matrix.md` includes `stale opportunities` with
+    `q 6; state 6; dep 4; slots location:6; families location->local_context:4; obs-viol 0`.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py::test_write_experiment_bundle_supports_stale_retrieval_diagnostics tests/test_reporting.py::test_claim_matrix_helpers_flatten_manifest_evidence tests/test_reporting.py::test_claim_matrix_flags_stale_opportunity_metadata_leakage -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q`
+    -> `19 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `222 passed`
+
 ### 2026-05-30 day-end checkpoint after dependency evidence
 
 - Current git state before this checkpoint:

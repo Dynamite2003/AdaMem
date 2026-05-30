@@ -185,6 +185,14 @@ def test_write_experiment_bundle_supports_stale_retrieval_diagnostics(tmp_path: 
     manifest = write_experiment_bundle(experiment, output_dir)
 
     assert manifest["record_kind"] == "stale_retrieval_diagnostics"
+    assert manifest["opportunity_evidence"] == {
+        "queries": 3,
+        "state_labeled_queries": 3,
+        "dependency_labeled_queries": 2,
+        "state_slots": {"location": 3},
+        "dependency_families": {"location->local_context": 2},
+        "observation_metadata_violations": 0,
+    }
     assert "table_error" not in manifest
     assert "paired_comparison_skipped" in manifest
     assert Path(manifest["artifacts"]["paper_tables_markdown"]).exists()
@@ -322,6 +330,14 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
                     },
                 },
             },
+            "opportunity_evidence": {
+                "queries": 6,
+                "state_labeled_queries": 6,
+                "dependency_labeled_queries": 4,
+                "state_slots": {"location": 6},
+                "dependency_families": {"location->local_context": 4},
+                "observation_metadata_violations": 0,
+            },
         }
     ])
     markdown = claim_matrix_markdown(rows)
@@ -348,6 +364,12 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "dependency_state_records": 2,
         "dependency_correction_records": 1,
         "dependency_parent_slots": ["location", "organization.employer"],
+        "stale_opportunity_queries": 6,
+        "stale_state_opportunity_queries": 6,
+        "stale_dependency_opportunity_queries": 4,
+        "stale_opportunity_state_slots": {"location": 6},
+        "stale_opportunity_dependency_families": {"location->local_context": 4},
+        "stale_opportunity_observation_violations": 0,
         "baseline_coverage_complete": False,
         "baseline_category_count": 0,
         "missing_baseline_groups": [],
@@ -381,6 +403,35 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "75.00%" in markdown
     assert "dependency evidence" in markdown
     assert "state 2; correction 1; location, organization.employer" in markdown
+    assert "stale opportunities" in markdown
+    assert "q 6; state 6; dep 4; slots location:6; families location->local_context:4; obs-viol 0" in markdown
+
+
+def test_claim_matrix_flags_stale_opportunity_metadata_leakage() -> None:
+    rows = claim_matrix_rows([
+        {
+            "experiment": "leaky_stale.experiment.json",
+            "run_type": "stale_retrieval_diagnostics",
+            "dataset": "benchmarks/stale_mini.jsonl",
+            "raw_output_count": 3,
+            "supported_claims": ["stale_retrieval_diagnostics"],
+            "blocked_claims": {},
+            "warnings": [],
+            "opportunity_evidence": {
+                "queries": 3,
+                "state_labeled_queries": 3,
+                "dependency_labeled_queries": 2,
+                "state_slots": {"location": 3},
+                "dependency_families": {"location->local_context": 2},
+                "observation_metadata_violations": 1,
+            },
+        }
+    ])
+
+    row = rows[0]
+    assert row["readiness_gate"] == "needs_attention"
+    assert "stale_opportunity_metadata_leakage" in row["readiness_reasons"]
+    assert "fix_stale_opportunity_metadata_leakage" in row["next_actions"]
 
 
 def test_study_model_coverage_merges_comparable_experiments() -> None:
@@ -1005,6 +1056,14 @@ def _write_stale_retrieval_diagnostic_experiment(tmp_path: Path) -> Path:
                 "ground_truth_runtime_use": "forbidden",
                 "answer_model_required": False,
                 "judge_model_required": False,
+                "stale_opportunity_summary": {
+                    "queries": 3,
+                    "state_labeled_queries": 3,
+                    "dependency_labeled_queries": 2,
+                    "state_slots": {"location": 3},
+                    "dependency_families": {"location->local_context": 2},
+                    "observation_metadata_violations": 0,
+                },
             },
             "commit": "abc123",
         }),

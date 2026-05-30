@@ -186,6 +186,46 @@ Required next evidence:
   prompt, config, raw-output, and records-path artifacts.
 - Treat incomplete reproducibility packets as non-paper evidence until fixed.
 
+### 0d. STALE Opportunity Coverage and Leakage Gate
+
+Hypothesis:
+
+STALE-style runs should report whether they actually contain state-resolution
+and dependency-propagation opportunities before their diagnostics are used as
+mechanism evidence. Opportunity labels must stay evaluation-only; any leakage
+into runtime observations invalidates the run for paper claims.
+
+Literature basis:
+
+- STALE identifies failures where models retrieve updated evidence but still
+  accept stale premises or fail to propagate one changed state into related
+  downstream behavior.
+- LongMemEval-V2 separately emphasizes dynamic state tracking and premise
+  awareness as core long-term agent-memory abilities.
+
+Current implementation:
+
+- STALE raw conversion and converted-JSONL backfill write query-only
+  opportunity labels such as `state_slot`, `dependency_source_slot`, and
+  `dependency_target_family`.
+- `adamem.stale_pipeline` records `stale_opportunity_summary` in experiment
+  notes and manifest output.
+- Report bundles expose this as `opportunity_evidence`, and batch claim
+  matrices include a `stale opportunities` column with state/dependency
+  opportunity counts and observation-metadata violation counts.
+- If opportunity labels leak into observation metadata, claim-matrix readiness
+  switches to `needs_attention` with action
+  `fix_stale_opportunity_metadata_leakage`.
+
+Required next evidence:
+
+- Run the opportunity summary on the full public STALE conversion, not only
+  mini smoke fixtures.
+- Use opportunity groups to report per-family diagnostics, especially for
+  implicit policy adaptation cases where dependency propagation should matter.
+- Keep opportunity coverage separate from final answer accuracy until
+  API-backed answer/judge runs are available.
+
 ### 1. Current-State Authority Layer
 
 Hypothesis:
