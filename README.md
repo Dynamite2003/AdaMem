@@ -191,6 +191,7 @@ Useful API-free commands:
 ```bash
 python -m pytest
 PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json
+PYTHONPATH=src python -m adamem.cli demo --all-queries --json
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 1 --experiment-output results/dynamic_state_transfer_smoke.json

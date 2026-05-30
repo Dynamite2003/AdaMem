@@ -49,3 +49,29 @@ def test_demo_markdown_mentions_claim_boundary(capsys) -> None:
     assert "not paper evidence" in output
     assert "semantic_state_adjudication_trace" in output
     assert "kind=state_adjudication" in output
+
+
+def test_demo_all_queries_summarizes_state_family_sweep(capsys) -> None:
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--json",
+    ])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["mode"] == "all_queries"
+    assert payload["query_count"] == 9
+    summary = payload["summary"]["by_baseline"]
+    assert summary["semantic_state_adjudication"]["passed"] == 9
+    assert summary["semantic_state_adjudication"]["total"] == 9
+    assert summary["semantic_state_adjudication_trace"]["passed"] == 9
+    assert summary["semantic_state_adjudication_trace"]["total"] == 9
+    assert summary["semantic_state_adjudication_trace"]["state_adjudication_traces"] == 8
+    assert "runtime.staging_build_runner.status" in (
+        summary["semantic_state_adjudication_trace"]["state_slots"]
+    )
+    assert "workflow.checkout_deploys.rollback" in (
+        summary["semantic_state_adjudication_trace"]["state_slots"]
+    )

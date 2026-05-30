@@ -30,6 +30,7 @@ Commands:
 ```bash
 python -m pytest
 PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json
+PYTHONPATH=src python -m adamem.cli demo --all-queries --json
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json

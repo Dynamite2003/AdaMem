@@ -34,6 +34,11 @@ def main(argv: list[str] | None = None) -> None:
     demo.add_argument("--dataset", default="benchmarks/dynamic_state_transfer.jsonl")
     demo.add_argument("--case-id", default="dynamic_state_transfer")
     demo.add_argument("--query-id", default="current_runtime_status")
+    demo.add_argument(
+        "--all-queries",
+        action="store_true",
+        help="Run every query in the selected case instead of one query",
+    )
     demo.add_argument("--top-k", type=int, default=None)
     demo.add_argument("--json", action="store_true", help="Emit a machine-readable demo artifact")
 
@@ -53,6 +58,7 @@ def main(argv: list[str] | None = None) -> None:
                 args.dataset,
                 case_id=args.case_id,
                 query_id=args.query_id,
+                all_queries=args.all_queries,
                 top_k=args.top_k,
             )
         except ValueError as exc:
@@ -68,10 +74,41 @@ def _run_demo(
     *,
     case_id: str,
     query_id: str,
+    all_queries: bool,
     top_k: int | None,
 ) -> dict[str, Any]:
     case = _select_case(load_jsonl_cases(dataset), case_id)
-    query = _select_query(case, query_id)
+    queries = case.queries if all_queries else [_select_query(case, query_id)]
+    query_payloads = [_run_demo_query(case, query, top_k=top_k) for query in queries]
+    common = {
+        "schema_version": "adamem.demo.v1",
+        "claim_boundary": (
+            "API-free mechanism demo only; not paper evidence, not SOTA evidence, "
+            "and not end-to-end answer accuracy."
+        ),
+        "dataset": dataset,
+        "case_id": case.id,
+        "comparison_note": (
+            "The trace baseline should surface a state_adjudication notice when "
+            "query-scoped state authority suppresses stale raw evidence."
+        ),
+    }
+    if all_queries:
+        return {
+            **common,
+            "mode": "all_queries",
+            "query_count": len(query_payloads),
+            "summary": _demo_summary(query_payloads),
+            "queries": query_payloads,
+        }
+    return {
+        **common,
+        "mode": "single_query",
+        **query_payloads[0],
+    }
+
+
+def _run_demo_query(case: MemoryQACase, query: QuerySpec, *, top_k: int | None) -> dict[str, Any]:
     query_top_k = top_k if top_k is not None else query.top_k
     specs = baseline_registry()
     baseline_payloads = []
@@ -97,23 +134,49 @@ def _run_demo(
             }
         )
     return {
-        "schema_version": "adamem.demo.v1",
-        "claim_boundary": (
-            "API-free mechanism demo only; not paper evidence, not SOTA evidence, "
-            "and not end-to-end answer accuracy."
-        ),
-        "dataset": dataset,
-        "case_id": case.id,
         "query_id": query.id or query.query,
         "query": query.query,
         "top_k": query_top_k,
         "expected_substrings": query.expected_substrings,
         "forbidden_substrings": query.forbidden_substrings,
         "baselines": baseline_payloads,
-        "comparison_note": (
-            "The trace baseline should surface a state_adjudication notice when "
-            "query-scoped state authority suppresses stale raw evidence."
-        ),
+    }
+
+
+def _demo_summary(query_payloads: list[dict[str, Any]]) -> dict[str, Any]:
+    by_baseline: dict[str, dict[str, Any]] = {}
+    for query_payload in query_payloads:
+        for baseline in query_payload["baselines"]:
+            name = baseline["name"]
+            row = by_baseline.setdefault(
+                name,
+                {
+                    "passed": 0,
+                    "total": 0,
+                    "state_adjudication_traces": 0,
+                    "state_slots": [],
+                    "failed_query_ids": [],
+                },
+            )
+            row["total"] += 1
+            if baseline["passed"]:
+                row["passed"] += 1
+            else:
+                row["failed_query_ids"].append(query_payload["query_id"])
+            for trace_item in baseline["trace"]:
+                if trace_item["kind"] == "state_adjudication":
+                    row["state_adjudication_traces"] += 1
+                state_slot = trace_item["metadata"].get("state_slot")
+                if state_slot and state_slot not in row["state_slots"]:
+                    row["state_slots"].append(state_slot)
+    for row in by_baseline.values():
+        total = row["total"]
+        row["accuracy"] = row["passed"] / total if total else 0.0
+        row["state_slots"] = sorted(row["state_slots"])
+    return {
+        "baseline_count": len(by_baseline),
+        "query_count": len(query_payloads),
+        "by_baseline": by_baseline,
     }
 
 
@@ -262,6 +325,8 @@ def _retrieval_support_passed(
 
 
 def _format_demo(payload: dict[str, Any]) -> str:
+    if payload.get("mode") == "all_queries":
+        return _format_all_query_demo(payload)
     lines = [
         "# AdaMem Stale-Memory Demo",
         "",
@@ -300,6 +365,52 @@ def _format_demo(payload: dict[str, Any]) -> str:
         else:
             lines.append("<none>")
         lines.append("")
+    lines.append(f"Comparison note: {payload['comparison_note']}")
+    return "\n".join(lines).rstrip()
+
+
+def _format_all_query_demo(payload: dict[str, Any]) -> str:
+    lines = [
+        "# AdaMem Stale-Memory Demo",
+        "",
+        f"Claim boundary: {payload['claim_boundary']}",
+        f"Dataset: {payload['dataset']}",
+        f"Case: {payload['case_id']}",
+        f"Queries: {payload['query_count']}",
+        "",
+        "## Summary",
+    ]
+    for name, row in payload["summary"]["by_baseline"].items():
+        failed = ", ".join(row["failed_query_ids"]) or "<none>"
+        lines.append(
+            "- "
+            f"{name}: {row['passed']}/{row['total']} "
+            f"({row['accuracy']:.2%}); "
+            f"state_adjudication_traces={row['state_adjudication_traces']}; "
+            f"failed={failed}"
+        )
+    lines.append("")
+    lines.append("## Queries")
+    for query_payload in payload["queries"]:
+        status = ", ".join(
+            f"{baseline['name']}={'PASS' if baseline['passed'] else 'FAIL'}"
+            for baseline in query_payload["baselines"]
+        )
+        lines.append(f"- {query_payload['query_id']}: {status}")
+        for baseline in query_payload["baselines"]:
+            top_trace = baseline["trace"][0] if baseline["trace"] else None
+            if top_trace is None:
+                continue
+            metadata = top_trace["metadata"]
+            slot = metadata.get("state_slot", "<none>")
+            source = metadata.get("source_observation_label", "<none>")
+            suppressed = metadata.get("adjudicated_source_observation_label", "<none>")
+            lines.append(
+                "  "
+                f"{baseline['name']} top_trace="
+                f"{top_trace['kind']} slot={slot} source={source} suppressed={suppressed}"
+            )
+    lines.append("")
     lines.append(f"Comparison note: {payload['comparison_note']}")
     return "\n".join(lines).rstrip()
 
