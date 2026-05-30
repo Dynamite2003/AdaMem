@@ -1168,6 +1168,9 @@ def test_jsonl_benchmark_supports_unknown_current_state_correction() -> None:
         [case],
         {
             "semantic_state_adjudication": baseline_registry()["semantic_state_adjudication"].config,
+            "semantic_state_adjudication_trace": (
+                baseline_registry()["semantic_state_adjudication_trace"].config
+            ),
             "semantic_state_premise_correction": (
                 baseline_registry()["semantic_state_premise_correction"].config
             ),
@@ -1178,6 +1181,7 @@ def test_jsonl_benchmark_supports_unknown_current_state_correction() -> None:
     report = benchmark_failure_report(records)
     by_baseline = {record["baseline"]: record for record in records}
     adjudication = by_baseline["semantic_state_adjudication"]
+    adjudication_trace = by_baseline["semantic_state_adjudication_trace"]
     correction = by_baseline["semantic_state_premise_correction"]
 
     assert all(result.passed == 1 for result in results)
@@ -1185,12 +1189,17 @@ def test_jsonl_benchmark_supports_unknown_current_state_correction() -> None:
     assert adjudication["corrected_forbidden"] == ["Seattle"]
     assert adjudication["present_forbidden"] == []
     assert adjudication["trace"][0]["metadata"]["state_status"] == "unknown_current"
+    assert adjudication_trace["trace"][0]["kind"] == "state_adjudication"
+    assert "unknown-current" in adjudication_trace["trace"][0]["content"]
+    assert "Seattle" not in adjudication_trace["trace"][0]["content"]
+    assert adjudication_trace["present_forbidden"] == []
     assert correction["premise_correction_count"] == 1
     assert correction["corrected_forbidden"] == ["Seattle"]
     assert correction["present_forbidden"] == []
     assert correction["trace"][0]["metadata"]["current_value"] == "unknown-current"
     assert "current value is unknown" in correction["trace"][0]["content"]
     assert summary["unknown_current"]["semantic_state_adjudication"]["unknown_current_records"] == 1
+    assert summary["unknown_current"]["semantic_state_adjudication_trace"]["unknown_current_records"] == 0
     assert summary["unknown_current"]["semantic_state_premise_correction"]["unknown_current_records"] == 0
     assert (
         summary["unknown_current"]["semantic_state_premise_correction"][
@@ -1390,6 +1399,9 @@ def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_met
         [case],
         {
             "semantic_state_adjudication": baseline_registry()["semantic_state_adjudication"].config,
+            "semantic_state_adjudication_trace": (
+                baseline_registry()["semantic_state_adjudication_trace"].config
+            ),
             "semantic_state_premise_correction": (
                 baseline_registry()["semantic_state_premise_correction"].config
             ),
@@ -1400,9 +1412,15 @@ def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_met
     report = benchmark_failure_report(records)
     by_baseline = {record["baseline"]: record for record in records}
     adjudication_trace = by_baseline["semantic_state_adjudication"]["trace"][0]
+    adjudication_notice = by_baseline["semantic_state_adjudication_trace"]["trace"][0]
     correction_trace = by_baseline["semantic_state_premise_correction"]["trace"][0]
 
     assert adjudication_trace["metadata"]["source_observation_label"] == "new_location"
+    assert adjudication_notice["kind"] == "state_adjudication"
+    assert adjudication_notice["metadata"]["source_observation_label"] == "new_location"
+    assert adjudication_notice["metadata"]["adjudicated_source_observation_label"] == "old_location"
+    assert adjudication_notice["metadata"]["adjudication_reason"] == "active_state_authority"
+    assert "Seattle" not in adjudication_notice["content"]
     assert "source_observation_label" not in case.observations[1].metadata
     assert correction_trace["metadata"]["source_observation_label"] == "new_location"
     assert correction_trace["metadata"]["stale_source_observation_label"] == "old_location"
@@ -1418,6 +1436,27 @@ def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_met
         "state_correction_items_with_stale_source_label": 0,
         "state_correction_source_trace_rate": None,
         "state_correction_stale_source_trace_rate": None,
+        "state_adjudication_trace_items": 0,
+        "state_adjudication_items_with_source_label": 0,
+        "state_adjudication_items_with_suppressed_source_label": 0,
+        "state_adjudication_source_trace_rate": None,
+        "state_adjudication_suppressed_source_trace_rate": None,
+    }
+    assert summary["state_source_trace"]["semantic_state_adjudication_trace"] == {
+        "total": 1,
+        "state_trace_items": 0,
+        "state_trace_items_with_source_label": 0,
+        "state_source_trace_rate": None,
+        "state_correction_trace_items": 0,
+        "state_correction_items_with_source_label": 0,
+        "state_correction_items_with_stale_source_label": 0,
+        "state_correction_source_trace_rate": None,
+        "state_correction_stale_source_trace_rate": None,
+        "state_adjudication_trace_items": 1,
+        "state_adjudication_items_with_source_label": 1,
+        "state_adjudication_items_with_suppressed_source_label": 1,
+        "state_adjudication_source_trace_rate": 1.0,
+        "state_adjudication_suppressed_source_trace_rate": 1.0,
     }
     assert summary["state_source_trace"]["semantic_state_premise_correction"] == {
         "total": 1,
@@ -1429,6 +1468,11 @@ def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_met
         "state_correction_items_with_stale_source_label": 1,
         "state_correction_source_trace_rate": 1.0,
         "state_correction_stale_source_trace_rate": 1.0,
+        "state_adjudication_trace_items": 0,
+        "state_adjudication_items_with_source_label": 0,
+        "state_adjudication_items_with_suppressed_source_label": 0,
+        "state_adjudication_source_trace_rate": None,
+        "state_adjudication_suppressed_source_trace_rate": None,
     }
     assert summary["paper_metrics"]["semantic_state_adjudication"]["state_source_trace_rate"] == 1.0
     assert (

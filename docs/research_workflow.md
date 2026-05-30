@@ -36,6 +36,7 @@ PYTHONPATH=src python -m adamem.eval --dataset benchmarks/tiny_memory_qa.jsonl
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/unknown_current_state_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_premise_correction
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 1 --experiment-output results/dynamic_state_transfer_smoke.json
+PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_state_adjudication semantic_state_adjudication_trace --max-cases 1 --benchmark-report-output results/dynamic_state_transfer_adjudication_trace_report.md --experiment-output results/dynamic_state_transfer_adjudication_trace.json
 PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json benchmarks/longmemeval_s.adamem.jsonl
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/longmemeval_s.adamem.jsonl --baselines semantic_only semantic_state_readout semantic_state_propagation full state_readout state_propagation --max-cases 20 --experiment-output results/longmemeval_transfer_pilot.json
 PYTHONPATH=src python -m adamem.convert longmemeval data/longmemeval_s_cleaned.json /tmp/longmemeval_s_balanced_60.adamem.jsonl --expected evidence --top-k 8 --limit-per-type 10
@@ -372,6 +373,11 @@ Current API-free state-aware baselines:
   readout and query-scoped filtering of raw evidence superseded by the same
   state slot. This isolates stale suppression from global historical evidence
   deletion.
+- `semantic_state_adjudication_trace`: semantic state adjudication plus an
+  explicit ephemeral adjudication notice when stale raw evidence is suppressed.
+  The notice cites the current-state basis and exposes both current and
+  suppressed source provenance in traces without reintroducing the stale raw
+  evidence into context.
 - `semantic_state_premise_correction`: semantic state adjudication plus an
   ephemeral read-time correction when a query explicitly mentions a stale value
   for a routed current-state slot. This isolates Premise Resistance behavior

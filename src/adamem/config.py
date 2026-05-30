@@ -35,6 +35,7 @@ class AdaMemConfig:
     use_state_readout: bool = False
     use_state_dependency_propagation: bool = False
     use_state_source_adjudication: bool = False
+    use_state_adjudication_trace: bool = False
     use_state_readout_authorization: bool = True
     use_state_premise_correction: bool = False
     use_state_unknown_current: bool = True
@@ -60,6 +61,7 @@ class AdaMemConfig:
     stale_propagation_threshold: float = 0.15
     adjudication_drop_threshold: float = 0.6
     state_readout_boost: float = 2.0
+    state_adjudication_trace_boost: float = 2.3
     state_premise_correction_boost: float = 2.6
     temporal_kg_readout_boost: float = 1.6
     salient_memory_readout_boost: float = 1.8

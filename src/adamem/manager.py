@@ -152,7 +152,12 @@ class AdaMem:
                         candidates[neighbor.id] = result
 
         if self.config.use_state_source_adjudication:
-            candidates = self._filter_state_adjudicated_sources(candidates, query)
+            candidates = self._filter_state_adjudicated_sources(
+                candidates,
+                query,
+                query_embedding=query_embedding,
+                now=now,
+            )
 
         ranked = sorted(candidates.values(), key=lambda result: result.score, reverse=True)
         ranked = self._limit_candidate_pool(ranked, top_k)
@@ -816,33 +821,103 @@ class AdaMem:
         self,
         candidates: dict[str, MemoryResult],
         query: str,
+        *,
+        query_embedding: dict[str, float],
+        now: str | None,
     ) -> dict[str, MemoryResult]:
         relevant_slots = set(query_relevant_state_slots(query))
         if not relevant_slots:
             return candidates
         filtered: dict[str, MemoryResult] = {}
         for item_id, result in candidates.items():
-            if self._state_source_adjudicates(result.item, relevant_slots):
+            adjudication = self._state_source_adjudication_basis(result.item, relevant_slots)
+            if adjudication is not None:
                 result.relation = f"{result.relation}+state_adjudicated"
                 result.contributions["state_adjudicated"] = -1.0
+                if self.config.use_state_adjudication_trace:
+                    trace_result = self._state_adjudication_trace_result(
+                        adjudicated_source=result.item,
+                        slot=adjudication[0],
+                        active_state=adjudication[1],
+                        query_embedding=query_embedding,
+                        now=now,
+                    )
+                    filtered[trace_result.item.id] = trace_result
                 continue
             filtered[item_id] = result
         return filtered
 
     def _state_source_adjudicates(self, item: MemoryItem, relevant_slots: set[str]) -> bool:
+        return self._state_source_adjudication_basis(item, relevant_slots) is not None
+
+    def _state_source_adjudication_basis(
+        self,
+        item: MemoryItem,
+        relevant_slots: set[str],
+    ) -> tuple[str, MemoryItem] | None:
         slots = _metadata_strings(item.metadata.get("stale_state_slots"))
         for slot in slots:
-            if state_slot_matches_query(slot, relevant_slots) and self._has_active_state_for_slot(slot):
-                return True
-        return False
+            if not state_slot_matches_query(slot, relevant_slots):
+                continue
+            active_state = self._active_state_for_slot(slot)
+            if active_state is not None:
+                return slot, active_state
+        return None
 
     def _has_active_state_for_slot(self, slot: str) -> bool:
+        return self._active_state_for_slot(slot) is not None
+
+    def _active_state_for_slot(self, slot: str) -> MemoryItem | None:
         for item in self.store.all():
             if not item.active:
                 continue
             if item.kind == "state" and item.metadata.get("state_slot") == slot:
-                return True
-        return False
+                return item
+        return None
+
+    def _state_adjudication_trace_result(
+        self,
+        *,
+        adjudicated_source: MemoryItem,
+        slot: str,
+        active_state: MemoryItem,
+        query_embedding: dict[str, float],
+        now: str | None,
+    ) -> MemoryResult:
+        if active_state.metadata.get("state_status") == "unknown_current":
+            current_basis = f"Current state basis: {slot} is unknown-current."
+        else:
+            current_basis = f"Current state basis: {active_state.content}"
+        content = (
+            f"State adjudication: older raw evidence for state slot '{slot}' "
+            "was suppressed because an authorized current state exists.\n"
+            f"{current_basis}"
+        )
+        metadata = {
+            "derived": True,
+            "ephemeral": True,
+            "state_slot": slot,
+            "state_status": "adjudicated_source",
+            "source_state_id": active_state.id,
+            "adjudicated_source_id": adjudicated_source.id,
+            "adjudication_reason": "active_state_authority",
+        }
+        trace = MemoryItem(
+            content=content,
+            kind="state_adjudication",
+            importance=1.0,
+            confidence=active_state.confidence,
+            valid_from=active_state.valid_from,
+            metadata=metadata,
+            embedding=self.embedder(_embedding_text(
+                f"{slot} active state authority adjudication",
+                metadata,
+            )),
+        )
+        result = self._score(trace, query_embedding, now=now, relation="state_adjudication")
+        result.contributions["state_adjudication_trace"] = self.config.state_adjudication_trace_boost
+        result.score = sum(result.contributions.values())
+        return result
 
     def _supersede_conflicting(self, item: MemoryItem) -> None:
         key = memory_key(item.content, item.metadata)

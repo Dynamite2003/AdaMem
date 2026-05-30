@@ -38,6 +38,7 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
         "semantic_state_readout",
         "semantic_state_propagation",
         "semantic_state_adjudication",
+        "semantic_state_adjudication_trace",
         "semantic_state_premise_correction",
         "semantic_llm_state_adjudication",
         "semantic_llm_state_premise_correction",
@@ -69,6 +70,7 @@ def test_baseline_registry_matches_default_ablation_configs() -> None:
     assert configs["semantic_state_readout"].use_graph is False
     assert configs["semantic_state_readout"].use_state_readout is True
     assert configs["semantic_state_adjudication"].use_state_source_adjudication is True
+    assert configs["semantic_state_adjudication_trace"].use_state_adjudication_trace is True
     assert configs["semantic_state_premise_correction"].use_state_premise_correction is True
     assert specs["semantic_llm_state_adjudication"].config.state_extractor_name == "llm_json"
     assert specs["semantic_llm_state_premise_correction"].config.use_state_premise_correction is True

@@ -1486,6 +1486,44 @@ def test_state_source_adjudication_filters_replaced_raw_evidence_for_state_queri
     assert "Boston" in with_results[0].item.content
 
 
+def test_state_adjudication_trace_explains_suppressed_stale_source() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_supersession=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_source_adjudication=True,
+            use_state_adjudication_trace=True,
+        )
+    )
+
+    old = mem.observe("[2026-01-01] user: I've been living in Seattle.")
+    mem.observe("[2026-03-01] user: I relocated to Boston for a new job.")
+
+    results = mem.retrieve("Since I'm in Seattle, recommend local resources.", top_k=5)
+    trace_results = [result for result in results if result.item.kind == "state_adjudication"]
+
+    assert old.id not in [result.item.id for result in results]
+    assert trace_results
+    assert trace_results[0].relation == "state_adjudication"
+    assert trace_results[0].contributions["state_adjudication_trace"] > 0.0
+    assert "suppressed because an authorized current state exists" in trace_results[0].item.content
+    assert "Boston" in trace_results[0].item.content
+    assert "Seattle" not in trace_results[0].item.content
+    assert trace_results[0].item.metadata["adjudicated_source_id"] == old.id
+    assert trace_results[0].item.metadata["state_slot"] == "location"
+
+
 def test_state_source_adjudication_keeps_historical_raw_evidence_outside_state_queries() -> None:
     mem = AdaMem(
         config=AdaMemConfig(

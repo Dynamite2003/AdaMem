@@ -265,6 +265,21 @@ def baseline_registry() -> dict[str, BaselineSpec]:
             }),
         ),
         BaselineSpec(
+            name="semantic_state_adjudication_trace",
+            category="state_aware_ablation",
+            description=(
+                "Semantic state adjudication plus an explicit authorized trace explaining "
+                "why stale raw evidence was suppressed."
+            ),
+            config=AdaMemConfig(**{
+                **semantic_only,
+                "use_state_memory": True,
+                "use_state_readout": True,
+                "use_state_source_adjudication": True,
+                "use_state_adjudication_trace": True,
+            }),
+        ),
+        BaselineSpec(
             name="semantic_state_premise_correction",
             category="state_aware_ablation",
             description=(

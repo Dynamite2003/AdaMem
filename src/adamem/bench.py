@@ -306,16 +306,20 @@ def benchmark_failure_report(
         lines.append("## State Source Trace")
         lines.append(
             "| baseline | state traces | state source labels | correction traces | "
-            "active correction labels | stale correction labels |"
+            "active correction labels | stale correction labels | adjudication traces | "
+            "current adjudication labels | suppressed source labels |"
         )
-        lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
         for baseline, aggregate in source_trace.items():
             lines.append(
                 f"| {baseline} | {aggregate['state_trace_items']} | "
                 f"{aggregate['state_trace_items_with_source_label']} | "
                 f"{aggregate['state_correction_trace_items']} | "
                 f"{aggregate['state_correction_items_with_source_label']} | "
-                f"{aggregate['state_correction_items_with_stale_source_label']} |"
+                f"{aggregate['state_correction_items_with_stale_source_label']} | "
+                f"{aggregate['state_adjudication_trace_items']} | "
+                f"{aggregate['state_adjudication_items_with_source_label']} | "
+                f"{aggregate['state_adjudication_items_with_suppressed_source_label']} |"
             )
         lines.append("")
 
@@ -799,6 +803,9 @@ def _compact_trace_item(item: dict[str, Any]) -> dict[str, Any]:
                 "source_id",
                 "source_state_id",
                 "stale_state_id",
+                "adjudicated_source_id",
+                "adjudicated_source_observation_label",
+                "adjudication_reason",
             )
             if key in metadata
         },
@@ -960,6 +967,12 @@ def _state_source_trace_aggregate(records: list[dict[str, Any]]) -> dict[str, An
         for item in record.get("trace") or []
         if _is_premise_correction_trace(item)
     ]
+    adjudication_items = [
+        item
+        for record in records
+        for item in record.get("trace") or []
+        if _is_state_adjudication_trace(item)
+    ]
     state_with_source = sum(_has_trace_metadata(item, "source_observation_label") for item in state_items)
     correction_with_source = sum(
         _has_trace_metadata(item, "source_observation_label")
@@ -968,6 +981,14 @@ def _state_source_trace_aggregate(records: list[dict[str, Any]]) -> dict[str, An
     correction_with_stale_source = sum(
         _has_trace_metadata(item, "stale_source_observation_label")
         for item in correction_items
+    )
+    adjudication_with_current_source = sum(
+        _has_trace_metadata(item, "source_observation_label")
+        for item in adjudication_items
+    )
+    adjudication_with_suppressed_source = sum(
+        _has_trace_metadata(item, "adjudicated_source_observation_label")
+        for item in adjudication_items
     )
     return {
         "total": len(records),
@@ -984,6 +1005,17 @@ def _state_source_trace_aggregate(records: list[dict[str, Any]]) -> dict[str, An
         "state_correction_stale_source_trace_rate": _ratio_or_none(
             correction_with_stale_source,
             len(correction_items),
+        ),
+        "state_adjudication_trace_items": len(adjudication_items),
+        "state_adjudication_items_with_source_label": adjudication_with_current_source,
+        "state_adjudication_items_with_suppressed_source_label": adjudication_with_suppressed_source,
+        "state_adjudication_source_trace_rate": _ratio_or_none(
+            adjudication_with_current_source,
+            len(adjudication_items),
+        ),
+        "state_adjudication_suppressed_source_trace_rate": _ratio_or_none(
+            adjudication_with_suppressed_source,
+            len(adjudication_items),
         ),
     }
 
@@ -1156,6 +1188,13 @@ def _is_state_readout_trace(item: dict[str, Any]) -> bool:
     return item.get("kind") == "state" or item.get("relation") == "state"
 
 
+def _is_state_adjudication_trace(item: dict[str, Any]) -> bool:
+    return (
+        item.get("kind") == "state_adjudication"
+        or item.get("relation") == "state_adjudication"
+    )
+
+
 def _has_trace_metadata(item: dict[str, Any], key: str) -> bool:
     metadata = item.get("metadata")
     return isinstance(metadata, dict) and bool(metadata.get(key))
@@ -1291,7 +1330,7 @@ def _is_dependency_unknown_current_state_trace(item: dict[str, Any]) -> bool:
 
 
 def _trace_is_state(item: dict[str, Any]) -> bool:
-    if item.get("kind") in {"state", "state_correction", "kg_fact", "salient_fact"}:
+    if item.get("kind") in {"state", "state_correction", "state_adjudication", "kg_fact", "salient_fact"}:
         return True
     contributions = item.get("contributions")
     return isinstance(contributions, dict) and "state_readout" in contributions
@@ -1400,6 +1439,8 @@ def _trace_metadata(
         "source_id",
         "source_state_id",
         "stale_state_id",
+        "adjudicated_source_id",
+        "adjudication_reason",
         "derived",
     )
     metadata = {key: item.metadata[key] for key in keys if key in item.metadata}
@@ -1417,6 +1458,9 @@ def _trace_metadata(
         if stale_state := state_items_by_id.get(str(stale_state_id)):
             if stale_label := _state_source_label(stale_state, source_labels):
                 metadata["stale_source_observation_label"] = stale_label
+    if adjudicated_source_id := metadata.get("adjudicated_source_id"):
+        if adjudicated_label := source_labels.get(str(adjudicated_source_id)):
+            metadata["adjudicated_source_observation_label"] = adjudicated_label
     return metadata
 
 

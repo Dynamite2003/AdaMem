@@ -111,6 +111,12 @@ to the same state slot. This is intentionally narrower than the global
 adjudication filter: historical queries can still retrieve old episodes, while
 current-state queries avoid stale raw support.
 
+The `semantic_state_adjudication_trace` baseline keeps that stale-source
+filtering but adds a short ephemeral adjudication notice for the answer model:
+it cites the authorized current-state basis and records which source was
+suppressed in trace metadata, without copying the stale raw evidence back into
+context.
+
 This prototype is intentionally narrow and deterministic. It is meant to test
 the research hypothesis before spending API budget, not to replace a robust LLM
 extractor. The extractor is pluggable so API-enabled or domain-specific

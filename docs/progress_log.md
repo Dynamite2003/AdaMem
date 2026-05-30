@@ -57,6 +57,47 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 state adjudication trace
+
+- Added `use_state_adjudication_trace` and the canonical
+  `semantic_state_adjudication_trace` ablation.
+- Mechanism:
+  - When query-scoped state-source adjudication suppresses stale raw evidence,
+    AdaMem can return an ephemeral `state_adjudication` notice.
+  - The notice cites the current-state basis and includes trace metadata for
+    both the current state source and the suppressed raw source.
+  - It does not copy the stale raw evidence content back into context.
+  - For `unknown_current` states, the notice says the current slot is
+    `unknown-current` instead of copying state evidence that may mention the
+    invalidated stale value.
+- Paper motivation:
+  - STALE-style failures are not only retrieval failures; answer models often
+    need an explicit reason to reject a stale premise.
+  - This keeps the write/manage/read mechanism auditable while preserving
+    stale-source filtering.
+- Diagnostics:
+  - JSONL state-source trace aggregation now counts adjudication notices and
+    whether current/suppressed source labels are available.
+- Next evidence:
+  - Compare `semantic_state_adjudication` vs
+    `semantic_state_adjudication_trace` on STALE Premise Resistance with real
+    answer/judge models.
+  - Confirm the notice improves stale-premise rejection without increasing
+    stale-value leakage.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py tests/test_eval.py::test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata tests/test_experiments.py::test_baseline_registry_matches_default_ablation_configs -q`
+    -> `57 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_jsonl_benchmark_supports_unknown_current_state_correction tests/test_eval.py::test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata -q`
+    -> `2 passed`, including the no-stale-value-leak check for
+    unknown-current adjudication notices.
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_state_adjudication semantic_state_adjudication_trace --max-cases 1 --benchmark-report-output /tmp/adamem_state_adjudication_trace_report.md --experiment-output /tmp/adamem_state_adjudication_trace.json --json`
+    -> both baselines passed `9/9`; adjudication-trace records surfaced
+    `state_adjudication` notices for stale-premise-style resource, workflow,
+    runtime, role, and manager queries.
+  - `PYTHONPATH=src python -m pytest -q` -> `233 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+
 ### 2026-05-30 baseline reproduction plan artifact
 
 - Added a baseline utility CLI:

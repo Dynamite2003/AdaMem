@@ -333,11 +333,21 @@ Current implementation:
   state-source trace coverage rates, so experiment bundles can be filtered for
   runs whose state readouts and corrections are traceable to source
   observations.
+- `use_state_adjudication_trace` adds an explicit ephemeral
+  `state_adjudication` notice when query-scoped adjudication suppresses stale
+  raw evidence. The notice cites the current-state basis and exposes current
+  and suppressed source provenance in evaluation traces without copying the old
+  raw evidence back into context. This is ablated as
+  `semantic_state_adjudication_trace`.
 
 Required next evidence:
 
 - Tests for state replacement under paraphrases and unrelated updates.
 - Error analysis separating extraction failure from adjudication failure.
+- Compare `semantic_state_adjudication` and
+  `semantic_state_adjudication_trace` on STALE Premise Resistance once
+  API-backed answer/judge runs are available, checking both stale-premise
+  rejection and stale-value leakage.
 - Extend unknown-current extraction beyond beverage to broader preference slots
   once public state-sensitive transfer cases require invalidation without a
   replacement value.
