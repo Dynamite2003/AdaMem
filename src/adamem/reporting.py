@@ -6,12 +6,17 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
-from adamem.baselines import baseline_registry
+from adamem.baselines import (
+    baseline_registry,
+    load_baseline_reproduction_packet,
+    verify_baseline_reproduction_packet,
+)
 from adamem.claims import (
     ANSWER_RUN_TYPES,
     MIN_ANSWER_MODELS_FOR_ROBUSTNESS,
     MIN_JUDGE_MODELS_FOR_ROBUSTNESS,
     audit_experiment,
+    audit_experiment_payload,
     claim_audit_markdown,
 )
 from adamem.compare import paired_comparison_markdown, paired_comparison_summary
@@ -30,6 +35,7 @@ def write_experiment_bundle(
     *,
     group_fields: Iterable[str] | None = None,
     title: str | None = None,
+    baseline_reproduction_packets: Iterable[str | Path] | None = None,
 ) -> dict[str, Any]:
     experiment = Path(experiment_path)
     output = Path(output_dir)
@@ -37,8 +43,22 @@ def write_experiment_bundle(
     stem = experiment.stem
     group_fields = tuple(group_fields or ())
 
-    audit = audit_experiment(experiment)
     experiment_payload = _load_json(experiment)
+    packet_evidence = _baseline_reproduction_packet_evidence(
+        baseline_reproduction_packets or (),
+    )
+    if packet_evidence["packet_count"]:
+        _ensure_registry_baseline_provenance(experiment_payload)
+    if packet_evidence["ready_packets"]:
+        _apply_baseline_reproduction_packet_provenance(
+            experiment_payload,
+            packet_evidence["ready_packets"],
+        )
+    audit = (
+        audit_experiment_payload(experiment_payload, experiment_path=experiment)
+        if packet_evidence["packet_count"]
+        else audit_experiment(experiment)
+    )
     opportunity_evidence = _opportunity_evidence(experiment_payload)
     audit_md = output / f"{stem}.claim_audit.md"
     audit_json = output / f"{stem}.claim_audit.json"
@@ -59,6 +79,7 @@ def write_experiment_bundle(
         "claim_evidence": audit.get("claim_evidence") or {},
         "diagnostic_evidence": {},
         "opportunity_evidence": opportunity_evidence,
+        "baseline_reproduction_packet_evidence": packet_evidence,
         "warnings": audit.get("warnings") or [],
         "artifacts": {
             "claim_audit_markdown": str(audit_md),
@@ -168,6 +189,7 @@ def write_experiment_bundle_batch(
     *,
     pattern: str = "*experiment.json",
     group_fields: Iterable[str] | None = None,
+    baseline_reproduction_packets: Iterable[str | Path] | None = None,
 ) -> dict[str, Any]:
     source = Path(input_dir)
     output = Path(output_dir)
@@ -181,6 +203,7 @@ def write_experiment_bundle_batch(
                 experiment,
                 bundle_dir,
                 group_fields=group_fields,
+                baseline_reproduction_packets=baseline_reproduction_packets,
             )
         )
     batch_manifest = {
@@ -601,6 +624,78 @@ def method_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, An
         "missing_named_mechanism_ablations": missing_named_mechanism_ablations,
         "complete": not missing_requirements,
     }
+
+
+def _baseline_reproduction_packet_evidence(
+    packet_paths: Iterable[str | Path],
+) -> dict[str, Any]:
+    reports: list[dict[str, Any]] = []
+    ready_packets: list[dict[str, Any]] = []
+    for packet_path in packet_paths:
+        path = Path(packet_path)
+        try:
+            packet = load_baseline_reproduction_packet(path)
+            report = verify_baseline_reproduction_packet(packet, packet_path=path)
+        except Exception as exc:
+            report = {
+                "schema_version": "adamem.baseline_reproduction_packet_verification.v1",
+                "baseline": "",
+                "ready_for_sota_baseline_claim": False,
+                "packet_path": str(path),
+                "checks": {},
+                "blockers": ["packet_unreadable"],
+                "warnings": [f"{type(exc).__name__}: {exc}"],
+                "missing_evidence": [],
+                "baseline_provenance_update": {},
+            }
+        else:
+            report["packet_path"] = str(path)
+        reports.append(report)
+        if report.get("ready_for_sota_baseline_claim") and report.get("baseline_provenance_update"):
+            ready_packets.append(report)
+    return {
+        "schema_version": "adamem.baseline_reproduction_packet_evidence.v1",
+        "packet_count": len(reports),
+        "ready_packet_count": len(ready_packets),
+        "ready_baselines": [
+            str(report.get("baseline"))
+            for report in ready_packets
+            if report.get("baseline")
+        ],
+        "reports": reports,
+        "ready_packets": ready_packets,
+    }
+
+
+def _apply_baseline_reproduction_packet_provenance(
+    experiment_payload: dict[str, Any],
+    ready_packets: Iterable[dict[str, Any]],
+) -> None:
+    provenance = experiment_payload.get("baseline_provenance")
+    if not isinstance(provenance, dict):
+        provenance = {}
+        experiment_payload["baseline_provenance"] = provenance
+    for report in ready_packets:
+        baseline = str(report.get("baseline") or "")
+        update = report.get("baseline_provenance_update")
+        if not baseline or not isinstance(update, dict):
+            continue
+        provenance[baseline] = dict(update)
+
+
+def _ensure_registry_baseline_provenance(experiment_payload: dict[str, Any]) -> None:
+    provenance = experiment_payload.get("baseline_provenance")
+    if not isinstance(provenance, dict):
+        provenance = {}
+        experiment_payload["baseline_provenance"] = provenance
+    registry = baseline_registry()
+    for name in experiment_payload.get("baseline_names") or []:
+        key = str(name)
+        if key in provenance:
+            continue
+        spec = registry.get(key)
+        if spec is not None:
+            provenance[key] = spec.provenance_dict()
 
 
 def method_coverage_markdown(summary: dict[str, Any]) -> str:
@@ -1477,6 +1572,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--pattern", default="*experiment.json", help="Directory mode glob pattern")
     parser.add_argument("--group-fields", nargs="+")
     parser.add_argument("--title")
+    parser.add_argument(
+        "--baseline-reproduction-packet",
+        action="append",
+        default=[],
+        help="Attach a verified official/faithful baseline reproduction packet. Repeatable.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -1486,6 +1587,7 @@ def main(argv: list[str] | None = None) -> None:
             args.output_dir,
             pattern=args.pattern,
             group_fields=args.group_fields,
+            baseline_reproduction_packets=args.baseline_reproduction_packet,
         )
     else:
         manifest = write_experiment_bundle(
@@ -1493,6 +1595,7 @@ def main(argv: list[str] | None = None) -> None:
             args.output_dir,
             group_fields=args.group_fields,
             title=args.title,
+            baseline_reproduction_packets=args.baseline_reproduction_packet,
         )
     if args.json:
         print(json.dumps(manifest, ensure_ascii=False, indent=2))

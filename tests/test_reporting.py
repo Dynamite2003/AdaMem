@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from adamem.baselines import baseline_reproduction_packet_template
 from adamem.reporting import (
     benchmark_coverage_markdown,
     benchmark_coverage_summary,
@@ -637,6 +638,62 @@ def test_method_coverage_uses_artifact_baseline_provenance_over_registry() -> No
     )
 
 
+def test_write_experiment_bundle_uses_verified_baseline_reproduction_packet(
+    tmp_path: Path,
+) -> None:
+    experiment = _write_stale_answer_experiment_with_mainstream_baseline(tmp_path)
+    packet = _write_complete_amem_packet(tmp_path)
+
+    manifest = write_experiment_bundle(
+        experiment,
+        tmp_path / "bundle",
+        baseline_reproduction_packets=[packet],
+    )
+
+    packet_evidence = manifest["baseline_reproduction_packet_evidence"]
+    method_coverage = manifest["method_coverage"]
+    claim_evidence = manifest["claim_evidence"]["baseline_reproduction"]
+    assert packet_evidence["ready_baselines"] == ["a_mem_evolution"]
+    assert method_coverage["baseline_provenance"]["a_mem_evolution"]["implementation_status"] == (
+        "official_reproduction"
+    )
+    assert method_coverage["sota_baseline_reproduction_ready"] is True
+    assert method_coverage["baseline_reproduction_gaps"] == []
+    assert claim_evidence["complete"] is True
+    assert claim_evidence["official_or_faithful_mainstream_reproductions"] == [
+        "a_mem_evolution"
+    ]
+
+
+def test_write_experiment_bundle_does_not_use_incomplete_baseline_packet(
+    tmp_path: Path,
+) -> None:
+    experiment = _write_stale_answer_experiment_with_mainstream_baseline(tmp_path)
+    packet = tmp_path / "incomplete_amem_packet.json"
+    packet.write_text(
+        json.dumps(baseline_reproduction_packet_template("a_mem_evolution")),
+        encoding="utf-8",
+    )
+
+    manifest = write_experiment_bundle(
+        experiment,
+        tmp_path / "bundle",
+        baseline_reproduction_packets=[packet],
+    )
+
+    packet_report = manifest["baseline_reproduction_packet_evidence"]["reports"][0]
+    method_coverage = manifest["method_coverage"]
+    assert packet_report["ready_for_sota_baseline_claim"] is False
+    assert "required_evidence_incomplete" in packet_report["blockers"]
+    assert method_coverage["baseline_provenance"]["a_mem_evolution"]["implementation_status"] == (
+        "api_free_approximation"
+    )
+    assert method_coverage["sota_baseline_reproduction_ready"] is False
+    assert method_coverage["baseline_reproduction_gaps"] == [
+        "official_or_faithful_mainstream_reproduction"
+    ]
+
+
 def test_paper_readiness_summary_marks_answer_candidate_with_study_coverage() -> None:
     claim_rows = claim_matrix_rows([
         {
@@ -1193,6 +1250,69 @@ def _write_lme_v2_prepared_experiment(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return experiment
+
+
+def _write_stale_answer_experiment_with_mainstream_baseline(tmp_path: Path) -> Path:
+    experiment = tmp_path / "stale_answer.experiment.json"
+    experiment.write_text(
+        json.dumps({
+            "run_name": "stale_answer",
+            "run_type": "stale_llm_judge",
+            "dataset": "benchmarks/stale.adamem.jsonl",
+            "baseline_names": [
+                "semantic_only",
+                "a_mem_evolution",
+                "semantic_state_adjudication_trace",
+                "semantic_state_premise_correction",
+            ],
+            "results": {},
+            "raw_outputs": [
+                {
+                    "case_id": "case-1",
+                    "query_id": "q1",
+                    "baseline": "a_mem_evolution",
+                    "answer_model": "openai:gpt-4o-mini",
+                    "judge_model": "openai:gpt-4o-mini",
+                    "judge_score": 1,
+                }
+            ],
+            "notes": {
+                "answer_provider": "openai",
+                "answer_model": "gpt-4o-mini",
+                "judge_provider": "openai",
+                "judge_model": "gpt-4o-mini",
+                "ground_truth_runtime_use": "forbidden",
+            },
+            "command": ["python", "-m", "adamem.eval", "--stale"],
+            "commit": "abc123",
+        }),
+        encoding="utf-8",
+    )
+    return experiment
+
+
+def _write_complete_amem_packet(tmp_path: Path) -> Path:
+    records = tmp_path / "amem.records.jsonl"
+    records.write_text("{\"case_id\":\"q1\",\"baseline\":\"a_mem_evolution\"}\n", encoding="utf-8")
+    packet = baseline_reproduction_packet_template("a_mem_evolution")
+    packet["implementation_status"] = "official_reproduction"
+    packet["evidence"].update({
+        "external_repo_commit": "abc1234",
+        "adapter_or_command": "python run_amem.py --split stale_ids.txt",
+        "dataset_split_and_question_ids": "results/stale_split/question_ids.jsonl",
+        "model_provider_model_and_sampling_settings": "openai:gpt-4o-mini temperature=0 seed=0",
+        "prompt_or_memory_policy_if_applicable": "official A-MEM memory update prompt from commit abc1234",
+        "raw_case_records_path": str(records),
+        "metric_mapping_to_adamem_outputs": "Maps answer text and retrieved context to AdaMem stale_llm_judge records.",
+        "license_and_dependency_notes": "MIT-compatible local reproduction environment recorded.",
+    })
+    packet["baseline_provenance_update"].update({
+        "implementation_status": "official_reproduction",
+        "reproduction_note": "Official A-MEM code path run on the same STALE split.",
+    })
+    packet_path = tmp_path / "amem.reproduction_packet.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    return packet_path
 
 
 def _model_manifest(

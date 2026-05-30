@@ -57,6 +57,37 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 reporting baseline reproduction packet overlay
+
+- Added `--baseline-reproduction-packet PATH` to `adamem.reporting`.
+- Purpose:
+  - Let verified official/faithful baseline reproduction packets feed directly
+    into claim audit and method coverage.
+  - Keep the SOTA gate machine-checkable: incomplete packets are recorded but
+    cannot change `baseline_provenance` or clear reproduction blockers.
+  - Make future A-MEM, Zep/Graphiti, or Mem0 reproductions reusable across
+    report bundles without editing experiment JSON by hand.
+- Behavior:
+  - Reporting verifies every supplied packet using
+    `verify_baseline_reproduction_packet`.
+  - When at least one packet is supplied, reporting fills missing provenance
+    for known baselines from the registry so claim audits remain well formed.
+  - Only packets with `ready_for_sota_baseline_claim=True` overlay
+    `baseline_provenance_update` into the audit payload.
+  - The report manifest records `baseline_reproduction_packet_evidence`,
+    including per-packet blockers and ready baselines.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q`
+    -> `21 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `254 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke:
+    `PYTHONPATH=src python -m adamem.reporting /tmp/adamem_reporting_packet_smoke/stale_answer.experiment.json --output-dir /tmp/adamem_reporting_packet_smoke/cli_bundle --baseline-reproduction-packet /tmp/adamem_reporting_packet_smoke/amem.reproduction_packet.json --json`
+    -> `ready_baselines=['a_mem_evolution']`,
+    `method_coverage.baseline_provenance.a_mem_evolution.implementation_status=official_reproduction`,
+    and `claim_evidence.baseline_reproduction.complete=True`.
+
 ### 2026-05-30 baseline reproduction evidence packets
 
 - Added `adamem.baselines` support for baseline reproduction packets:

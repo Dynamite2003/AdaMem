@@ -42,7 +42,15 @@ def audit_experiment(path: str | Path) -> dict[str, Any]:
     experiment = json.loads(experiment_path.read_text(encoding="utf-8"))
     if not isinstance(experiment, dict):
         raise ValueError(f"{experiment_path} must contain a JSON experiment object")
+    return audit_experiment_payload(experiment, experiment_path=experiment_path)
 
+
+def audit_experiment_payload(
+    experiment: dict[str, Any],
+    *,
+    experiment_path: str | Path,
+) -> dict[str, Any]:
+    experiment_path = Path(experiment_path)
     run_type = str(experiment.get("run_type") or "")
     notes = experiment.get("notes") or {}
     if not isinstance(notes, dict):
