@@ -37,7 +37,7 @@ PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper 
 PYTHONPATH=src python -m adamem.cli verify-demo results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --evidence-manifest results/paper_study_bundle/paper_readiness.json --json
-PYTHONPATH=src python -m adamem.study_plan --output-dir results/stale_api_packet --no-data-prep --no-ama --stale-dataset benchmarks/stale.adamem.jsonl --transfer-dataset benchmarks/dynamic_state_transfer.jsonl --answer-model openai:gpt-4o-mini --answer-model gemini:gemini-1.5-flash --judge-model openai:gpt-4o-mini --judge-model gemini:gemini-1.5-flash --state-extractor-model openai:gpt-4o-mini --demo-bundle results/adamem_state_demo_bundle --json
+PYTHONPATH=src python -m adamem.study_plan --output-dir results/stale_api_packet --no-data-prep --no-ama --stale-dataset benchmarks/stale.adamem.jsonl --transfer-dataset benchmarks/dynamic_state_transfer.jsonl --answer-model openai:gpt-4o-mini --answer-model gemini:gemini-1.5-flash --judge-model openai:gpt-4o-mini --judge-model gemini:gemini-1.5-flash --state-extractor-model openai:gpt-4o-mini --baseline-reproduction-packet results/baseline_reproduction_plan/a_mem_evolution.reproduction_packet.json --demo-bundle results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.baselines --packet-template a_mem_evolution --packet-output results/baseline_reproduction_plan/a_mem_evolution.reproduction_packet.json --json
 PYTHONPATH=src python -m adamem.baselines --verify-packet results/baseline_reproduction_plan/a_mem_evolution.reproduction_packet.json --json
 PYTHONPATH=src python -m adamem.reporting results/stale_api_packet --output-dir results/stale_api_packet/report_bundle --baseline-reproduction-packet results/baseline_reproduction_plan/a_mem_evolution.reproduction_packet.json --json
@@ -131,6 +131,10 @@ Outputs:
   Reporting verifies the packet again, merges only ready packet provenance into
   experiment audit payloads, and leaves baseline-reproduction blockers intact
   for incomplete or unreadable packets.
+- Pass the same packet paths to `adamem.study_plan --baseline-reproduction-packet`
+  so generated API-backed study packets preserve the reporting overlay command.
+  The editable API pilot settings template also includes
+  `baseline_reproduction_packets`.
 - Baseline synthetic/JSONL tables.
 - Baseline reproduction plan artifacts:
   `baseline_reproduction_plan.json` and

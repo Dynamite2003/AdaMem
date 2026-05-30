@@ -179,6 +179,34 @@ def test_build_paper_study_plan_can_attach_demo_readiness_handoff(tmp_path: Path
     assert "paper_readiness artifact" in handoff["claim_boundary"]
 
 
+def test_build_paper_study_plan_passes_baseline_packets_to_reporting(tmp_path: Path) -> None:
+    packet = tmp_path / "a_mem.reproduction_packet.json"
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=tmp_path / "stale.jsonl",
+        transfer_dataset=tmp_path / "transfer.jsonl",
+        stale_source=None,
+        transfer_source=None,
+        ama_output_source=None,
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+        baseline_reproduction_packets=[packet],
+    )
+
+    reporting = next(
+        command for command in plan["commands"]
+        if command["name"] == "paper_report_bundle"
+    )
+
+    assert plan["baseline_reproduction_packets"] == [str(packet)]
+    assert "--baseline-reproduction-packet" in reporting["command"]
+    assert str(packet) in reporting["command"]
+    assert reporting["command"].index("--baseline-reproduction-packet") < (
+        reporting["command"].index(str(packet))
+    )
+
+
 def test_validate_paper_study_plan_requires_lme_v2_prepared_sources(tmp_path: Path) -> None:
     stale_dataset = tmp_path / "stale.jsonl"
     transfer_dataset = tmp_path / "transfer.jsonl"
@@ -301,6 +329,9 @@ def test_write_study_settings_template_is_key_free(tmp_path: Path) -> None:
     assert settings["schema_version"] == STUDY_SETTINGS_SCHEMA_VERSION
     assert settings["output_dir"] == str(tmp_path / "api-study")
     assert settings["required_env_vars"] == ["OPENAI_API_KEY", "GEMINI_API_KEY"]
+    assert settings["baseline_reproduction_packets"] == [
+        "results/baseline_reproduction_plan/a_mem_evolution.reproduction_packet.json"
+    ]
     assert "\"api_key\"" not in raw.lower()
     assert "OPENAI_API_KEY" in raw
 
@@ -340,6 +371,9 @@ def test_build_study_plan_from_settings_uses_api_pilot_models(tmp_path: Path) ->
         "answer_models": ["openai:gpt-a", "gemini:gemini-a"],
         "judge_models": ["openai:gpt-j", "gemini:gemini-j"],
         "state_extractor_model": "openai:gpt-extractor",
+        "baseline_reproduction_packets": [
+            str(tmp_path / "a_mem.reproduction_packet.json"),
+        ],
         "top_k": 4,
         "max_context_chars": 1200,
     }
@@ -362,6 +396,11 @@ def test_build_study_plan_from_settings_uses_api_pilot_models(tmp_path: Path) ->
         "gemini:gemini-a",
     ]
     assert len(answer_commands) == 4
+    reporting = next(
+        command for command in plan["commands"]
+        if command["name"] == "paper_report_bundle"
+    )
+    assert str(tmp_path / "a_mem.reproduction_packet.json") in reporting["command"]
     assert plan["settings_provenance"]["schema_version"] == STUDY_SETTINGS_SCHEMA_VERSION
     assert plan["settings_provenance"]["settings_fingerprint"] == settings_fingerprint(settings)
     assert plan["settings_provenance"]["output_dir_overridden"] is False

@@ -57,6 +57,39 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 study-plan baseline packet wiring
+
+- Added repeatable `--baseline-reproduction-packet PATH` to
+  `adamem.study_plan`.
+- Added `baseline_reproduction_packets` to API-pilot settings templates and
+  `build_study_plan_from_settings`.
+- Purpose:
+  - Make API-backed STALE study packets preserve the official/faithful
+    baseline reproduction overlay all the way into the generated reporting
+    command.
+  - Avoid a manual post-run step where verified A-MEM, Zep/Graphiti, or Mem0
+    packets could be forgotten when building `paper_readiness.json`.
+  - Keep baseline packet paths as evidence references only; provider credentials
+    remain outside settings and plan JSON.
+- Behavior:
+  - `build_paper_study_plan(..., baseline_reproduction_packets=[...])` stores
+    the packet list in the plan.
+  - The generated `paper_report_bundle` command appends
+    `--baseline-reproduction-packet PATH` for each packet.
+  - Existing `demo_readiness_handoff` then consumes the resulting
+    `report_bundle/paper_readiness.json`, so baseline reproduction evidence can
+    propagate to the demo readiness gate.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q`
+    -> `42 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `255 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke generated `/tmp/adamem_study_packet_with_baseline` using
+    `--baseline-reproduction-packet results/baseline_reproduction_plan/a_mem_evolution.reproduction_packet.json`.
+    The plan recorded the packet path, and `paper_study_commands.sh` included
+    the reporting command with the same `--baseline-reproduction-packet` flag.
+
 ### 2026-05-30 reporting baseline reproduction packet overlay
 
 - Added `--baseline-reproduction-packet PATH` to `adamem.reporting`.

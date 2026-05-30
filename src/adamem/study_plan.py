@@ -120,6 +120,7 @@ def build_paper_study_plan(
     top_k: int = 8,
     max_context_chars: int = 4000,
     demo_bundle: str | Path | None = None,
+    baseline_reproduction_packets: Iterable[str | Path] = (),
 ) -> dict[str, Any]:
     output = Path(output_dir)
     if stale_dataset is None:
@@ -127,6 +128,7 @@ def build_paper_study_plan(
     if transfer_dataset is None:
         transfer_dataset = output / "data" / "longmemeval_s.adamem.jsonl"
     stale_types = tuple(str(item) for item in stale_types)
+    baseline_reproduction_packets = tuple(str(path) for path in baseline_reproduction_packets)
     answers = [parse_model_spec(item) for item in answer_models]
     judges = [parse_model_spec(item) for item in judge_models]
     extractor = parse_model_spec(state_extractor_model)
@@ -206,7 +208,10 @@ def build_paper_study_plan(
             ama_limit=ama_limit,
             top_k=top_k,
         ))
-    commands.append(_reporting_command(output))
+    commands.append(_reporting_command(
+        output,
+        baseline_reproduction_packets=baseline_reproduction_packets,
+    ))
     if demo_bundle is not None:
         commands.append(_demo_readiness_handoff_command(output, demo_bundle=demo_bundle))
 
@@ -252,6 +257,7 @@ def build_paper_study_plan(
             "transfer_ama_source": str(ama_output_source) if ama_output_source is not None else None,
         },
         "data_sources": data_sources,
+        "baseline_reproduction_packets": list(baseline_reproduction_packets),
         "split": {
             "stale_types": list(stale_types),
             "limit_per_stale_type": limit_per_stale_type,
@@ -377,6 +383,9 @@ def build_api_pilot_settings_template(
         "top_k": 8,
         "max_context_chars": 4000,
         "demo_bundle": "results/adamem_state_demo_bundle",
+        "baseline_reproduction_packets": [
+            "results/baseline_reproduction_plan/a_mem_evolution.reproduction_packet.json",
+        ],
         "required_env_vars": [
             "OPENAI_API_KEY",
             "GEMINI_API_KEY",
@@ -486,6 +495,7 @@ def build_study_plan_from_settings(
             top_k=int(settings.get("top_k") or 8),
             max_context_chars=int(settings.get("max_context_chars") or 4000),
             demo_bundle=settings.get("demo_bundle"),
+            baseline_reproduction_packets=settings.get("baseline_reproduction_packets") or (),
         )
     attach_settings_provenance(
         plan,
@@ -1562,8 +1572,13 @@ def _lme_v2_prepared_commands(
     ]
 
 
-def _reporting_command(output: Path) -> PlannedCommand:
+def _reporting_command(
+    output: Path,
+    *,
+    baseline_reproduction_packets: Iterable[str | Path] = (),
+) -> PlannedCommand:
     report_dir = output / "report_bundle"
+    packet_paths = tuple(str(path) for path in baseline_reproduction_packets)
     outputs = {
         "output_dir": str(report_dir),
         "batch_manifest": str(report_dir / "batch_manifest.json"),
@@ -1590,6 +1605,8 @@ def _reporting_command(output: Path) -> PlannedCommand:
         "selection_group",
         "--json",
     ]
+    for packet in packet_paths:
+        command.extend(["--baseline-reproduction-packet", packet])
     return PlannedCommand(
         name="paper_report_bundle",
         stage="reporting",
@@ -2009,6 +2026,12 @@ def main(argv: list[str] | None = None) -> None:
         help="Add a final demo-readiness handoff command for this demo bundle path.",
     )
     parser.add_argument(
+        "--baseline-reproduction-packet",
+        action="append",
+        default=[],
+        help="Pass this official/faithful baseline reproduction packet to the reporting command. Repeatable.",
+    )
+    parser.add_argument(
         "--check-env",
         action="store_true",
         help="Also check whether required provider credential environment variables are set.",
@@ -2108,6 +2131,7 @@ def main(argv: list[str] | None = None) -> None:
                     top_k=args.top_k if args.top_k is not None else 8,
                     max_context_chars=args.max_context_chars if args.max_context_chars is not None else 4000,
                     demo_bundle=args.demo_bundle,
+                    baseline_reproduction_packets=args.baseline_reproduction_packet,
                 )
             artifacts = write_paper_study_plan(plan, output_dir)
     except ValueError as exc:
