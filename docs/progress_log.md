@@ -57,6 +57,39 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 day-end handoff
+
+- Current repository status before this handoff:
+  - The working tree was clean.
+  - `main` was ahead of `origin/main` by 103 local commits.
+  - Latest method commit: `ce74dab Add employer state authority`.
+- Current API-free method capability:
+  - Deterministic state-aware memory covers replacement and unknown-current
+    handling for multiple state families, including the new
+    `organization.employer` slot.
+  - Reporting and study-plan code now exposes paper-claim gates, readiness
+    blockers, method coverage, and baseline reproduction gaps.
+  - Local fixtures are useful for causal debugging and ablation sanity checks,
+    but they remain smoke data rather than paper evidence.
+- Last validated state before this handoff:
+  - Focused employer-state tests passed.
+  - The employer transfer fixture showed the intended contrast:
+    `semantic_only` failed while state-aware variants passed.
+  - Full local suite passed with `212 passed` after the employer-state commit.
+- Main next implementation target:
+  - Extend state dependency propagation beyond direct slot replacement.
+  - First candidate: employer changes should invalidate dependent
+    employment/workplace states such as a benefits portal, creating an
+    authorized `unknown-current` readout instead of leaving stale dependent
+    evidence retrievable as if still active.
+- Next-day workflow:
+  - Inspect `src/adamem/state.py`, `src/adamem/manager.py`, and
+    `tests/test_adamem.py` before editing.
+  - Add an ablatable deterministic propagation test and a small JSONL transfer
+    fixture.
+  - Run focused tests, CLI fixture eval, full suite, `compileall`, and
+    `git diff --check` before committing.
+
 ### 2026-05-30 organization employer state slot
 
 - Added deterministic state extraction and query routing for
