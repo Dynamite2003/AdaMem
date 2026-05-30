@@ -57,6 +57,54 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 end-of-day handoff
+
+- Current git checkpoint before stopping:
+  - Latest committed implementation checkpoint:
+    `647cdc0 Add demo bundle artifact output`.
+  - Working tree was clean before this handoff note.
+  - Branch status before this note: `main...origin/main [ahead 133]`.
+- What is usable without API keys now:
+  - `adamem.cli demo` can run the local dynamic-state stale-memory mechanism
+    demo for one query or all queries.
+  - `--baseline-profile paper` emits the current paper-facing local matrix:
+    raw semantic retrieval, A-MEM-style notes, Zep/Graphiti-style temporal KG,
+    Mem0-style compact extraction, and AdaMem state adjudication trace.
+  - `--html-output` writes a static inspection dashboard.
+  - `--bundle-output` writes `index.html`, `demo_payload.json`, and
+    `demo_manifest.json` with provenance, command, commit, payload hash,
+    baseline metadata, summary, and blocked claims.
+- Current evidence boundary:
+  - The demo bundle is a reproducible local mechanism inspection artifact.
+  - It is not answer-accuracy evidence because no answer model or judge model
+    is involved.
+  - It is not SOTA evidence because A-MEM/Zep/Mem0 entries are deterministic
+    API-free approximations, not official or faithful external reproductions.
+  - It is not generality evidence because public STALE, LongMemEval/AMA, and
+    other transfer runs still need API-backed or prepared benchmark execution.
+- Validation already recorded for this checkpoint:
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `7 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `240 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+- Recommended first task tomorrow:
+  - Add an API-free bundle verifier command, e.g.
+    `PYTHONPATH=src python -m adamem.cli verify-demo results/adamem_state_demo_bundle --json`.
+  - The verifier should check manifest schema, artifact existence, payload
+    schema, provenance schema, recomputed payload hash, blocked-claim presence,
+    baseline-name consistency, and embedded HTML demo data.
+  - Add a tamper-detection test by editing `demo_payload.json` after bundle
+    creation and confirming verification fails.
+- After the verifier:
+  - Run the verifier on a fresh paper-profile bundle.
+  - Keep browser/screenshot validation as a demo-polish step; previous browser
+    automation was blocked because the environment did not have the Playwright
+    Node module installed.
+  - When API keys are available, prioritize real STALE answer evaluation for
+    `semantic_state_adjudication` vs `semantic_state_adjudication_trace`, then
+    replace local mainstream approximations with official or faithful baseline
+    reproductions before making paper-strength claims.
+
 ### 2026-05-30 API-free stale-memory demo CLI
 
 - Added `PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json`.
