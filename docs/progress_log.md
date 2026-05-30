@@ -204,6 +204,44 @@ extraction on those true state cases.
   - `git diff --check` -> no issues
   - `PYTHONPATH=src python -m pytest -q` -> `222 passed`
 
+### 2026-05-30 STALE opportunity-grouped failure diagnostics
+
+- Threaded STALE opportunity labels from query metadata into
+  `StaleQueryDiagnostic` and diagnostic case records:
+  - `expected_state_slot`
+  - `dependency_source_slot`
+  - `dependency_target_family`
+- Extended `diagnostic_failure_summary` and
+  `diagnostic_failure_report` with opportunity-aware groupings:
+  - failures by expected state slot;
+  - failures by dependency source slot;
+  - failures by dependency target family;
+  - dependency target family by baseline.
+- Representative failure examples now preserve the expected state/dependency
+  labels so paper case studies can be selected by mechanism opportunity.
+- Purpose:
+  - Move from merely counting opportunity coverage to diagnosing whether
+    specific mechanisms fail on state-resolution versus dependency-propagation
+    opportunities.
+  - Prepare public STALE analysis tables for implicit policy adaptation and
+    related downstream-state cases.
+- Local smoke:
+  - `PYTHONPATH=src python -m adamem.stale_pipeline benchmarks/stale_mini.jsonl --input-format adamem-jsonl --output-dir /tmp/adamem_stale_opportunity_group_smoke --run-name stale_mini_opportunity_groups --baselines semantic_only semantic_state_propagation_adjudication --max-cases 2 --json`
+    -> ran successfully.
+  - The generated diagnostic report includes:
+    - `Expected State Slots`: `location = 12`
+    - `Dependency Source Slots`: `location = 8`
+    - `Dependency Target Families`: `local_context = 8`
+    - `Dependency Target Families By Baseline` with both tested baselines.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_stale.py::test_diagnostic_failure_summary_groups_records -q`
+    -> `1 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_stale.py tests/test_stale_pipeline.py -q`
+    -> `21 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `222 passed`
+
 ### 2026-05-30 day-end checkpoint after dependency evidence
 
 - Current git state before this checkpoint:

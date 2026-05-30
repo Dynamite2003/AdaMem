@@ -467,13 +467,24 @@ def test_diagnostic_failure_summary_groups_records(tmp_path: Path) -> None:
     assert summary["by_baseline"]["semantic_only"] >= 1
     assert summary["by_failure_mode"]["current_evidence_not_recalled"] >= 1
     assert summary["by_failure_attribution"]["state_authority_absent_or_extraction_failure"] >= 1
+    assert summary["by_expected_state_slot"]["location"] >= 1
+    assert summary["by_dependency_source_slot"]["location"] >= 1
+    assert summary["by_dependency_target_family"]["local_context"] >= 1
+    assert "local_context" in summary["by_baseline_dependency_target_family"]["semantic_only"]
     assert "state_authority_absent_or_extraction_failure" in summary["by_baseline_failure_attribution"][
         "semantic_only"
     ]
     assert summary["examples_by_failure_attribution"]["state_authority_absent_or_extraction_failure"][0][
         "baseline"
     ] == "semantic_only"
+    assert summary["examples_by_failure_attribution"]["state_authority_absent_or_extraction_failure"][0][
+        "expected_state_slot"
+    ] == "location"
     assert "Failure Attributions By Baseline" in report
+    assert "Expected State Slots" in report
+    assert "Dependency Source Slots" in report
+    assert "Dependency Target Families" in report
+    assert "Dependency Target Families By Baseline" in report
     assert "Representative Failure Attributions" in report
     assert "Failure Modes By Baseline" in report
     assert "Representative Examples" in report

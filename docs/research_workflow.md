@@ -656,6 +656,10 @@ Completed API-free foundations:
 - Report bundles surface STALE opportunity coverage from experiment notes as
   `opportunity_evidence`, and claim matrices include a `stale opportunities`
   column plus leakage-sensitive readiness actions.
+- STALE diagnostic failure reports group records by opportunity labels,
+  including expected state slot, dependency source slot, dependency target
+  family, and dependency target family by baseline. These are evaluation-only
+  slices for paper error analysis.
 - Semantic-only state-aware ablations, so state mechanisms can be tested
   independently of default full AdaMem scoring.
 - Synthetic tests for State Resolution, Premise Resistance, and Implicit Policy

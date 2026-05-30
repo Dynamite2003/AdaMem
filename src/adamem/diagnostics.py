@@ -112,6 +112,9 @@ class StaleQueryDiagnostic:
     unknown_current_state_count: int
     active_state_slots: list[str] = field(default_factory=list)
     stale_state_slots: list[str] = field(default_factory=list)
+    expected_state_slot: str = ""
+    dependency_source_slot: str = ""
+    dependency_target_family: str = ""
     trace: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -242,6 +245,9 @@ def diagnose_stale_query(
         unknown_current_state_count=state_inventory["unknown_current_state_count"],
         active_state_slots=state_inventory["active_state_slots"],
         stale_state_slots=state_inventory["stale_state_slots"],
+        expected_state_slot=str(meta.get("state_slot") or ""),
+        dependency_source_slot=str(meta.get("dependency_source_slot") or ""),
+        dependency_target_family=str(meta.get("dependency_target_family") or ""),
         trace=[
             {
                 "rank": index,
@@ -348,6 +354,9 @@ def diagnostic_case_records(
                 "unknown_current_state_count": query.unknown_current_state_count,
                 "active_state_slots": query.active_state_slots,
                 "stale_state_slots": query.stale_state_slots,
+                "expected_state_slot": query.expected_state_slot,
+                "dependency_source_slot": query.dependency_source_slot,
+                "dependency_target_family": query.dependency_target_family,
             }
             if include_trace:
                 record["trace"] = query.trace
@@ -365,8 +374,12 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
     by_failure_mode: dict[str, int] = {}
     by_analysis_flag: dict[str, int] = {}
     by_failure_attribution: dict[str, int] = {}
+    by_expected_state_slot: dict[str, int] = {}
+    by_dependency_source_slot: dict[str, int] = {}
+    by_dependency_target_family: dict[str, int] = {}
     by_baseline_failure_mode: dict[str, dict[str, int]] = {}
     by_baseline_failure_attribution: dict[str, dict[str, int]] = {}
+    by_baseline_dependency_target_family: dict[str, dict[str, int]] = {}
     examples_by_failure_mode: dict[str, list[dict[str, Any]]] = {}
     examples_by_failure_attribution: dict[str, list[dict[str, Any]]] = {}
 
@@ -377,6 +390,21 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
         by_baseline[baseline] = by_baseline.get(baseline, 0) + 1
         by_dim[dim] = by_dim.get(dim, 0) + 1
         by_stale_type[stale_type] = by_stale_type.get(stale_type, 0) + 1
+        expected_slot = str(record.get("expected_state_slot") or "")
+        if expected_slot:
+            by_expected_state_slot[expected_slot] = by_expected_state_slot.get(expected_slot, 0) + 1
+        dependency_source = str(record.get("dependency_source_slot") or "")
+        if dependency_source:
+            by_dependency_source_slot[dependency_source] = (
+                by_dependency_source_slot.get(dependency_source, 0) + 1
+            )
+        dependency_family = str(record.get("dependency_target_family") or "")
+        if dependency_family:
+            by_dependency_target_family[dependency_family] = (
+                by_dependency_target_family.get(dependency_family, 0) + 1
+            )
+            nested = by_baseline_dependency_target_family.setdefault(baseline, {})
+            nested[dependency_family] = nested.get(dependency_family, 0) + 1
 
         failure_modes = [str(mode) for mode in record.get("failure_modes", [])]
         for mode in failure_modes:
@@ -407,6 +435,9 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
         "by_failure_mode": _sorted_counts(by_failure_mode),
         "by_failure_attribution": _sorted_counts(by_failure_attribution),
         "by_analysis_flag": _sorted_counts(by_analysis_flag),
+        "by_expected_state_slot": _sorted_counts(by_expected_state_slot),
+        "by_dependency_source_slot": _sorted_counts(by_dependency_source_slot),
+        "by_dependency_target_family": _sorted_counts(by_dependency_target_family),
         "by_baseline_failure_mode": {
             baseline: _sorted_counts(counts)
             for baseline, counts in sorted(by_baseline_failure_mode.items())
@@ -414,6 +445,10 @@ def diagnostic_failure_summary(records: list[dict[str, Any]], *, max_examples: i
         "by_baseline_failure_attribution": {
             baseline: _sorted_counts(counts)
             for baseline, counts in sorted(by_baseline_failure_attribution.items())
+        },
+        "by_baseline_dependency_target_family": {
+            baseline: _sorted_counts(counts)
+            for baseline, counts in sorted(by_baseline_dependency_target_family.items())
         },
         "examples_by_failure_mode": examples_by_failure_mode,
         "examples_by_failure_attribution": examples_by_failure_attribution,
@@ -430,6 +465,12 @@ def diagnostic_failure_report(records: list[dict[str, Any]], *, max_examples: in
     _append_count_table(lines, "Baselines", summary["by_baseline"])
     _append_count_table(lines, "STALE Dimensions", summary["by_dim"])
     _append_count_table(lines, "STALE Types", summary["by_stale_type"])
+    if summary["by_expected_state_slot"]:
+        _append_count_table(lines, "Expected State Slots", summary["by_expected_state_slot"])
+    if summary["by_dependency_source_slot"]:
+        _append_count_table(lines, "Dependency Source Slots", summary["by_dependency_source_slot"])
+    if summary["by_dependency_target_family"]:
+        _append_count_table(lines, "Dependency Target Families", summary["by_dependency_target_family"])
     if summary["by_analysis_flag"]:
         _append_count_table(lines, "Analysis Flags", summary["by_analysis_flag"])
 
@@ -450,6 +491,16 @@ def diagnostic_failure_report(records: list[dict[str, Any]], *, max_examples: in
         for attribution, count in counts.items():
             lines.append(f"| {baseline} | {attribution} | {count} |")
     lines.append("")
+
+    if summary["by_baseline_dependency_target_family"]:
+        lines.append("## Dependency Target Families By Baseline")
+        lines.append("")
+        lines.append("| baseline | dependency target family | count |")
+        lines.append("| --- | --- | ---: |")
+        for baseline, counts in summary["by_baseline_dependency_target_family"].items():
+            for family, count in counts.items():
+                lines.append(f"| {baseline} | {family} | {count} |")
+        lines.append("")
 
     lines.append("## Representative Examples")
     lines.append("")
@@ -567,6 +618,9 @@ def _compact_failure_example(record: dict[str, Any]) -> dict[str, Any]:
         "query_id": record.get("query_id"),
         "dim": record.get("dim"),
         "stale_type": record.get("stale_type"),
+        "expected_state_slot": record.get("expected_state_slot"),
+        "dependency_source_slot": record.get("dependency_source_slot"),
+        "dependency_target_family": record.get("dependency_target_family"),
         "top_retrieved": top_retrieved,
     }
 
