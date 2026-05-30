@@ -85,6 +85,13 @@ extraction on those true state cases.
   - `python -m pytest` -> `258 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+- Added `docs/benchmark_readiness.md` after checking local assets:
+  - API-free diagnostics can run now.
+  - Real STALE API evaluation still needs provider credentials and the full
+    STALE source or converted full STALE JSONL.
+  - The document records the recommended pilot launch order and exact commands
+    for demo verification, baseline packet preparation, study plan generation,
+    command-subset execution, reporting, and demo readiness handoff.
 
 ### 2026-05-30 study-plan baseline packet wiring
 

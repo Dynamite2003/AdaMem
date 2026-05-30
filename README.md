@@ -186,6 +186,10 @@ Use [docs/literature_to_design.md](docs/literature_to_design.md) to keep
 mechanism ideas tied to real papers, baseline gaps, hypotheses, and evaluation
 gates.
 
+Use [docs/benchmark_readiness.md](docs/benchmark_readiness.md) before starting
+API-backed benchmark work; it records the current local data/key blockers and
+the recommended STALE pilot launch order.
+
 Useful API-free commands:
 
 ```bash
