@@ -57,6 +57,29 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 API-free stale-memory demo CLI
+
+- Added `PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json`.
+- Purpose:
+  - Give the project a fast, API-free inspection workflow before tomorrow's
+    key-enabled runs.
+  - Show the current contrast between `semantic_state_adjudication` and
+    `semantic_state_adjudication_trace` on the same stale-premise query.
+  - Keep the claim boundary explicit: the output is a mechanism demo, not
+    paper evidence, SOTA evidence, or end-to-end answer accuracy.
+- Output:
+  - JSON or Markdown artifact with dataset, case, query, expected/forbidden
+    retrieval-support strings, per-baseline retrieved content, score
+    contributions, and trace metadata.
+  - Source-label trace for the authorized current state and the suppressed old
+    raw evidence, without copying the stale value into the adjudication notice.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `2 passed`
+  - `PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json`
+    -> both demo baselines passed the retrieval-support check; the trace
+    baseline surfaced a `state_adjudication` notice with `new_runtime` as the
+    current source and `old_runtime` as the suppressed source.
+
 ### 2026-05-30 state adjudication trace
 
 - Added `use_state_adjudication_trace` and the canonical

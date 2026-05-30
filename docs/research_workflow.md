@@ -29,6 +29,7 @@ Commands:
 
 ```bash
 python -m pytest
+PYTHONPATH=src python -m adamem.cli demo --query-id current_runtime_status --json
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json
@@ -78,6 +79,9 @@ PYTHONPATH=src python -m adamem.study_plan --output-dir results/paper_study_plan
 Outputs:
 
 - Clean test result.
+- API-free stale-memory mechanism demo output from `adamem.cli demo`. This is
+  a local inspection artifact for the current-state adjudication mechanism and
+  must not be cited as paper evidence or answer accuracy.
 - Baseline synthetic/JSONL tables.
 - Baseline reproduction plan artifacts:
   `baseline_reproduction_plan.json` and
