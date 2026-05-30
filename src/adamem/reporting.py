@@ -252,9 +252,11 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
         baseline_reproduction = evidence.get("baseline_reproduction") or {}
         model_coverage = evidence.get("model_coverage") or {}
         reproducibility = evidence.get("reproducibility") or {}
+        dependency = retrieval.get("dependency_propagation") or {}
         dataset_scope = manifest.get("dataset_scope") or {}
         diagnostic = manifest.get("diagnostic_evidence") or {}
         top_attribution, top_attribution_count = _top_count(diagnostic.get("failure_attributions") or {})
+        dependency_state_records, dependency_correction_records = _dependency_propagation_counts(dependency)
         row = {
             "experiment": manifest.get("experiment"),
             "run_type": manifest.get("run_type"),
@@ -273,6 +275,10 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "state_matching_questions": int(state_evidence.get("with_matching_state_evidence") or 0),
             "state_available_rate": float(state_evidence.get("state_available_rate") or 0.0),
             "paired_no_regression_count": len(retrieval.get("paired_no_regression") or []),
+            "dependency_propagation_baseline_count": len(dependency),
+            "dependency_state_records": dependency_state_records,
+            "dependency_correction_records": dependency_correction_records,
+            "dependency_parent_slots": _dependency_parent_slots(dependency),
             "baseline_coverage_complete": bool(baseline_coverage.get("complete")),
             "baseline_category_count": int(baseline_coverage.get("category_count") or 0),
             "missing_baseline_groups": list(baseline_coverage.get("missing_groups") or []),
@@ -874,13 +880,13 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | baseline repro | model gaps | repro gaps | no-reg pairs | top attribution |",
-        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | ---: | --- |",
+        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | dependency evidence | baseline gaps | baseline repro | model gaps | repro gaps | no-reg pairs | top attribution |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | ---: | --- |",
     ]
     if not rows:
         lines.append(
             "| <none> | needs_attention | add_experiment_records | unknown | <none> | "
-            "0 | 0 | 0 | 0/0 | 0.00% | - | - | - | - | 0 | - |"
+            "0 | 0 | 0 | 0/0 | 0.00% | - | - | - | - | - | 0 | - |"
         )
         return "\n".join(lines) + "\n"
     for row in rows:
@@ -895,6 +901,7 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
             f"{row['supported_claim_count']} | {row['blocked_claim_count']} | "
             f"{row['warning_count']} | {matching}/{expected} | "
             f"{float(row.get('state_available_rate') or 0.0):.2%} | "
+            f"{_format_dependency_evidence(row)} | "
             f"{_format_missing_baseline_groups(row)} | "
             f"{_format_baseline_reproduction(row)} | "
             f"{_format_missing_model_requirements(row)} | "
@@ -1294,6 +1301,39 @@ def _format_top_attribution(row: dict[str, Any]) -> str:
     if not attribution:
         return "-"
     return f"{attribution} ({int(row.get('top_failure_attribution_count') or 0)})"
+
+
+def _dependency_propagation_counts(dependency: dict[str, Any]) -> tuple[int, int]:
+    state_records = 0
+    correction_records = 0
+    for summary in dependency.values():
+        if not isinstance(summary, dict):
+            continue
+        state_records += int(summary.get("dependency_unknown_current_records") or 0)
+        correction_records += int(summary.get("dependency_unknown_current_correction_records") or 0)
+    return state_records, correction_records
+
+
+def _dependency_parent_slots(dependency: dict[str, Any]) -> list[str]:
+    slots: list[str] = []
+    for summary in dependency.values():
+        if not isinstance(summary, dict):
+            continue
+        for slot in summary.get("dependency_parent_slots") or []:
+            text = str(slot)
+            if text and text not in slots:
+                slots.append(text)
+    return slots
+
+
+def _format_dependency_evidence(row: dict[str, Any]) -> str:
+    baselines = int(row.get("dependency_propagation_baseline_count") or 0)
+    states = int(row.get("dependency_state_records") or 0)
+    corrections = int(row.get("dependency_correction_records") or 0)
+    if baselines == 0 and states == 0 and corrections == 0:
+        return "-"
+    parents = ", ".join(str(slot) for slot in row.get("dependency_parent_slots") or []) or "parents?"
+    return f"{baselines} baselines; state {states}; correction {corrections}; {parents}"
 
 
 def _format_missing_baseline_groups(row: dict[str, Any]) -> str:

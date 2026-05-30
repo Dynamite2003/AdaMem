@@ -313,6 +313,13 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
                 },
                 "retrieval_transfer": {
                     "paired_no_regression": [{"candidate": "semantic_state_readout"}],
+                    "dependency_propagation": {
+                        "semantic_state_propagation_adjudication": {
+                            "dependency_unknown_current_records": 2,
+                            "dependency_unknown_current_correction_records": 1,
+                            "dependency_parent_slots": ["location", "organization.employer"],
+                        }
+                    },
                 },
             },
         }
@@ -337,6 +344,10 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "state_matching_questions": 3,
         "state_available_rate": 0.75,
         "paired_no_regression_count": 1,
+        "dependency_propagation_baseline_count": 1,
+        "dependency_state_records": 2,
+        "dependency_correction_records": 1,
+        "dependency_parent_slots": ["location", "organization.employer"],
         "baseline_coverage_complete": False,
         "baseline_category_count": 0,
         "missing_baseline_groups": [],
@@ -368,7 +379,8 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
-    assert "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | baseline gaps | baseline repro | model gaps | repro gaps | no-reg pairs | top attribution |" in markdown
+    assert "dependency evidence" in markdown
+    assert "state 2; correction 1; location, organization.employer" in markdown
 
 
 def test_study_model_coverage_merges_comparable_experiments() -> None:

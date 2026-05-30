@@ -57,6 +57,29 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 dependency propagation claim matrix fields
+
+- Extended batch claim-matrix rows with dependency-propagation evidence:
+  - `dependency_propagation_baseline_count`
+  - `dependency_state_records`
+  - `dependency_correction_records`
+  - `dependency_parent_slots`
+- Claim-matrix Markdown now shows a `dependency evidence` column so report
+  bundles can be filtered for runs with dependency-propagation trace evidence.
+- Purpose:
+  - Make dependency propagation visible at the batch-report triage level, not
+    only inside individual claim-audit JSON files.
+  - Support later public benchmark sweeps where the next question is which
+    runs, baselines, and parent slots actually exercised the mechanism.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py::test_claim_matrix_helpers_flatten_manifest_evidence tests/test_reporting.py::test_claim_matrix_gates_claim_limited_dataset_scope tests/test_reporting.py::test_paper_readiness_marks_paper_claim_ready_only_after_full_gates -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py -q`
+    -> `18 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `217 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+
 ### 2026-05-30 dependency propagation claim audit
 
 - Extended `adamem.claims` with a narrow
