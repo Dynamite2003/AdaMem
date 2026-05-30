@@ -75,6 +75,10 @@ def main(argv: list[str] | None = None) -> None:
     verify_demo.add_argument("bundle", help="Path to a demo bundle directory or demo_manifest.json")
     verify_demo.add_argument("--json", action="store_true", help="Emit a machine-readable verification report")
 
+    demo_readiness = sub.add_parser("demo-readiness", help="Audit paper-readiness boundaries for a demo bundle")
+    demo_readiness.add_argument("bundle", help="Path to a demo bundle directory or demo_manifest.json")
+    demo_readiness.add_argument("--json", action="store_true", help="Emit a machine-readable readiness report")
+
     args = parser.parse_args(argv)
     command = ["adamem", *(argv or sys.argv[1:])]
 
@@ -122,6 +126,14 @@ def main(argv: list[str] | None = None) -> None:
         else:
             print(_format_demo_bundle_verification(report))
         if not report["valid"]:
+            raise SystemExit(1)
+    elif args.command == "demo-readiness":
+        report = _demo_bundle_paper_readiness(args.bundle)
+        if args.json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(_format_demo_bundle_paper_readiness(report))
+        if not report["walkthrough_ready"]:
             raise SystemExit(1)
 
 
@@ -517,6 +529,119 @@ def _verify_demo_bundle(bundle: str | Path) -> dict[str, Any]:
     }
 
 
+def _demo_bundle_paper_readiness(bundle: str | Path) -> dict[str, Any]:
+    verification = _verify_demo_bundle(bundle)
+    payload = _load_verified_demo_payload(verification)
+    evidence_boundary = (
+        payload.get("evidence_boundary")
+        if isinstance(payload.get("evidence_boundary"), dict)
+        else {}
+    )
+    blocked_claims = (
+        evidence_boundary.get("blocked_claims")
+        if isinstance(evidence_boundary.get("blocked_claims"), dict)
+        else {}
+    )
+    baselines = _demo_payload_baselines(payload)
+    baseline_statuses = {
+        baseline["name"]: baseline.get("implementation_status")
+        for baseline in baselines
+        if baseline.get("name")
+    }
+    mainstream_approximations = sorted(
+        name
+        for name, status in baseline_statuses.items()
+        if status == "api_free_approximation"
+    )
+    checklist = {
+        "demo_bundle_verified": bool(verification.get("valid")),
+        "interactive_html_verified": bool(
+            verification.get("checks", {}).get("html_embeds_demo_data")
+            and verification.get("checks", {}).get("html_contains_payload_hash")
+        ),
+        "evidence_boundary_present": all(
+            key in blocked_claims
+            for key in ("answer_accuracy", "sota", "generality")
+        ),
+        "artifact_provenance_verified": bool(
+            verification.get("checks", {}).get("provenance_schema")
+            and verification.get("checks", {}).get("payload_hash_matches")
+        ),
+        "baseline_provenance_present": bool(baseline_statuses)
+        and all(status for status in baseline_statuses.values()),
+    }
+    walkthrough_ready = all(checklist.values())
+    paper_claim_blockers = list(blocked_claims.keys())
+    for blocker in (
+        "end_to_end_answer_evaluation",
+        "official_or_faithful_mainstream_baselines",
+        "public_benchmark_generality",
+        "multi_model_judge_robustness",
+    ):
+        if blocker not in paper_claim_blockers:
+            paper_claim_blockers.append(blocker)
+    if mainstream_approximations and "mainstream_approximations_not_sota_ready" not in paper_claim_blockers:
+        paper_claim_blockers.append("mainstream_approximations_not_sota_ready")
+    if not verification.get("valid"):
+        paper_claim_blockers.insert(0, "demo_bundle_verification_failed")
+
+    next_actions = [
+        "run_stale_answer_judge_evaluation",
+        "replace_or_validate_mainstream_approximation_baselines",
+        "run_public_transfer_benchmark",
+        "add_multi_answer_and_judge_model_robustness",
+    ]
+    if not verification.get("valid"):
+        next_actions.insert(0, "fix_demo_bundle_verification")
+
+    return {
+        "schema_version": "adamem.demo_paper_readiness.v1",
+        "bundle": str(bundle),
+        "walkthrough_ready": walkthrough_ready,
+        "paper_claim_ready": False,
+        "demo_verification_valid": bool(verification.get("valid")),
+        "checklist": checklist,
+        "supported_claims": (
+            ["interactive_demo_walkthrough_ready"]
+            if walkthrough_ready
+            else []
+        ),
+        "blocked_paper_claims": paper_claim_blockers,
+        "evidence_boundary": evidence_boundary,
+        "baseline_profile": payload.get("baseline_profile"),
+        "baseline_names": payload.get("baseline_names") or [],
+        "baseline_implementation_statuses": baseline_statuses,
+        "mainstream_api_free_approximations": mainstream_approximations,
+        "next_actions": next_actions,
+        "demo_verification": verification,
+    }
+
+
+def _load_verified_demo_payload(verification: dict[str, Any]) -> dict[str, Any]:
+    payload_path_text = (verification.get("artifacts") or {}).get("payload_json")
+    if not payload_path_text:
+        return {}
+    payload_path = Path(str(payload_path_text))
+    if not payload_path.exists():
+        return {}
+    return _read_json_object(payload_path, errors=[], label="payload")
+
+
+def _demo_payload_baselines(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(payload.get("baselines"), list):
+        return [baseline for baseline in payload["baselines"] if isinstance(baseline, dict)]
+    baselines: list[dict[str, Any]] = []
+    for query in payload.get("queries") or []:
+        if not isinstance(query, dict):
+            continue
+        for baseline in query.get("baselines") or []:
+            if isinstance(baseline, dict) and baseline.get("name"):
+                name = str(baseline["name"])
+                if not any(existing.get("name") == name for existing in baselines):
+                    baselines.append(baseline)
+    return baselines
+
+
 def _read_json_object(path: Path, *, errors: list[str], label: str) -> dict[str, Any]:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8"))
@@ -819,6 +944,37 @@ def _format_demo_bundle_verification(report: dict[str, Any]) -> str:
         lines.append("")
         lines.append("## Warnings")
         lines.extend(f"- {warning}" for warning in report["warnings"])
+    return "\n".join(lines).rstrip()
+
+
+def _format_demo_bundle_paper_readiness(report: dict[str, Any]) -> str:
+    lines = [
+        "# AdaMem Demo Paper Readiness",
+        "",
+        f"Walkthrough ready: `{bool(report.get('walkthrough_ready'))}`",
+        f"Paper claim ready: `{bool(report.get('paper_claim_ready'))}`",
+        f"Demo verification valid: `{bool(report.get('demo_verification_valid'))}`",
+        "",
+        "## Checklist",
+    ]
+    for name, passed in (report.get("checklist") or {}).items():
+        lines.append(f"- {'PASS' if passed else 'FAIL'} {name}")
+    if report.get("supported_claims"):
+        lines.append("")
+        lines.append("## Supported Claims")
+        lines.extend(f"- `{claim}`" for claim in report["supported_claims"])
+    if report.get("blocked_paper_claims"):
+        lines.append("")
+        lines.append("## Blocked Paper Claims")
+        lines.extend(f"- `{claim}`" for claim in report["blocked_paper_claims"])
+    if report.get("mainstream_api_free_approximations"):
+        lines.append("")
+        lines.append("## API-Free Mainstream Approximations")
+        lines.extend(f"- `{name}`" for name in report["mainstream_api_free_approximations"])
+    if report.get("next_actions"):
+        lines.append("")
+        lines.append("## Next Actions")
+        lines.extend(f"- `{action}`" for action in report["next_actions"])
     return "\n".join(lines).rstrip()
 
 

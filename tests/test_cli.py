@@ -275,3 +275,76 @@ def test_verify_demo_bundle_detects_tampered_payload(tmp_path: Path, capsys) -> 
     assert report["valid"] is False
     assert report["checks"]["payload_hash_matches"] is False
     assert "payload hash mismatch" in "\n".join(report["errors"])
+
+
+def test_demo_readiness_marks_verified_bundle_walkthrough_ready_not_paper_ready(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    output = tmp_path / "bundle"
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--bundle-output",
+        str(output),
+        "--json",
+    ])
+    capsys.readouterr()
+
+    main(["demo-readiness", str(output), "--json"])
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["schema_version"] == "adamem.demo_paper_readiness.v1"
+    assert report["walkthrough_ready"] is True
+    assert report["paper_claim_ready"] is False
+    assert report["demo_verification_valid"] is True
+    assert all(report["checklist"].values())
+    assert report["supported_claims"] == ["interactive_demo_walkthrough_ready"]
+    assert "answer_accuracy" in report["blocked_paper_claims"]
+    assert "sota" in report["blocked_paper_claims"]
+    assert "generality" in report["blocked_paper_claims"]
+    assert "end_to_end_answer_evaluation" in report["blocked_paper_claims"]
+    assert "official_or_faithful_mainstream_baselines" in report["blocked_paper_claims"]
+    assert report["mainstream_api_free_approximations"] == [
+        "a_mem_evolution",
+        "mem0_extraction",
+        "zep_temporal_kg",
+    ]
+
+
+def test_demo_readiness_fails_when_bundle_verification_fails(tmp_path: Path, capsys) -> None:
+    output = tmp_path / "bundle"
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--bundle-output",
+        str(output),
+        "--json",
+    ])
+    payload = json.loads(capsys.readouterr().out)
+    payload_path = Path(payload["bundle_manifest"]["artifacts"]["payload_json"])
+    payload_json = json.loads(payload_path.read_text(encoding="utf-8"))
+    payload_json["case_id"] = "tampered_case"
+    payload_path.write_text(
+        json.dumps(payload_json, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        main(["demo-readiness", str(output), "--json"])
+
+    assert exc.value.code == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["walkthrough_ready"] is False
+    assert report["paper_claim_ready"] is False
+    assert report["demo_verification_valid"] is False
+    assert report["checklist"]["demo_bundle_verified"] is False
+    assert report["blocked_paper_claims"][0] == "demo_bundle_verification_failed"

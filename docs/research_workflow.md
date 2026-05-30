@@ -35,6 +35,7 @@ PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output results/ada
 PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --html-output results/adamem_state_demo_paper.html
 PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --bundle-output results/adamem_state_demo_bundle
 PYTHONPATH=src python -m adamem.cli verify-demo results/adamem_state_demo_bundle --json
+PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json
@@ -103,6 +104,10 @@ Outputs:
   before sharing a walkthrough artifact. It verifies artifact existence,
   payload/provenance schemas, recomputed SHA-256, blocked-claim metadata,
   baseline/summary consistency, and embedded HTML demo data.
+- Use `adamem.cli demo-readiness` after verification to separate a shareable
+  interactive walkthrough from paper-level claims. A valid API-free demo bundle
+  may be walkthrough-ready while still blocking answer-accuracy, SOTA,
+  generality, public-transfer, and multi-model robustness claims.
 - Baseline synthetic/JSONL tables.
 - Baseline reproduction plan artifacts:
   `baseline_reproduction_plan.json` and

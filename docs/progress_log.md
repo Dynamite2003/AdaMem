@@ -57,6 +57,41 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 demo paper-readiness gate
+
+- Added `PYTHONPATH=src python -m adamem.cli demo-readiness <bundle-or-manifest> --json`.
+- Purpose:
+  - Separate "the interactive demo artifact is safe to share for walkthrough"
+    from "the mechanism is ready for paper claims".
+  - Keep answer-accuracy, SOTA, and generality claims explicitly blocked for
+    API-free demo artifacts even when bundle verification passes.
+  - Surface the next paper-track actions directly from the demo artifact:
+    real STALE answer/judge runs, official or faithful mainstream baselines,
+    public transfer, and multi-model judge robustness.
+- Gate behavior:
+  - `walkthrough_ready=True` requires a valid demo bundle, verified embedded
+    HTML, evidence-boundary metadata, artifact provenance hash, and baseline
+    implementation-status provenance.
+  - `paper_claim_ready=False` for demo bundles because they do not contain
+    answer/judge evidence, official/faithful mainstream baseline reproduction,
+    public benchmark transfer, or multi-model robustness.
+  - If bundle verification fails, `demo-readiness` exits non-zero and records
+    `demo_bundle_verification_failed` as the first blocker.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `11 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `244 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - Generated a fresh paper-profile bundle at `/tmp/adamem_demo_readiness_bundle`
+    and ran:
+    `PYTHONPATH=src python -m adamem.cli demo-readiness /tmp/adamem_demo_readiness_bundle --json`
+    -> `walkthrough_ready=True`, `paper_claim_ready=False`,
+    `demo_verification_valid=True`, and API-free mainstream approximations
+    listed as `a_mem_evolution`, `mem0_extraction`, and `zep_temporal_kg`.
+  - Ran Markdown output on the manifest path:
+    `PYTHONPATH=src python -m adamem.cli demo-readiness /tmp/adamem_demo_readiness_bundle/demo_manifest.json`
+    -> reported a passing walkthrough checklist and blocked paper claims.
+
 ### 2026-05-30 demo bundle verification
 
 - Added `PYTHONPATH=src python -m adamem.cli verify-demo <bundle-or-manifest> --json`.
