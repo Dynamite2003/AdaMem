@@ -96,6 +96,54 @@ def convert_stale_file(
     return len(samples)
 
 
+def annotate_stale_jsonl_file(
+    input_path: str | Path,
+    output_path: str | Path,
+) -> int:
+    """Backfill STALE query-only opportunity labels into AdaMem JSONL.
+
+    This is for already-converted STALE JSONL when the original STALE JSON is
+    unavailable. It updates only query metadata and leaves observations
+    untouched, preserving the runtime memory leakage boundary.
+    """
+
+    count = 0
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with Path(input_path).open("r", encoding="utf-8") as source, output.open("w", encoding="utf-8") as sink:
+        for line in source:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if isinstance(row, dict):
+                _annotate_stale_row(row)
+            sink.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+            count += 1
+    return count
+
+
+def _annotate_stale_row(row: dict[str, Any]) -> None:
+    queries = row.get("queries")
+    if not isinstance(queries, list):
+        return
+    for query in queries:
+        if not isinstance(query, dict):
+            continue
+        metadata = query.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            query["metadata"] = metadata
+        source = str(metadata.get("state_slot_source") or "")
+        if source and source != "stale_metadata_heuristic":
+            continue
+        annotation = _stale_evaluation_state_metadata(
+            metadata,
+            str(query.get("query") or ""),
+        )
+        if annotation:
+            metadata.update(annotation)
+
+
 def convert_longmemeval_file(
     input_path: str | Path,
     output_path: str | Path,
@@ -1344,6 +1392,13 @@ def main() -> None:
     stale.add_argument("--limit", type=int)
     stale.add_argument("--types", nargs="+", choices=["T1", "T2"], help="Filter by conflict type")
 
+    stale_annotate = sub.add_parser(
+        "stale-annotate",
+        help="Backfill STALE query-only state/dependency labels into converted AdaMem JSONL",
+    )
+    stale_annotate.add_argument("input", type=Path)
+    stale_annotate.add_argument("output", type=Path)
+
     ama = sub.add_parser("ama", help="Convert AMA-Bench-style agent trajectory JSON/JSONL to AdaMem JSONL")
     ama.add_argument("input", type=Path)
     ama.add_argument("output", type=Path)
@@ -1401,6 +1456,9 @@ def main() -> None:
             types=args.types,
         )
         print(f"wrote {count} STALE cases to {args.output}")
+    elif args.command == "stale-annotate":
+        count = annotate_stale_jsonl_file(args.input, args.output)
+        print(f"wrote {count} annotated STALE cases to {args.output}")
     elif args.command == "ama":
         count = convert_ama_file(
             args.input,

@@ -93,6 +93,38 @@ extraction on those true state cases.
     -> `3 passed`
   - `PYTHONPATH=src python -m pytest -q` -> `219 passed`
 
+### 2026-05-30 converted STALE opportunity backfill
+
+- Added `stale-annotate` conversion command for already-converted STALE
+  AdaMem JSONL:
+  - `PYTHONPATH=src python -m adamem.convert stale-annotate INPUT OUTPUT`
+- Purpose:
+  - Let existing converted fixtures or generated STALE JSONL be annotated with
+    query-only state/dependency opportunity labels even when the original raw
+    STALE JSON is not present locally.
+  - Keep the same leakage boundary as raw STALE conversion: query metadata can
+    carry evaluation labels, while observation metadata remains unchanged.
+- Local smoke:
+  - `PYTHONPATH=src python -m adamem.convert stale-annotate benchmarks/stale_mini.jsonl /tmp/stale_mini.annotated.jsonl`
+    -> `wrote 2 annotated STALE cases`
+  - Opportunity count on `/tmp/stale_mini.annotated.jsonl`:
+    - queries: `6`
+    - `state_slot=location`: `6`
+    - `dependency_source_slot=location`, `dependency_target_family=local_context`: `4`
+    - observation metadata violations: `0`
+  - API-free diagnostic smoke:
+    `PYTHONPATH=src python -m adamem.eval --stale-diagnostics /tmp/stale_mini.annotated.jsonl --baselines semantic_only semantic_state_propagation_adjudication --max-cases 2 --experiment-output /tmp/stale_mini_annotated_diagnostics.json --diagnostic-cases-output /tmp/stale_mini_annotated_cases.jsonl --diagnostic-report-output /tmp/stale_mini_annotated_report.md`
+    -> ran successfully; `semantic_state_propagation_adjudication` had `50.00%`
+    current recall and `0.00%` stale exposure on the mini smoke.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_stale.py::test_annotate_stale_jsonl_file_backfills_query_only_metadata tests/test_stale.py::test_convert_stale_sample_labels_multiple_dependency_families -q`
+    -> `2 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_stale.py -q`
+    -> `17 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `220 passed`
+
 ### 2026-05-30 day-end checkpoint after dependency evidence
 
 - Current git state before this checkpoint:

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from adamem.bench import default_ablation_configs, load_jsonl_cases
-from adamem.convert import convert_stale_file, convert_stale_sample
+from adamem.convert import annotate_stale_jsonl_file, convert_stale_file, convert_stale_sample
 from adamem.diagnostics import (
     diagnostic_case_records,
     diagnostic_failure_report,
@@ -159,6 +159,37 @@ def test_convert_stale_file_filters_types(tmp_path: Path) -> None:
     assert count == 1
     cases = load_jsonl_cases(out)
     assert [c.id for c in cases] == ["u2"]
+
+
+def test_annotate_stale_jsonl_file_backfills_query_only_metadata(tmp_path: Path) -> None:
+    row = convert_stale_sample(_toy_stale_instance(), top_k=4)
+    for query in row["queries"]:
+        metadata = query["metadata"]
+        for key in (
+            "dependency_source_slot",
+            "dependency_source_slot_source",
+            "dependency_target_family",
+            "state_slot",
+            "state_slot_source",
+        ):
+            metadata.pop(key, None)
+    before_observation_metadata = [dict(obs["metadata"]) for obs in row["observations"]]
+
+    src = tmp_path / "stale_in.jsonl"
+    src.write_text(json.dumps(row) + "\n")
+    out = tmp_path / "stale_annotated.jsonl"
+
+    count = annotate_stale_jsonl_file(src, out)
+
+    assert count == 1
+    annotated = json.loads(out.read_text())
+    assert annotated["observations"]
+    assert [obs["metadata"] for obs in annotated["observations"]] == before_observation_metadata
+    queries = {query["id"].rsplit(".", 1)[-1]: query for query in annotated["queries"]}
+    assert queries["dim1"]["metadata"]["state_slot"] == "location"
+    assert "dependency_source_slot" not in queries["dim1"]["metadata"]
+    assert queries["dim2"]["metadata"]["dependency_source_slot"] == "location"
+    assert queries["dim3"]["metadata"]["dependency_target_family"] == "local_context"
 
 
 def test_run_stale_benchmark_with_mock_clients(tmp_path: Path) -> None:

@@ -62,6 +62,7 @@ PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale.adamem
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --experiment-output results/stale_diagnostics_smoke.json
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl
 PYTHONPATH=src python -m adamem.eval --stale-diagnostics benchmarks/stale_mini.jsonl --max-cases 2 --diagnostic-cases-output results/stale_diagnostic_cases.jsonl --diagnostic-report-output results/stale_failure_report.md
+PYTHONPATH=src python -m adamem.convert stale-annotate benchmarks/stale_mini.jsonl /tmp/stale_mini.annotated.jsonl
 PYTHONPATH=src python -m adamem.stale_pipeline benchmarks/stale_mini.jsonl --input-format adamem-jsonl --output-dir /tmp/adamem_stale_pipeline_smoke --run-name stale_mini_pipeline --baselines semantic_state_adjudication semantic_state_premise_correction --max-cases 1 --json
 PYTHONPATH=src python -m adamem.eval --stale benchmarks/stale_mini.jsonl --answer-provider mock --judge-provider mock --max-cases 1 --experiment-output results/stale_pilot_mock.json
 PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke --json
