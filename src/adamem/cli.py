@@ -71,6 +71,10 @@ def main(argv: list[str] | None = None) -> None:
     demo.add_argument("--html-output", help="Write a self-contained interactive HTML demo")
     demo.add_argument("--bundle-output", help="Write a demo bundle directory with HTML, payload JSON, and manifest")
 
+    verify_demo = sub.add_parser("verify-demo", help="Verify an AdaMem demo bundle")
+    verify_demo.add_argument("bundle", help="Path to a demo bundle directory or demo_manifest.json")
+    verify_demo.add_argument("--json", action="store_true", help="Emit a machine-readable verification report")
+
     args = parser.parse_args(argv)
     command = ["adamem", *(argv or sys.argv[1:])]
 
@@ -111,6 +115,14 @@ def main(argv: list[str] | None = None) -> None:
             print(f"wrote HTML demo: {payload['artifacts']['html']}")
         else:
             print(_format_demo(payload))
+    elif args.command == "verify-demo":
+        report = _verify_demo_bundle(args.bundle)
+        if args.json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(_format_demo_bundle_verification(report))
+        if not report["valid"]:
+            raise SystemExit(1)
 
 
 def _run_demo(
@@ -299,6 +311,14 @@ def _demo_payload_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _demo_hash_scope_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    scoped = dict(payload)
+    scoped.pop("provenance", None)
+    scoped.pop("artifacts", None)
+    scoped.pop("bundle_manifest", None)
+    return scoped
+
+
 def _write_demo_bundle(payload: dict[str, Any], output_dir: str | Path) -> dict[str, Any]:
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -347,6 +367,176 @@ def _demo_bundle_manifest(
         "blocked_claims": evidence_boundary.get("blocked_claims") or {},
         "artifacts": artifacts,
     }
+
+
+def _verify_demo_bundle(bundle: str | Path) -> dict[str, Any]:
+    bundle_path = Path(bundle)
+    manifest_path = bundle_path / "demo_manifest.json" if bundle_path.is_dir() else bundle_path
+    checks: dict[str, bool] = {}
+    errors: list[str] = []
+    warnings: list[str] = []
+    manifest: dict[str, Any] = {}
+    payload: dict[str, Any] = {}
+    artifacts: dict[str, str] = {}
+
+    def check(name: str, condition: bool, error: str | None = None) -> None:
+        checks[name] = bool(condition)
+        if not condition and error:
+            errors.append(error)
+
+    check("manifest_exists", manifest_path.exists(), f"manifest not found: {manifest_path}")
+    if manifest_path.exists():
+        manifest = _read_json_object(manifest_path, errors=errors, label="manifest")
+    check(
+        "manifest_json_object",
+        bool(manifest),
+        f"manifest is missing or is not a JSON object: {manifest_path}",
+    )
+    check(
+        "manifest_schema",
+        manifest.get("schema_version") == "adamem.demo_bundle.v1",
+        "manifest schema_version must be adamem.demo_bundle.v1",
+    )
+
+    artifacts_raw = manifest.get("artifacts") if manifest else {}
+    if isinstance(artifacts_raw, dict):
+        artifacts = {str(key): str(value) for key, value in artifacts_raw.items()}
+    check("artifacts_object", bool(artifacts), "manifest artifacts must be a non-empty object")
+
+    artifact_paths = {
+        name: _resolve_demo_artifact_path(path, manifest_path.parent)
+        for name, path in artifacts.items()
+    }
+    for name in ("html", "payload_json", "bundle_manifest"):
+        artifact_path = artifact_paths.get(name)
+        check(
+            f"artifact_{name}_exists",
+            artifact_path is not None and artifact_path.exists(),
+            f"artifact {name!r} not found: {artifacts.get(name)}",
+        )
+
+    payload_path = artifact_paths.get("payload_json")
+    if payload_path and payload_path.exists():
+        payload = _read_json_object(payload_path, errors=errors, label="payload")
+    check(
+        "payload_json_object",
+        bool(payload),
+        f"payload is missing or is not a JSON object: {payload_path}",
+    )
+    check(
+        "payload_schema",
+        payload.get("schema_version") == "adamem.demo.v1",
+        "payload schema_version must be adamem.demo.v1",
+    )
+
+    provenance = payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}
+    check(
+        "provenance_schema",
+        provenance.get("schema_version") == "adamem.demo_provenance.v1",
+        "payload provenance schema_version must be adamem.demo_provenance.v1",
+    )
+    expected_hash = provenance.get("payload_sha256")
+    manifest_hash = manifest.get("payload_sha256")
+    recomputed_hash = _demo_payload_hash(_demo_hash_scope_payload(payload)) if payload else None
+    check(
+        "payload_hash_matches",
+        bool(expected_hash)
+        and expected_hash == manifest_hash
+        and recomputed_hash == expected_hash,
+        "payload hash mismatch against provenance, manifest, or recomputed payload",
+    )
+
+    evidence_boundary = (
+        payload.get("evidence_boundary")
+        if isinstance(payload.get("evidence_boundary"), dict)
+        else {}
+    )
+    blocked_claims = (
+        evidence_boundary.get("blocked_claims")
+        if isinstance(evidence_boundary.get("blocked_claims"), dict)
+        else {}
+    )
+    required_blocked_claims = {"answer_accuracy", "sota", "generality"}
+    check(
+        "blocked_claims_present",
+        required_blocked_claims.issubset(blocked_claims),
+        "payload evidence_boundary must block answer_accuracy, sota, and generality claims",
+    )
+    check(
+        "manifest_blocked_claims_match_payload",
+        (manifest.get("blocked_claims") or {}) == blocked_claims,
+        "manifest blocked_claims must match payload evidence_boundary blocked_claims",
+    )
+    check(
+        "baseline_names_match",
+        (manifest.get("baseline_names") or []) == (payload.get("baseline_names") or []),
+        "manifest baseline_names must match payload baseline_names",
+    )
+    check(
+        "summary_matches",
+        (manifest.get("summary") or {}) == (payload.get("summary") or {}),
+        "manifest summary must match payload summary",
+    )
+    check(
+        "query_count_matches",
+        manifest.get("query_count") == payload.get("query_count", 1),
+        "manifest query_count must match payload query_count",
+    )
+
+    html_path = artifact_paths.get("html")
+    html_text = ""
+    if html_path and html_path.exists():
+        html_text = html_path.read_text(encoding="utf-8")
+    check(
+        "html_embeds_demo_data",
+        "id=\"demo-data\"" in html_text and "adamem.demo.v1" in html_text,
+        "HTML artifact must embed the demo-data JSON payload",
+    )
+    check(
+        "html_contains_payload_hash",
+        bool(expected_hash) and str(expected_hash) in html_text,
+        "HTML artifact must contain the payload provenance hash",
+    )
+
+    valid = all(checks.values()) and not errors
+    return {
+        "schema_version": "adamem.demo_bundle_verification.v1",
+        "bundle": str(bundle_path),
+        "manifest": str(manifest_path),
+        "valid": valid,
+        "checks": checks,
+        "errors": errors,
+        "warnings": warnings,
+        "artifacts": {name: str(path) for name, path in artifact_paths.items()},
+        "payload_sha256": expected_hash,
+        "manifest_payload_sha256": manifest_hash,
+        "recomputed_payload_sha256": recomputed_hash,
+        "claim_boundary": payload.get("claim_boundary"),
+        "blocked_claims": blocked_claims,
+        "baseline_names": payload.get("baseline_names") or [],
+    }
+
+
+def _read_json_object(path: Path, *, errors: list[str], label: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        errors.append(f"could not read {label} JSON at {path}: {exc}")
+        return {}
+    except json.JSONDecodeError as exc:
+        errors.append(f"could not parse {label} JSON at {path}: {exc}")
+        return {}
+    if not isinstance(parsed, dict):
+        errors.append(f"{label} JSON at {path} must be an object")
+        return {}
+    return parsed
+
+
+def _resolve_demo_artifact_path(path: str, manifest_dir: Path) -> Path:
+    artifact_path = Path(path)
+    if artifact_path.is_absolute() or artifact_path.exists():
+        return artifact_path
+    return manifest_dir / artifact_path
 
 
 def _select_case(cases: list[MemoryQACase], case_id: str) -> MemoryQACase:
@@ -607,6 +797,29 @@ def _format_evidence_boundary(payload: dict[str, Any]) -> list[str]:
         lines.append("Next evidence:")
         lines.extend(f"- {item}" for item in next_evidence)
     return lines
+
+
+def _format_demo_bundle_verification(report: dict[str, Any]) -> str:
+    lines = [
+        "# AdaMem Demo Bundle Verification",
+        "",
+        f"Valid: {report['valid']}",
+        f"Manifest: {report['manifest']}",
+        f"Payload SHA-256: {report.get('payload_sha256') or '<missing>'}",
+        "",
+        "## Checks",
+    ]
+    for name, passed in report["checks"].items():
+        lines.append(f"- {'PASS' if passed else 'FAIL'} {name}")
+    if report["errors"]:
+        lines.append("")
+        lines.append("## Errors")
+        lines.extend(f"- {error}" for error in report["errors"])
+    if report["warnings"]:
+        lines.append("")
+        lines.append("## Warnings")
+        lines.extend(f"- {warning}" for warning in report["warnings"])
+    return "\n".join(lines).rstrip()
 
 
 if __name__ == "__main__":

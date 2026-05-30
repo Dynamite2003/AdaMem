@@ -34,6 +34,7 @@ PYTHONPATH=src python -m adamem.cli demo --all-queries --json
 PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output results/adamem_state_demo.html
 PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --html-output results/adamem_state_demo_paper.html
 PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --bundle-output results/adamem_state_demo_bundle
+PYTHONPATH=src python -m adamem.cli verify-demo results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json
@@ -98,6 +99,10 @@ Outputs:
   `index.html`, `demo_payload.json`, and `demo_manifest.json`; the manifest
   records payload hash, command, commit, blocked claims, baseline profile, and
   artifact paths.
+- Use `adamem.cli verify-demo` on a bundle directory or `demo_manifest.json`
+  before sharing a walkthrough artifact. It verifies artifact existence,
+  payload/provenance schemas, recomputed SHA-256, blocked-claim metadata,
+  baseline/summary consistency, and embedded HTML demo data.
 - Baseline synthetic/JSONL tables.
 - Baseline reproduction plan artifacts:
   `baseline_reproduction_plan.json` and

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from adamem.cli import main
 
 
@@ -207,3 +209,69 @@ def test_demo_bundle_writes_manifest_payload_and_html(tmp_path: Path, capsys) ->
     )
     assert json.loads(manifest_path.read_text(encoding="utf-8")) == manifest
     assert "Artifact Provenance" in html_path.read_text(encoding="utf-8")
+
+
+def test_verify_demo_bundle_accepts_valid_bundle(tmp_path: Path, capsys) -> None:
+    output = tmp_path / "bundle"
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--bundle-output",
+        str(output),
+        "--json",
+    ])
+    capsys.readouterr()
+
+    main(["verify-demo", str(output), "--json"])
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["schema_version"] == "adamem.demo_bundle_verification.v1"
+    assert report["valid"] is True
+    assert report["checks"]["manifest_schema"] is True
+    assert report["checks"]["payload_hash_matches"] is True
+    assert report["checks"]["html_embeds_demo_data"] is True
+    assert report["checks"]["blocked_claims_present"] is True
+    assert report["blocked_claims"]["answer_accuracy"]
+    assert report["baseline_names"] == [
+        "semantic_only",
+        "a_mem_evolution",
+        "zep_temporal_kg",
+        "mem0_extraction",
+        "semantic_state_adjudication_trace",
+    ]
+
+
+def test_verify_demo_bundle_detects_tampered_payload(tmp_path: Path, capsys) -> None:
+    output = tmp_path / "bundle"
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--bundle-output",
+        str(output),
+        "--json",
+    ])
+    payload = json.loads(capsys.readouterr().out)
+    payload_path = Path(payload["bundle_manifest"]["artifacts"]["payload_json"])
+    payload_json = json.loads(payload_path.read_text(encoding="utf-8"))
+    payload_json["case_id"] = "tampered_case"
+    payload_path.write_text(
+        json.dumps(payload_json, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        main(["verify-demo", str(output), "--json"])
+
+    assert exc.value.code == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["valid"] is False
+    assert report["checks"]["payload_hash_matches"] is False
+    assert "payload hash mismatch" in "\n".join(report["errors"])

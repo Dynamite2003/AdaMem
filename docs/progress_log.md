@@ -57,6 +57,44 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 demo bundle verification
+
+- Added `PYTHONPATH=src python -m adamem.cli verify-demo <bundle-or-manifest> --json`.
+- Purpose:
+  - Close the API-free demo handoff loop with an independently runnable
+    verification report.
+  - Make demo artifacts auditable before they are used in a paper walkthrough
+    or shared qualitative inspection.
+  - Detect accidental or deliberate changes to `demo_payload.json` after
+    bundle creation by recomputing the payload SHA-256 over the documented
+    provenance scope.
+- Checks:
+  - manifest exists and uses `adamem.demo_bundle.v1`
+  - required artifact paths exist
+  - payload exists and uses `adamem.demo.v1`
+  - provenance uses `adamem.demo_provenance.v1`
+  - recomputed payload hash matches both payload provenance and manifest hash
+  - blocked claims include `answer_accuracy`, `sota`, and `generality`
+  - manifest blocked claims, baseline names, summary, and query count match
+    the payload
+  - HTML embeds `demo-data` and contains the payload provenance hash
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `9 passed`
+  - `python -m compileall -q src` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `242 passed`
+  - `git diff --check` -> no issues
+  - Generated a fresh paper-profile bundle at `/tmp/adamem_demo_bundle_verify`
+    and verified the bundle directory:
+    `PYTHONPATH=src python -m adamem.cli verify-demo /tmp/adamem_demo_bundle_verify --json`
+    -> `valid=True`, payload hash matched, and the paper-profile baseline list
+    was preserved.
+  - Verified the manifest path directly:
+    `PYTHONPATH=src python -m adamem.cli verify-demo /tmp/adamem_demo_bundle_verify/demo_manifest.json --json`
+    -> `valid=True`, HTML demo data and blocked-claim checks passed.
+  - Added a tamper-detection unit test that edits `demo_payload.json` after
+    bundle creation and confirms `verify-demo` exits non-zero with
+    `payload_hash_matches=False`.
+
 ### 2026-05-30 end-of-day handoff
 
 - Current git checkpoint before stopping:
