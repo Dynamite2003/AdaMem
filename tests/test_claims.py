@@ -163,6 +163,68 @@ def test_claim_audit_supports_unknown_current_trace_resolution(tmp_path: Path) -
     assert "Unknown-current" in markdown
 
 
+def test_claim_audit_supports_dependency_propagation_trace_resolution(tmp_path: Path) -> None:
+    records = tmp_path / "dependency.records.jsonl"
+    rows = [
+        _dependency_propagation_record(
+            "semantic_state_propagation_adjudication",
+            "q1",
+            kind="state",
+            parent_slot="location",
+            corrected_forbidden=["Rain City Fitness"],
+        ),
+        _dependency_propagation_record(
+            "semantic_state_premise_correction",
+            "q2",
+            kind="state_correction",
+            parent_slot="organization.employer",
+            corrected_forbidden=["Acme Benefits"],
+            premise_correction_count=1,
+        ),
+    ]
+    records.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="jsonl_retrieval_benchmark",
+        baseline_names=[
+            "semantic_state_propagation_adjudication",
+            "semantic_state_premise_correction",
+        ],
+        notes={
+            "ground_truth_runtime_use": "forbidden",
+            "ground_truth_evaluation_use": "expected_substrings_only",
+            "records_path": "dependency.records.jsonl",
+        },
+    )
+
+    audit = audit_experiment(experiment)
+    markdown = claim_audit_markdown(audit)
+    transfer = audit["claim_evidence"]["retrieval_transfer"]
+
+    assert "dependency_propagation_trace_resolution" in audit["supported_claims"]
+    assert "unknown_current_trace_resolution" in audit["supported_claims"]
+    assert transfer["dependency_propagation"]["semantic_state_propagation_adjudication"] == {
+        "records": 1,
+        "dependency_unknown_current_records": 1,
+        "dependency_unknown_current_correction_records": 0,
+        "corrected_forbidden_records": 1,
+        "unresolved_forbidden_records": 0,
+        "dependency_parent_slots": ["location"],
+    }
+    assert transfer["dependency_propagation"]["semantic_state_premise_correction"] == {
+        "records": 1,
+        "dependency_unknown_current_records": 0,
+        "dependency_unknown_current_correction_records": 1,
+        "corrected_forbidden_records": 1,
+        "unresolved_forbidden_records": 0,
+        "dependency_parent_slots": ["organization.employer"],
+    }
+    assert "Dependency propagation" in markdown
+
+
 def test_claim_audit_summarizes_failure_attribution_evidence(tmp_path: Path) -> None:
     experiment = _write_experiment(
         tmp_path,
@@ -366,6 +428,24 @@ def test_claim_audit_marks_mini_fixture_scope_as_claim_limited(tmp_path: Path) -
     }
     assert "dataset scope is claim-limited: mini_smoke_or_debug_name" in audit["warnings"]
     assert "Dataset scope: `mini_or_smoke_fixture`" in markdown
+
+
+def test_claim_audit_marks_dependency_fixture_scope_as_claim_limited(tmp_path: Path) -> None:
+    experiment = _write_experiment(
+        tmp_path,
+        run_type="jsonl_retrieval_benchmark",
+        dataset="benchmarks/location_dependency_transfer.jsonl",
+        notes={"ground_truth_runtime_use": "forbidden"},
+    )
+
+    audit = audit_experiment(experiment)
+
+    assert audit["dataset_scope"] == {
+        "scope": "mini_or_smoke_fixture",
+        "claim_limited": True,
+        "reasons": ["local_synthetic_fixture"],
+    }
+    assert "dataset scope is claim-limited: local_synthetic_fixture" in audit["warnings"]
 
 
 def test_claim_audit_marks_mock_answer_generation_as_plumbing(tmp_path: Path) -> None:
@@ -752,6 +832,51 @@ def _unknown_current_record(
             {
                 "kind": kind,
                 "content": "Current user location: unknown-current.",
+                "metadata": metadata,
+            }
+        ],
+    }
+
+
+def _dependency_propagation_record(
+    baseline: str,
+    query_id: str,
+    *,
+    kind: str,
+    parent_slot: str,
+    corrected_forbidden: list[str],
+    premise_correction_count: int = 0,
+) -> dict:
+    metadata = {
+        "state_slot": "local.gym",
+        "state_value": "unknown-current",
+        "state_status": "unknown_current",
+        "invalidated_state_value": corrected_forbidden[0],
+        "dependency_invalidated_by_slot": parent_slot,
+        "dependency_invalidated_by_state_id": "parent-state-id",
+    }
+    if kind == "state_correction":
+        metadata = {
+            "state_slot": "local.gym",
+            "stale_value": corrected_forbidden[0],
+            "current_value": "unknown-current",
+            "dependency_invalidated_by_slot": parent_slot,
+            "dependency_invalidated_by_state_id": "parent-state-id",
+        }
+    return {
+        "baseline": baseline,
+        "case_id": "dependency",
+        "query_id": query_id,
+        "passed": True,
+        "expected_evidence": [],
+        "evidence_support_matched": False,
+        "present_forbidden": [],
+        "corrected_forbidden": corrected_forbidden,
+        "premise_correction_count": premise_correction_count,
+        "trace": [
+            {
+                "kind": kind,
+                "content": "Current user local.gym: unknown-current.",
                 "metadata": metadata,
             }
         ],

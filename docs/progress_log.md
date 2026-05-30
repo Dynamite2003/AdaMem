@@ -57,6 +57,44 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 dependency propagation claim audit
+
+- Extended `adamem.claims` with a narrow
+  `dependency_propagation_trace_resolution` supported claim.
+- The claim is supported only when case records show:
+  - dependency-derived unknown-current state readout or correction;
+  - stale forbidden values resolved;
+  - no unresolved forbidden stale support for those dependency records.
+- Added machine-readable
+  `claim_evidence.retrieval_transfer.dependency_propagation` with:
+  - dependency state records;
+  - dependency correction records;
+  - resolved and unresolved forbidden counts;
+  - parent slots that caused dependency invalidation.
+- Claim audit Markdown now lists dependency propagation evidence alongside
+  paired retrieval, premise correction, and unknown-current evidence.
+- Tightened dataset-scope gates so local dependency fixtures are
+  `claim_limited` via `local_synthetic_fixture`.
+- Purpose:
+  - Make dependency propagation visible in paper claim audits without
+    overstating local fixture results as public benchmark evidence.
+  - Preserve the paper boundary: this is a retrieval-trace mechanism claim,
+    not answer accuracy, public transfer, or SOTA.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py::test_claim_audit_supports_dependency_propagation_trace_resolution tests/test_claims.py::test_claim_audit_supports_unknown_current_trace_resolution -q`
+    -> `2 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py -q`
+    -> `16 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py::test_claim_audit_supports_dependency_propagation_trace_resolution tests/test_claims.py::test_claim_audit_marks_dependency_fixture_scope_as_claim_limited tests/test_claims.py::test_claim_audit_marks_mini_fixture_scope_as_claim_limited -q`
+    -> `3 passed`
+  - CLI smoke on `benchmarks/location_dependency_transfer.jsonl` confirmed
+    `dependency_propagation_trace_resolution` is supported while the dataset
+    scope warning is `local_synthetic_fixture` and answer accuracy/SOTA remain
+    blocked.
+  - `PYTHONPATH=src python -m pytest -q` -> `217 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+
 ### 2026-05-30 location dependency transfer fixture
 
 - Promoted the existing location-to-local dependency smoke behavior into the

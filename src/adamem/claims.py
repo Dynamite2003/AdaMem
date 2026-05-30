@@ -333,6 +333,16 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
                 f"resolved `{summary['corrected_forbidden_records']}`, "
                 f"unresolved `{summary['unresolved_forbidden_records']}`"
             )
+        for baseline, summary in retrieval.get("dependency_propagation", {}).items():
+            lines.append(
+                "- Dependency propagation: "
+                f"`{baseline}` records `{summary['records']}`, "
+                f"state records `{summary['dependency_unknown_current_records']}`, "
+                f"correction records `{summary['dependency_unknown_current_correction_records']}`, "
+                f"resolved `{summary['corrected_forbidden_records']}`, "
+                f"unresolved `{summary['unresolved_forbidden_records']}`, "
+                f"parent slots `{', '.join(summary['dependency_parent_slots']) or '<none>'}`"
+            )
     attribution = claim_evidence.get("failure_attributions")
     if attribution:
         lines.append("")
@@ -399,6 +409,9 @@ def _dataset_scope(experiment: dict[str, Any]) -> dict[str, Any]:
         marker in text
         for marker in (
             "dynamic_state_transfer",
+            "employer_dependency_transfer",
+            "employer_state_transfer",
+            "location_dependency_transfer",
             "unknown_current_state_transfer",
         )
     ):
@@ -487,6 +500,7 @@ def _retrieval_claim_evidence(
         "paired_no_regression": [],
         "premise_correction": {},
         "unknown_current": {},
+        "dependency_propagation": {},
     }
 
     try:
@@ -540,6 +554,20 @@ def _retrieval_claim_evidence(
             and summary["unresolved_forbidden_records"] == 0
         ):
             evidence["supported_claims"].append("unknown_current_trace_resolution")
+
+    for baseline in _dependency_propagation_baselines(records):
+        baseline_records = [record for record in records if str(record.get("baseline")) == baseline]
+        if not baseline_records:
+            continue
+        summary = _dependency_propagation_summary(baseline_records)
+        evidence["dependency_propagation"][baseline] = summary
+        if (
+            summary["dependency_unknown_current_records"]
+            + summary["dependency_unknown_current_correction_records"] > 0
+            and summary["corrected_forbidden_records"] > 0
+            and summary["unresolved_forbidden_records"] == 0
+        ):
+            evidence["supported_claims"].append("dependency_propagation_trace_resolution")
 
     evidence["supported_claims"] = list(dict.fromkeys(evidence["supported_claims"]))
     if not evidence["supported_claims"]:
@@ -965,6 +993,45 @@ def _unknown_current_summary(records: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _dependency_propagation_baselines(records: list[dict[str, Any]]) -> list[str]:
+    return list(
+        dict.fromkeys(
+            str(record.get("baseline"))
+            for record in records
+            if _record_has_dependency_propagation(record)
+        )
+    )
+
+
+def _dependency_propagation_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    state_records = 0
+    correction_records = 0
+    corrected_forbidden_records = 0
+    unresolved_forbidden_records = 0
+    parent_slots: set[str] = set()
+    for record in records:
+        has_state = _record_has_dependency_propagation_state(record)
+        has_correction = _record_has_dependency_propagation_correction(record)
+        if has_state:
+            state_records += 1
+        if has_correction:
+            correction_records += 1
+        if has_state or has_correction:
+            if record.get("corrected_forbidden"):
+                corrected_forbidden_records += 1
+            if record.get("present_forbidden"):
+                unresolved_forbidden_records += 1
+        parent_slots.update(_dependency_parent_slots(record))
+    return {
+        "records": len(records),
+        "dependency_unknown_current_records": state_records,
+        "dependency_unknown_current_correction_records": correction_records,
+        "corrected_forbidden_records": corrected_forbidden_records,
+        "unresolved_forbidden_records": unresolved_forbidden_records,
+        "dependency_parent_slots": sorted(parent_slots),
+    }
+
+
 def _record_has_unknown_current(record: dict[str, Any]) -> bool:
     return (
         _record_has_unknown_current_state(record)
@@ -990,6 +1057,57 @@ def _record_has_unknown_current_correction(record: dict[str, Any]) -> bool:
         if isinstance(metadata, dict) and metadata.get("current_value") == "unknown-current":
             return True
     return False
+
+
+def _record_has_dependency_propagation(record: dict[str, Any]) -> bool:
+    return (
+        _record_has_dependency_propagation_state(record)
+        or _record_has_dependency_propagation_correction(record)
+    )
+
+
+def _record_has_dependency_propagation_state(record: dict[str, Any]) -> bool:
+    for item in record.get("trace") or []:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        if (
+            metadata.get("state_status") == "unknown_current"
+            and metadata.get("dependency_invalidated_by_slot")
+        ):
+            return True
+    return False
+
+
+def _record_has_dependency_propagation_correction(record: dict[str, Any]) -> bool:
+    for item in record.get("trace") or []:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        if (
+            metadata.get("current_value") == "unknown-current"
+            and metadata.get("dependency_invalidated_by_slot")
+        ):
+            return True
+    return False
+
+
+def _dependency_parent_slots(record: dict[str, Any]) -> list[str]:
+    slots: list[str] = []
+    for item in record.get("trace") or []:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        slot = metadata.get("dependency_invalidated_by_slot")
+        if slot:
+            slots.append(str(slot))
+    return slots
 
 
 def _looks_like_stale_dataset(experiment: dict[str, Any]) -> bool:

@@ -574,6 +574,9 @@ Done when:
 - Mechanism-only claims such as `unknown_current_trace_resolution` remain
   clearly separated from answer accuracy and SOTA until public benchmark and
   answer/judge evidence exists.
+- Mechanism-only claims such as `dependency_propagation_trace_resolution`
+  remain trace-level claims when they come from local dependency fixtures; they
+  do not establish public-benchmark generality or answer accuracy.
 - Limitations are clear.
 
 ## Phase 7: Paper Assembly
