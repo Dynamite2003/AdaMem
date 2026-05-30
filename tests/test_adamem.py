@@ -657,6 +657,55 @@ def test_state_unknown_current_handles_employer_slot() -> None:
     assert results[0].item.metadata["current_value"] == "unknown-current"
 
 
+def test_state_dependency_propagation_creates_unknown_current_dependent_state() -> None:
+    mem = AdaMem(
+        config=AdaMemConfig(
+            use_temporal=False,
+            use_importance=False,
+            use_recency=False,
+            use_confidence=False,
+            use_feedback=False,
+            use_graph=False,
+            use_mmr=False,
+            use_soft_staleness=False,
+            use_stale_propagation=False,
+            use_adjudication_filter=False,
+            use_state_memory=True,
+            use_state_readout=True,
+            use_state_dependency_propagation=True,
+            use_state_source_adjudication=True,
+            use_state_premise_correction=True,
+        )
+    )
+    mem.observe("[2026-01-01] user: I work at Acme Labs.")
+    old_benefits_source = mem.observe("[2026-01-02] user: My benefits portal is Acme Benefits.")
+    mem.observe("[2026-03-01] user: My employer is Nova Health.")
+
+    benefits_states = [
+        item
+        for item in mem.store.all()
+        if item.kind == "state"
+        and item.metadata.get("state_slot") == "employment.benefits_portal"
+    ]
+    stale_benefits = next(item for item in benefits_states if not item.active)
+    active_unknown = next(item for item in benefits_states if item.active)
+    results = mem.retrieve("Should I use Acme Benefits for benefits enrollment?", top_k=2)
+
+    assert "employment.benefits_portal" in query_relevant_state_slots(
+        "Should I use Acme Benefits for benefits enrollment?"
+    )
+    assert stale_benefits.metadata["state_value"] == "Acme Benefits"
+    assert active_unknown.metadata["state_status"] == "unknown_current"
+    assert active_unknown.metadata["state_value"] == "unknown-current"
+    assert active_unknown.metadata["invalidated_state_value"] == "Acme Benefits"
+    assert active_unknown.metadata["dependency_invalidated_by_slot"] == "organization.employer"
+    assert old_benefits_source.metadata["stale_state_slots"] == ["employment.benefits_portal"]
+    assert results[0].item.kind == "state_correction"
+    assert results[0].item.metadata["state_slot"] == "employment.benefits_portal"
+    assert results[0].item.metadata["stale_value"] == "Acme Benefits"
+    assert results[0].item.metadata["current_value"] == "unknown-current"
+
+
 def test_state_readout_supports_implicit_policy_adaptation_query() -> None:
     without_readout = _state_isolation_memory(use_state_readout=False)
     with_readout = _state_isolation_memory(use_state_readout=True)
@@ -1404,7 +1453,18 @@ def test_state_dependency_propagation_invalidates_local_state_on_location_change
     with_results = with_propagation.retrieve("Which local gym near me should I use?", top_k=3)
 
     assert any("Rain City Fitness" in result.item.content for result in without_results)
-    assert all("Rain City Fitness" not in result.item.content for result in with_results)
+    assert all(
+        not (
+            result.item.metadata.get("state_slot") == "local.gym"
+            and result.item.metadata.get("state_value") == "Rain City Fitness"
+        )
+        for result in with_results
+    )
+    assert any(
+        result.item.metadata.get("state_slot") == "local.gym"
+        and result.item.metadata.get("state_status") == "unknown_current"
+        for result in with_results
+    )
     assert any("Boston" in result.item.content for result in with_results)
 
 

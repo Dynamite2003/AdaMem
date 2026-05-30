@@ -236,6 +236,10 @@ STATE_DEPENDENCY_PREFIXES = {
         "restaurant.",
         "food.",
     ),
+    "organization.employer": (
+        "employment.",
+        "workplace.",
+    ),
 }
 
 
@@ -733,6 +737,26 @@ EMPLOYER_QUERY_TERMS = {
     "workplace",
 }
 
+BENEFITS_PORTAL_PATTERNS = [
+    re.compile(
+        r"\b(?:my\s+)?benefits\s+(?:portal|site|system)\s+is\s+"
+        r"(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:for\s+)?benefits(?:\s+enrollment)?,?\s+(?:use|uses|go\s+through)\s+"
+        r"(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})",
+        re.I,
+    ),
+]
+
+BENEFITS_PORTAL_QUERY_TERMS = {
+    "benefit",
+    "benefits",
+    "enrollment",
+    "portal",
+}
+
 
 def extract_state_patches(content: str, metadata: dict[str, object] | None = None) -> list[StatePatch]:
     """Deterministic state extractor used for API-free development.
@@ -866,6 +890,12 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
         ))
     elif employer := _extract_employer(content):
         patches.append(StatePatch(slot="organization.employer", value=employer, evidence=content))
+    if benefits_portal := _extract_benefits_portal(content):
+        patches.append(StatePatch(
+            slot="employment.benefits_portal",
+            value=benefits_portal,
+            evidence=content,
+        ))
     return patches
 
 
@@ -898,6 +928,8 @@ def query_relevant_state_slots(query: str) -> list[str]:
         slots.append("relationship.manager")
     if _has_employer_intent(text):
         slots.append("organization.employer")
+    if _has_benefits_portal_intent(text):
+        slots.append("employment.benefits_portal")
     return slots
 
 
@@ -1025,6 +1057,14 @@ def _has_employer_intent(text: str) -> bool:
     if _has_any_term(text, EMPLOYER_QUERY_TERMS):
         return True
     return re.search(r"\b(?:work|working|worked)\s+(?:at|for)\b", text) is not None
+
+
+def _has_benefits_portal_intent(text: str) -> bool:
+    if _has_term(text, "benefits portal"):
+        return True
+    if not _has_any_term(text, BENEFITS_PORTAL_QUERY_TERMS):
+        return False
+    return _has_any_term(text, {"enroll", "enrollment", "portal", "site", "system", "use"})
 
 
 def _has_any_term(text: str, terms: set[str] | frozenset[str]) -> bool:
@@ -1300,6 +1340,17 @@ def _extract_employer_unknown_current(content: str) -> str | None:
         employer = _clean_organization_name(match.group("value"))
         if employer:
             return employer
+    return None
+
+
+def _extract_benefits_portal(content: str) -> str | None:
+    for pattern in BENEFITS_PORTAL_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        portal = _clean_organization_name(match.group("value"))
+        if portal:
+            return portal
     return None
 
 

@@ -57,6 +57,49 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 employer dependency propagation to unknown-current
+
+- Extended typed state dependency propagation from direct invalidation only to
+  an authorized unknown-current readout for dependent slots.
+- Added dependency topology:
+  - `organization.employer -> employment.*`
+  - `organization.employer -> workplace.*`
+- Added deterministic extraction and query routing for
+  `employment.benefits_portal`.
+- Behavior:
+  - If an employer state supersedes an old employer and an active dependent
+    benefits-portal state exists, the dependent state is marked stale.
+  - A new active `unknown-current` state is created for the dependent slot,
+    preserving the invalidated old value in `invalidated_state_value`.
+  - The old dependent source evidence is marked with
+    `stale_state_slots=["employment.benefits_portal"]` so query-scoped source
+    adjudication can suppress stale raw evidence.
+- Added `benchmarks/employer_dependency_transfer.jsonl` as a causal smoke
+  fixture. It checks that:
+  - `semantic_only` fails;
+  - same-slot state adjudication without dependency propagation fails;
+  - `semantic_state_propagation_adjudication` passes by retrieving
+    unknown-current dependent state.
+- Purpose:
+  - Move AdaMem closer to the paper-facing claim that stale-memory systems need
+    state validity propagation, not only exact-slot replacement.
+  - Support implicit policy adaptation cases where a parent state change should
+    invalidate a downstream policy/resource assumption even without direct new
+    evidence for that downstream slot.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py::test_state_dependency_propagation_creates_unknown_current_dependent_state tests/test_eval.py::test_employer_dependency_transfer_fixture_favors_dependency_propagation -q`
+    -> `2 passed`
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/employer_dependency_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication --experiment-output /tmp/adamem_employer_dependency_experiment.json --benchmark-cases-output /tmp/adamem_employer_dependency_records.jsonl --benchmark-report-output /tmp/adamem_employer_dependency_report.md --json`
+    -> `semantic_only` passed `0/1`, `semantic_state_adjudication` passed
+    `0/1`, and `semantic_state_propagation_adjudication` passed `1/1`.
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py::test_state_dependency_propagation_invalidates_local_state_on_location_change tests/test_adamem.py::test_state_dependency_propagation_creates_unknown_current_dependent_state tests/test_eval.py::test_employer_dependency_transfer_fixture_favors_dependency_propagation -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py tests/test_eval.py -q`
+    -> `83 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `214 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+
 ### 2026-05-30 day-end handoff
 
 - Current repository status before this handoff:

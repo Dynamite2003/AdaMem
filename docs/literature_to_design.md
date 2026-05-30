@@ -366,14 +366,19 @@ Current implementation:
 - `use_state_dependency_propagation` invalidates active dependent state slots
   when a changed slot supersedes a previous active state. Current topology:
   `location -> local.*`, `location -> commute.*`, `location -> schedule.local.*`,
-  and `location -> timezone.*`.
+  `location -> timezone.*`, and
+  `organization.employer -> employment.* / workplace.*`.
 - Propagation also marks the dependent state's source evidence stale so raw
   episode retrieval cannot bypass the state authority layer.
+- Propagation now creates an active `unknown-current` state for invalidated
+  dependent slots when the parent update does not supply a replacement for the
+  dependent slot. This lets the authorized state layer say the old dependent
+  value is no longer valid instead of only suppressing the stale source.
 
 Required next evidence:
 
-- Extend tests for indirect invalidation beyond the current local-state smoke
-  case.
+- Extend tests for indirect invalidation beyond the current local-state and
+  employer-benefits smoke cases.
 - Compare direct slot replacement against propagation on STALE T2-style cases.
 
 ### 6. Paper-Grade Failure Taxonomy
@@ -654,6 +659,18 @@ queries do not become state-sensitive. A local
 premise resistance, unknown-current invalidation, source adjudication, and
 premise correction for this slot. This is API-free mechanism evidence, not a
 public benchmark claim.
+
+Employer state is also the first non-location parent slot in the dependency
+topology. The deterministic extractor now recognizes
+`employment.benefits_portal`, and an employer replacement invalidates that
+dependent slot into an authorized `unknown-current` state when no new benefits
+portal has been observed. The fixture
+`benchmarks/employer_dependency_transfer.jsonl` is a causal smoke test: ordinary
+semantic retrieval and same-slot state adjudication still surface the old
+portal, while `semantic_state_propagation_adjudication` resolves the stale
+premise through dependency propagation. This strengthens the method story for
+implicit policy adaptation, but remains local mechanism evidence until tested
+on public stale-memory cases with real answer models.
 
 The first query-annotated LongMemEval-S pilot exposed a measurement problem
 before it exposed a method problem. With the initial `--infer-state-slots`

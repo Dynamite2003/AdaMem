@@ -11,6 +11,7 @@ from adamem.config import AdaMemConfig
 from adamem.schema import MemoryItem, MemoryResult, utc_now
 from adamem.state import (
     StateExtractor,
+    StatePatch,
     build_state_extractor,
     query_relevant_state_slots,
     state_slot_depends_on,
@@ -444,6 +445,7 @@ class AdaMem:
         changed_slot = str(state_item.metadata.get("state_slot") or "")
         if not changed_slot:
             return
+        created_keys: set[str] = set()
         for candidate in self.store.all():
             if not candidate.active:
                 continue
@@ -454,13 +456,25 @@ class AdaMem:
             candidate_slot = str(candidate.metadata.get("state_slot") or "")
             if not state_slot_depends_on(candidate_slot, changed_slot):
                 continue
-            candidate.superseded_by = state_item.id
+            replacement = self._dependency_unknown_current_state(
+                candidate,
+                state_item,
+                source,
+                changed_slot=changed_slot,
+                created_keys=created_keys,
+            )
+            replacement_id = replacement.id if replacement is not None else state_item.id
+            candidate.superseded_by = replacement_id
             candidate.staleness = max(candidate.staleness, 1.0)
             if source.id not in candidate.stale_sources:
                 candidate.stale_sources.append(source.id)
             if candidate.id not in state_item.supersedes:
                 state_item.supersedes.append(candidate.id)
+            if replacement is not None and candidate.id not in replacement.supersedes:
+                replacement.supersedes.append(candidate.id)
             self.store.upsert(candidate)
+            if replacement is not None:
+                self.store.upsert(replacement)
             source_id = candidate.metadata.get("source_id")
             if isinstance(source_id, str):
                 evidence = self.store.get(source_id)
@@ -468,7 +482,87 @@ class AdaMem:
                     evidence.staleness = max(evidence.staleness, 1.0)
                     if source.id not in evidence.stale_sources:
                         evidence.stale_sources.append(source.id)
+                    _append_metadata_value(evidence.metadata, "stale_state_slots", candidate_slot)
+                    _append_metadata_value(evidence.metadata, "state_adjudicated_by", replacement_id)
                     self.store.upsert(evidence)
+
+    def _dependency_unknown_current_state(
+        self,
+        candidate: MemoryItem,
+        state_item: MemoryItem,
+        source: MemoryItem,
+        *,
+        changed_slot: str,
+        created_keys: set[str],
+    ) -> MemoryItem | None:
+        if not self.config.use_state_unknown_current:
+            return None
+        candidate_slot = str(candidate.metadata.get("state_slot") or "").strip()
+        old_value = str(candidate.metadata.get("state_value") or "").strip()
+        subject = str(candidate.metadata.get("subject") or state_item.metadata.get("subject") or "user")
+        if not candidate_slot or not old_value:
+            return None
+        patch = StatePatch(
+            slot=candidate_slot,
+            value="unknown-current",
+            evidence=source.content,
+            subject=subject,
+            status="unknown_current",
+            invalidates_value=old_value,
+        )
+        if patch.key in created_keys or self._active_dependency_unknown_current_exists(
+            patch.key,
+            old_value,
+            state_item.id,
+        ):
+            return None
+        created_keys.add(patch.key)
+        metadata = {
+            "derived": True,
+            "source_id": source.id,
+            "memory_key": patch.key,
+            "state_slot": patch.slot,
+            "state_value": patch.value,
+            "state_status": patch.status,
+            "subject": patch.subject,
+            "keywords": [patch.slot, patch.value, old_value, changed_slot],
+            "invalidated_state_value": old_value,
+            "dependency_invalidated_by_state_id": state_item.id,
+            "dependency_invalidated_by_slot": changed_slot,
+        }
+        item = MemoryItem(
+            content=patch.content,
+            kind="state",
+            importance=1.0,
+            confidence=state_item.confidence,
+            valid_from=source.valid_from,
+            metadata=metadata,
+            embedding=self.embedder(_embedding_text(patch.content, metadata)),
+        )
+        item.links.extend([source.id, state_item.id, candidate.id])
+        return item
+
+    def _active_dependency_unknown_current_exists(
+        self,
+        memory_key: str,
+        invalidated_value: str,
+        invalidator_id: str,
+    ) -> bool:
+        for item in self.store.all():
+            if not item.active:
+                continue
+            if item.kind != "state":
+                continue
+            if item.metadata.get("memory_key") != memory_key:
+                continue
+            if item.metadata.get("state_status") != "unknown_current":
+                continue
+            if item.metadata.get("invalidated_state_value") != invalidated_value:
+                continue
+            if item.metadata.get("dependency_invalidated_by_state_id") != invalidator_id:
+                continue
+            return True
+        return False
 
     def _state_readout(
         self,
