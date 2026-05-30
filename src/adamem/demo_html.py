@@ -100,12 +100,39 @@ def demo_html(payload: dict[str, Any]) -> str:
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }}
+    .boundary {{
+      padding: 0 22px 12px;
+    }}
     .summary-card {{
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
       box-shadow: var(--shadow);
+    }}
+    .boundary-card {{
+      background: var(--surface);
+      border: 1px solid #f0d8a8;
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }}
+    .boundary-card h2 {{
+      margin: 0 0 8px;
+      font-size: 14px;
+      line-height: 1.25;
+    }}
+    .boundary-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .boundary-list {{
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
     }}
     .summary-card h2 {{
       margin: 0 0 8px;
@@ -285,7 +312,7 @@ def demo_html(payload: dict[str, Any]) -> str:
       .status-strip {{
         justify-content: flex-start;
       }}
-      .summary, main, .baseline-grid {{
+      .summary, .boundary-grid, main, .baseline-grid {{
         grid-template-columns: 1fr;
       }}
       .sidebar {{
@@ -308,6 +335,7 @@ def demo_html(payload: dict[str, Any]) -> str:
       </div>
     </header>
     <section class="summary" id="summary"></section>
+    <section class="boundary" id="boundary"></section>
     <main>
       <aside class="sidebar" id="queryList"></aside>
       <section class="detail" id="detail"></section>
@@ -341,6 +369,7 @@ def demo_html(payload: dict[str, Any]) -> str:
       document.getElementById('datasetLine').textContent = payload.dataset + ' / ' + payload.case_id;
       document.getElementById('queryCount').textContent = queries.length + ' queries';
       renderSummary();
+      renderBoundary();
       renderQueryList();
       renderDetail();
     }}
@@ -368,6 +397,40 @@ def demo_html(payload: dict[str, Any]) -> str:
           </div>
         </article>
       `).join('');
+    }}
+
+    function renderBoundary() {{
+      const boundary = payload.evidence_boundary || {{}};
+      const blocked = boundary.blocked_claims || {{}};
+      const blockedItems = Object.entries(blocked).flatMap(([claim, reasons]) =>
+        (reasons || []).map((reason) => `${{claim}}: ${{reason}}`)
+      );
+      document.getElementById('boundary').innerHTML = `
+        <article class="boundary-card">
+          <h2>Evidence Boundary</h2>
+          <div class="boundary-grid">
+            <div>
+              <div class="section-label">Supported</div>
+              ${{renderList(boundary.supported_uses || [])}}
+            </div>
+            <div>
+              <div class="section-label">Blocked</div>
+              ${{renderList(blockedItems)}}
+            </div>
+            <div>
+              <div class="section-label">Next Evidence</div>
+              ${{renderList(boundary.next_evidence || [])}}
+            </div>
+          </div>
+        </article>
+      `;
+    }}
+
+    function renderList(items) {{
+      if (!items.length) {{
+        return '<div class="empty">&lt;none&gt;</div>';
+      }}
+      return `<ul class="boundary-list">${{items.map((item) => `<li>${{escapeHtml(item)}}</li>`).join('')}}</ul>`;
     }}
 
     function renderQueryList() {{

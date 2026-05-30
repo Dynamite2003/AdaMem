@@ -83,6 +83,9 @@ extraction on those true state cases.
   - In `--html-output` mode, a self-contained static HTML dashboard with query
     selection, baseline comparison cards, retrieved context, and source/suppressed
     trace metadata.
+  - Structured `evidence_boundary` metadata listing supported uses, blocked
+    answer-accuracy/SOTA/generality claims, and next required evidence before
+    any paper claim.
   - Source-label trace for the authorized current state and the suppressed old
     raw evidence, without copying the stale value into the adjudication notice.
 - Validation:
@@ -96,7 +99,8 @@ extraction on those true state cases.
     surfaced `8` adjudication notices across schedule, task, preference,
     resource, workflow, runtime, role, and manager state slots.
   - `PYTHONPATH=src python -m adamem.cli demo --all-queries --html-output /tmp/adamem_state_demo.html --json`
-    -> wrote a static HTML artifact with embedded `adamem.demo.v1` payload.
+    -> wrote a static HTML artifact with embedded `adamem.demo.v1` payload and
+    structured evidence-boundary metadata.
   - Browser automation was attempted for the static HTML artifact, but this
     environment does not have the `playwright` Node module installed; keep a
     screenshot-level browser check as the next demo-polish step.

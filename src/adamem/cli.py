@@ -93,6 +93,7 @@ def _run_demo(
             "API-free mechanism demo only; not paper evidence, not SOTA evidence, "
             "and not end-to-end answer accuracy."
         ),
+        "evidence_boundary": _demo_evidence_boundary(),
         "dataset": dataset,
         "case_id": case.id,
         "comparison_note": (
@@ -184,6 +185,35 @@ def _demo_summary(query_payloads: list[dict[str, Any]]) -> dict[str, Any]:
         "baseline_count": len(by_baseline),
         "query_count": len(query_payloads),
         "by_baseline": by_baseline,
+    }
+
+
+def _demo_evidence_boundary() -> dict[str, Any]:
+    return {
+        "artifact_type": "api_free_mechanism_demo",
+        "supported_uses": [
+            "Inspect state-authority and stale-source adjudication traces.",
+            "Run local regression checks across deterministic state-family fixtures.",
+            "Prepare a qualitative walkthrough before API-backed evaluation.",
+        ],
+        "blocked_claims": {
+            "answer_accuracy": [
+                "No answer model is called.",
+                "No judge model or semantic scorer is called.",
+            ],
+            "sota": [
+                "The demo uses a local fixture, not a full public benchmark.",
+                "Mainstream baselines are not official or faithful reproductions in this artifact.",
+            ],
+            "generality": [
+                "Transfer to STALE, LongMemEval, AMA-Bench, or other public benchmarks is not shown by this artifact.",
+            ],
+        },
+        "next_evidence": [
+            "Run STALE answer/judge experiments with multiple answer and judge models.",
+            "Run the same mechanism matrix on at least one public transfer benchmark.",
+            "Attach claim-audit and paper-readiness artifacts before making paper claims.",
+        ],
     }
 
 
@@ -345,6 +375,7 @@ def _format_demo(payload: dict[str, Any]) -> str:
         f"Forbidden substrings: {', '.join(payload['forbidden_substrings']) or '<none>'}",
         "",
     ]
+    lines.extend(_format_evidence_boundary(payload))
     for baseline in payload["baselines"]:
         lines.extend([
             f"## {baseline['name']}",
@@ -397,6 +428,8 @@ def _format_all_query_demo(payload: dict[str, Any]) -> str:
             f"failed={failed}"
         )
     lines.append("")
+    lines.extend(_format_evidence_boundary(payload))
+    lines.append("")
     lines.append("## Queries")
     for query_payload in payload["queries"]:
         status = ", ".join(
@@ -420,6 +453,28 @@ def _format_all_query_demo(payload: dict[str, Any]) -> str:
     lines.append("")
     lines.append(f"Comparison note: {payload['comparison_note']}")
     return "\n".join(lines).rstrip()
+
+
+def _format_evidence_boundary(payload: dict[str, Any]) -> list[str]:
+    boundary = payload.get("evidence_boundary") or {}
+    if not boundary:
+        return []
+    lines = ["## Evidence Boundary"]
+    supported = boundary.get("supported_uses") or []
+    if supported:
+        lines.append("Supported uses:")
+        lines.extend(f"- {item}" for item in supported)
+    blocked = boundary.get("blocked_claims") or {}
+    if blocked:
+        lines.append("Blocked claims:")
+        for claim, reasons in blocked.items():
+            reason_text = "; ".join(str(reason) for reason in reasons)
+            lines.append(f"- {claim}: {reason_text}")
+    next_evidence = boundary.get("next_evidence") or []
+    if next_evidence:
+        lines.append("Next evidence:")
+        lines.extend(f"- {item}" for item in next_evidence)
+    return lines
 
 
 if __name__ == "__main__":

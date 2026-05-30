@@ -19,6 +19,9 @@ def test_demo_json_compares_adjudication_trace_baselines(capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema_version"] == "adamem.demo.v1"
     assert "not paper evidence" in payload["claim_boundary"]
+    assert payload["evidence_boundary"]["artifact_type"] == "api_free_mechanism_demo"
+    assert "answer_accuracy" in payload["evidence_boundary"]["blocked_claims"]
+    assert "sota" in payload["evidence_boundary"]["blocked_claims"]
     assert [baseline["name"] for baseline in payload["baselines"]] == [
         "semantic_state_adjudication",
         "semantic_state_adjudication_trace",
@@ -48,6 +51,8 @@ def test_demo_markdown_mentions_claim_boundary(capsys) -> None:
     output = capsys.readouterr().out
     assert "# AdaMem Stale-Memory Demo" in output
     assert "not paper evidence" in output
+    assert "## Evidence Boundary" in output
+    assert "Blocked claims:" in output
     assert "semantic_state_adjudication_trace" in output
     assert "kind=state_adjudication" in output
 
@@ -95,7 +100,9 @@ def test_demo_writes_interactive_html_artifact(tmp_path: Path, capsys) -> None:
     assert payload["artifacts"]["html"] == str(output)
     html = output.read_text(encoding="utf-8")
     assert "AdaMem State Authority Demo" in html
+    assert "Evidence Boundary" in html
     assert "demo-data" in html
     assert "not paper evidence" in html
+    assert "No answer model is called" in html
     assert "semantic_state_adjudication_trace" in html
     assert "state_adjudication" in html
