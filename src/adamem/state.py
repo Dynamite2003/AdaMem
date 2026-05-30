@@ -1062,7 +1062,7 @@ def query_relevant_state_slots(query: str) -> list[str]:
         slots.append("health.*.status")
     if _has_resource_intent(text):
         slots.append("resource.*.status")
-    if _has_any_term(text, WORKFLOW_QUERY_TERMS):
+    if _has_workflow_intent(text):
         slots.append("workflow.*")
     if _has_runtime_intent(text):
         slots.append("runtime.*.status")
@@ -1118,7 +1118,8 @@ def _has_self_location_subject(text: str) -> bool:
     if _has_any_phrase(text, {"my location", "user location", "user's location"}):
         return True
     return bool(
-        re.search(r"\b(?:i|user)\b.{0,50}\b(?:live|located|based|staying)\b", text)
+        re.search(r"\b(?:i|user)\b.{0,50}\b(?:live|located|staying)\b", text)
+        or re.search(r"\b(?:i[’']?m|i am|user is)\s+(?:currently\s+)?based\b", text)
         or re.search(r"\b(?:live|located|based|staying)\b.{0,50}\b(?:me|user)\b", text)
     )
 
@@ -1134,18 +1135,21 @@ def _has_beverage_intent(text: str) -> bool:
 
 
 def _has_task_status_intent(text: str) -> bool:
-    if _has_term(text, "status"):
-        return True
     state_terms = {"blocked", "open", "pending", "resolved", "paused", "cancelled", "canceled"}
-    if not _has_any_term(text, state_terms | {"complete", "completed", "done"}):
-        return False
     if _has_any_phrase(text, {"how many", "total number", "number of"}):
+        return False
+    if _has_term(text, "status"):
+        return _has_any_term(text, TASK_QUERY_SUBJECT_TERMS) or re.search(
+            r"\bwhat\s+is\s+(?:the\s+)?[a-z0-9 _/'-]{2,50}\s+status\b",
+            text,
+        ) is not None
+    if not _has_any_term(text, state_terms | {"complete", "completed", "done"}):
         return False
     return _has_any_term(text, TASK_QUERY_SUBJECT_TERMS)
 
 
 def _has_schedule_intent(text: str) -> bool:
-    direct_terms = SCHEDULE_QUERY_TERMS - {"available", "free", "meet", "meeting", "time", "times"}
+    direct_terms = {"availability", "schedule"}
     if _has_any_term(text, direct_terms):
         return True
     if _has_any_term(text, {"available", "free"}):
@@ -1182,9 +1186,11 @@ def _has_dietary_intent(text: str) -> bool:
 
 
 def _has_resource_intent(text: str) -> bool:
-    strong_terms = RESOURCE_QUERY_TERMS - {"access"}
+    strong_terms = {"api key", "credential", "credentials", "key", "license", "passport", "token", "visa"}
     if _has_any_term(text, strong_terms):
         return True
+    if _has_any_term(text, {"account", "badge"}):
+        return _has_any_term(text, {"access", "active", "available", "expired", "status", "valid"})
     return _has_term(text, "access") and _has_any_term(
         text,
         {"account", "api key", "badge", "credential", "credentials", "key", "license", "passport", "token", "visa"},
@@ -1192,11 +1198,21 @@ def _has_resource_intent(text: str) -> bool:
 
 
 def _has_runtime_intent(text: str) -> bool:
-    strong_terms = RUNTIME_QUERY_TERMS - {"job", "service", "system", "tool"}
+    strong_terms = RUNTIME_QUERY_TERMS - {"environment", "job", "service", "system", "tool"}
     if _has_any_term(text, strong_terms):
         return True
     status_terms = {"available", "blocked", "degraded", "down", "fixed", "healthy", "offline", "online", "status", "up"}
-    return _has_any_term(text, {"job", "service", "system", "tool"}) and _has_any_term(text, status_terms)
+    return _has_any_term(text, {"environment", "job", "service", "system", "tool"}) and _has_any_term(text, status_terms)
+
+
+def _has_workflow_intent(text: str) -> bool:
+    if _has_any_term(text, {"workflow", "runbook", "procedure", "policy"}):
+        return True
+    if _has_any_term(text, {"backup", "deploy", "deployment", "release", "rollback"}):
+        return _has_any_term(text, {"applies", "policy", "procedure", "rule", "step"})
+    if _has_term(text, "incident"):
+        return _has_any_term(text, {"policy", "procedure", "runbook", "workflow"})
+    return False
 
 
 def _has_environment_gotcha_intent(text: str) -> bool:
@@ -1214,8 +1230,10 @@ def _has_tool_output_intent(text: str) -> bool:
 
 
 def _has_role_intent(text: str) -> bool:
-    if _has_any_term(text, ROLE_QUERY_TERMS):
+    if _has_any_term(text, {"position", "responsibilities", "responsibility", "role"}):
         return True
+    if _has_term(text, "title"):
+        return _has_any_term(text, {"job", "role", "user"})
     return _has_any_phrase(text, {"current job", "job title", "my job", "user job"})
 
 
@@ -1232,7 +1250,7 @@ def _has_employer_intent(text: str) -> bool:
 def _has_benefits_portal_intent(text: str) -> bool:
     if _has_term(text, "benefits portal"):
         return True
-    if not _has_any_term(text, BENEFITS_PORTAL_QUERY_TERMS):
+    if not _has_any_term(text, {"benefit", "benefits", "enrollment"}):
         return False
     return _has_any_term(text, {"enroll", "enrollment", "portal", "site", "system", "use"})
 

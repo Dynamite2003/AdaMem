@@ -1379,6 +1379,12 @@ def test_query_state_router_uses_word_boundaries_and_intent_gates() -> None:
         "environment.*.gotcha"
     ]
     assert query_relevant_state_slots("What did the search tool return?") == ["tool.*.last_output"]
+    assert query_relevant_state_slots("Should I use Acme Benefits for benefits enrollment?") == [
+        "employment.benefits_portal"
+    ]
+    assert query_relevant_state_slots("What rollback procedure applies to checkout deploys?") == [
+        "workflow.*"
+    ]
     assert query_relevant_state_slots("What role should guide my responsibilities?") == ["role.current"]
     assert query_relevant_state_slots("Who is my manager for approvals?") == ["relationship.manager"]
     assert query_relevant_state_slots("Given the user's peanut allergy, what meal constraint applies?") == [
@@ -1402,6 +1408,13 @@ def test_query_state_router_uses_word_boundaries_and_intent_gates() -> None:
     assert query_relevant_state_slots("Who managed the 2024 project retrospective?") == []
     assert query_relevant_state_slots("What was the result of the soccer game?") == []
     assert query_relevant_state_slots("What did my friend return to the library?") == []
+    assert query_relevant_state_slots("I am working with our ServiceNow portal. What column is visible?") == []
+    assert query_relevant_state_slots("I am working in our ServiceNow based portal. Which field has a checkbox?") == []
+    assert query_relevant_state_slots("Which form enables the calendar plugin for the mandatory field?") == []
+    assert query_relevant_state_slots("Is the conflict status field immutable, true or false?") == []
+    assert query_relevant_state_slots("Which customer-account action appears between Back and Send Email?") == []
+    assert query_relevant_state_slots("What is the title of the third step of the progress bar?") == []
+    assert query_relevant_state_slots("On order detail pages in this environment, which action appears?") == []
 
 
 def test_state_authorization_can_be_disabled_for_ablation() -> None:

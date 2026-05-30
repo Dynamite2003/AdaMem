@@ -57,6 +57,50 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 LME-V2 router precision tightening
+
+- Tightened state query intent gates after inspecting public LongMemEval-V2
+  static-environment false positives.
+- Main changes:
+  - Generic `portal` no longer routes to `employment.benefits_portal`; it now
+    requires benefits/enrollment context unless the phrase is exactly
+    `benefits portal`.
+  - `based` no longer routes to location inside phrases such as
+    `ServiceNow based portal`; self-location based queries still route.
+  - Generic `status`, `calendar`, `account`, `badge`, `environment`,
+    `incident`, and `title` no longer route to task, schedule, resource,
+    runtime, workflow, or role state without slot-specific intent.
+- Re-ran public LongMemEval-V2 question audit:
+  - Query-state-slot signals dropped from `447/451` to `84/451`.
+  - Static-question state-slot signals dropped from `189` to `6`.
+  - `environment.*.gotcha` remains `1` dynamic-environment question.
+  - `errors-gotchas` remains a type-level candidate group, but current
+    text-only query routing still does not expose `environment.*.gotcha` for
+    that group.
+- Re-ran the text-only transfer split:
+  - Selected questions: `56`.
+  - Transfer questions: `40`.
+  - Static controls: `6` router-warning controls and `10` clean static
+    controls.
+- Interpretation:
+  - This improves the causal validity of state readout by reducing prompt
+    pollution on static web-environment questions.
+  - It also preserves the stricter paper boundary: LongMemEval-V2 transfer
+    claims still need prepared trajectory-side evidence, not just cleaner
+    question-side routing.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py::test_query_state_router_uses_word_boundaries_and_intent_gates tests/test_adamem.py::test_task_state_readout_requires_status_intent_not_project_count tests/test_adamem.py::test_runtime_state_readout_requires_runtime_intent_not_generic_status_report -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m adamem.lme_v2 question-audit --output-dir results/longmemeval_v2_question_audit --json`
+    -> public audit completed with `84/451` query-state-slot signals.
+  - `PYTHONPATH=src python -m adamem.lme_v2 transfer-split --audit-records results/longmemeval_v2_question_audit/longmemeval_v2_question_audit.records.jsonl --output-dir results/longmemeval_v2_transfer_split --transfer-per-type 10 --control-per-group 10 --json`
+    -> split regenerated with `56` selected questions.
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py tests/test_lme_v2.py -q`
+    -> `69 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `230 passed`
+
 ### 2026-05-30 LongMemEval-V2 question-type state-slot matrix
 
 - Extended LongMemEval-V2 question-side audits with:

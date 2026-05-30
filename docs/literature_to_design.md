@@ -254,10 +254,11 @@ Current implementation:
   employment, relationship/role, preference, schedule, environment, and
   tool-output state.
 - Question-side audits now report `by_question_type_state_slot` and
-  `static_state_slot_signals`. The latest public audit shows broad
-  question-router signals (`447/451` questions, including `189` static
-  questions), so question text alone is not enough for a transfer claim.
-  Prepared trajectory-side state evidence must remain the gate.
+  `static_state_slot_signals`. The latest public audit after tightening intent
+  gates shows `84/451` question-router signals, including `6` static
+  questions. This is much cleaner than the prior broad router, but question
+  text alone is still not enough for a transfer claim; prepared
+  trajectory-side state evidence must remain the gate.
 
 Required next evidence:
 

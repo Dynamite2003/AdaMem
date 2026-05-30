@@ -183,16 +183,17 @@ Latest question-side audit:
 - Type-level state-transfer candidates: `262/451`:
   `dynamic-environment`, `dynamic-environment-abs`, `procedure`,
   `procedure-abs`, and `errors-gotchas`.
-- Query text produced state-slot signals for `447/451` questions, but `189`
-  of these signals came from `static-environment*` questions. Treat those as
+- Query text produced state-slot signals for `84/451` questions; `6` of
+  these signals came from `static-environment*` questions. Treat those as
   router-audit warnings, not automatic state-transfer candidates.
-- Dominant inferred slots were `location`, `employment.benefits_portal`,
-  `workflow.*`, `resource.*.status`, `task.*.status`, and
+- Dominant inferred slots were `workflow.*`, `resource.*.status`,
+  `task.*.status`, `organization.employer`, `location`, and
   `runtime.*.status`.
 - The question-side audit now reports a `by_question_type_state_slot` matrix
   and `static_state_slot_signals`, so router warnings can be separated by
   question type before any trajectory-side state-evidence claims are made.
-- Current public audit after adding environment-gotcha/tool-output slots:
+- Current public audit after adding environment-gotcha/tool-output slots and
+  tightening router intent gates:
   `environment.*.gotcha` appears in `1` dynamic-environment question, while
   `errors-gotchas` remains a type-level candidate group with no text-only
   `environment.*.gotcha` query signal. Treat this as evidence that
@@ -201,12 +202,11 @@ Latest question-side audit:
 
 Latest text-only transfer split:
 
-- Selected questions: `50`.
+- Selected questions: `56`.
 - Transfer questions: `40`, with `10` each from `dynamic-environment`,
   `dynamic-environment-abs`, `procedure`, and `procedure-abs`.
-- Static controls: `10` router-warning controls. The current router marks all
-  static-environment questions with some state-slot signal, so there are no
-  clean static controls in the latest split.
+- Static controls: `16`, split into `6` router-warning controls and `10`
+  clean static controls.
 - Domain/environment coverage should be recomputed after restoring the
   prepared trajectories, because the latest split is intentionally controlled
   by text-only eligibility and router-warning availability.
