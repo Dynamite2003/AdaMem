@@ -57,6 +57,29 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 day-end checkpoint after dependency evidence
+
+- Current git state before this checkpoint:
+  - Branch: `main`
+  - Latest implementation commit: `10f1163 Expose dependency evidence in claim matrix`
+  - Working tree: clean before this handoff entry
+- Latest validated state:
+  - `PYTHONPATH=src python -m pytest -q` -> `217 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+- Current paper-track status:
+  - Dependency propagation is implemented as a typed state mechanism and now
+    has local causal fixtures, benchmark diagnostics, claim-audit evidence, and
+    batch claim-matrix evidence.
+  - Dataset-scope gates correctly keep local dependency fixtures
+    `claim_limited`, so the mechanism is visible without being overstated as
+    public benchmark evidence.
+- Next resume task:
+  - Add evaluation-only STALE converter annotations for state/dependency
+    opportunities in query metadata. These annotations should support grouping
+    and diagnostics only, must not be written into runtime observation metadata,
+    and must not make STALE ground truth available to the memory method.
+
 ### 2026-05-30 dependency propagation claim matrix fields
 
 - Extended batch claim-matrix rows with dependency-propagation evidence:
