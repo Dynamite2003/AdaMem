@@ -278,6 +278,7 @@ def claim_matrix_rows(manifests: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "state_expected_questions": int(state_evidence.get("with_expected_state_slots") or 0),
             "state_matching_questions": int(state_evidence.get("with_matching_state_evidence") or 0),
             "state_available_rate": float(state_evidence.get("state_available_rate") or 0.0),
+            "state_family_evidence": dict(state_evidence.get("by_state_family") or {}),
             "paired_no_regression_count": len(retrieval.get("paired_no_regression") or []),
             "dependency_propagation_baseline_count": len(dependency),
             "dependency_state_records": dependency_state_records,
@@ -892,13 +893,13 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# AdaMem Claim Matrix",
         "",
-        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | dependency evidence | stale opportunities | baseline gaps | baseline repro | model gaps | repro gaps | no-reg pairs | top attribution |",
-        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | ---: | --- |",
+        "| experiment | gate | next action | scope | run type | supported | blocked | warnings | state evidence | state rate | state families | dependency evidence | stale opportunities | baseline gaps | baseline repro | model gaps | repro gaps | no-reg pairs | top attribution |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | ---: | --- |",
     ]
     if not rows:
         lines.append(
             "| <none> | needs_attention | add_experiment_records | unknown | <none> | "
-            "0 | 0 | 0 | 0/0 | 0.00% | - | - | - | - | - | - | 0 | - |"
+            "0 | 0 | 0 | 0/0 | 0.00% | - | - | - | - | - | - | - | 0 | - |"
         )
         return "\n".join(lines) + "\n"
     for row in rows:
@@ -913,6 +914,7 @@ def claim_matrix_markdown(rows: list[dict[str, Any]]) -> str:
             f"{row['supported_claim_count']} | {row['blocked_claim_count']} | "
             f"{row['warning_count']} | {matching}/{expected} | "
             f"{float(row.get('state_available_rate') or 0.0):.2%} | "
+            f"{_format_state_family_evidence(row)} | "
             f"{_format_dependency_evidence(row)} | "
             f"{_format_stale_opportunity_evidence(row)} | "
             f"{_format_missing_baseline_groups(row)} | "
@@ -1382,6 +1384,20 @@ def _format_dependency_evidence(row: dict[str, Any]) -> str:
         return "-"
     parents = ", ".join(str(slot) for slot in row.get("dependency_parent_slots") or []) or "parents?"
     return f"{baselines} baselines; state {states}; correction {corrections}; {parents}"
+
+
+def _format_state_family_evidence(row: dict[str, Any]) -> str:
+    families = row.get("state_family_evidence") or {}
+    if not families:
+        return "-"
+    parts: list[str] = []
+    for family, aggregate in sorted(families.items(), key=lambda item: str(item[0])):
+        if not isinstance(aggregate, dict):
+            continue
+        questions = int(aggregate.get("questions") or 0)
+        matched = int(aggregate.get("with_matching_state_evidence") or 0)
+        parts.append(f"{family}:{matched}/{questions}")
+    return ", ".join(parts) if parts else "-"
 
 
 def _format_stale_opportunity_evidence(row: dict[str, Any]) -> str:

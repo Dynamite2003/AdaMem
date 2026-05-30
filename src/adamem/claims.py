@@ -305,6 +305,14 @@ def claim_audit_markdown(audit: dict[str, Any]) -> str:
         lines.append(f"- With matching evidence: `{state_evidence['with_matching_state_evidence']}`")
         lines.append(f"- Without matching evidence: `{state_evidence['without_matching_state_evidence']}`")
         lines.append(f"- State-available rate: `{state_evidence['state_available_rate']:.2%}`")
+        if state_evidence.get("by_state_family"):
+            lines.append("- State families:")
+            for family, aggregate in sorted(state_evidence["by_state_family"].items()):
+                lines.append(
+                    f"  - `{family}`: questions `{aggregate['questions']}`, "
+                    f"with evidence `{aggregate['with_matching_state_evidence']}`, "
+                    f"without evidence `{aggregate['without_matching_state_evidence']}`"
+                )
     if retrieval:
         lines.append("")
         lines.append("## Claim Evidence")
@@ -484,7 +492,27 @@ def _load_state_evidence_summary(
         ),
         "questions_with_missing_trajectories": int(payload.get("questions_with_missing_trajectories") or 0),
         "missing_trajectory_total": int(payload.get("missing_trajectory_total") or 0),
+        "by_state_family": _normalize_state_family_summary(payload.get("by_state_family") or {}),
     }
+
+
+def _normalize_state_family_summary(raw: Any) -> dict[str, dict[str, int]]:
+    if not isinstance(raw, dict):
+        return {}
+    normalized: dict[str, dict[str, int]] = {}
+    for family, aggregate in raw.items():
+        if not isinstance(aggregate, dict):
+            continue
+        normalized[str(family)] = {
+            "questions": int(aggregate.get("questions") or 0),
+            "with_expected_state_slots": int(aggregate.get("with_expected_state_slots") or 0),
+            "with_matching_state_evidence": int(aggregate.get("with_matching_state_evidence") or 0),
+            "without_matching_state_evidence": int(aggregate.get("without_matching_state_evidence") or 0),
+            "matching_state_evidence_candidate_total": int(
+                aggregate.get("matching_state_evidence_candidate_total") or 0
+            ),
+        }
+    return normalized
 
 
 def _retrieval_claim_evidence(

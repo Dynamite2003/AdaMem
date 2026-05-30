@@ -322,6 +322,22 @@ def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path:
             "matching_state_evidence_candidate_total": 7,
             "questions_with_missing_trajectories": 0,
             "missing_trajectory_total": 0,
+            "by_state_family": {
+                "runtime": {
+                    "questions": 3,
+                    "with_expected_state_slots": 3,
+                    "with_matching_state_evidence": 2,
+                    "without_matching_state_evidence": 1,
+                    "matching_state_evidence_candidate_total": 5,
+                },
+                "workflow": {
+                    "questions": 1,
+                    "with_expected_state_slots": 1,
+                    "with_matching_state_evidence": 1,
+                    "without_matching_state_evidence": 0,
+                    "matching_state_evidence_candidate_total": 2,
+                },
+            },
         }),
         encoding="utf-8",
     )
@@ -378,6 +394,9 @@ def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path:
     assert "paired_retrieval_no_regression" in audit["supported_claims"]
     assert audit["claim_evidence"]["prepared_state_evidence"]["with_matching_state_evidence"] == 3
     assert audit["claim_evidence"]["prepared_state_evidence"]["state_available_rate"] == 0.75
+    assert audit["claim_evidence"]["prepared_state_evidence"]["by_state_family"]["runtime"][
+        "with_matching_state_evidence"
+    ] == 2
     assert audit["blocked_claims"]["answer_accuracy"] == [
         "run_type is retrieval/answerability, not answer generation"
     ]
@@ -388,6 +407,7 @@ def test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary(tmp_path:
     assert audit["raw_output_count"] == 20
     assert "`longmemeval_v2_prepared_split_readiness`" in markdown
     assert "Prepared State Evidence" in markdown
+    assert "`runtime`: questions `3`, with evidence `2`, without evidence `1`" in markdown
 
 
 def test_claim_audit_warns_when_longmemeval_v2_prepared_notes_are_missing(tmp_path: Path) -> None:

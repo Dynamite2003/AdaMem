@@ -668,6 +668,9 @@ Completed API-free foundations:
   slots into cross-benchmark state families such as `runtime`, `resource`,
   `workflow`, `location`, and `employment`. This mirrors STALE opportunity
   grouping for transfer analysis without using answers in runtime memory.
+- Claim audits and claim matrices expose LongMemEval-V2 state-family evidence,
+  so public transfer runs can be triaged by family coverage alongside STALE
+  opportunity-family metrics.
 - Semantic-only state-aware ablations, so state mechanisms can be tested
   independently of default full AdaMem scoring.
 - Synthetic tests for State Resolution, Premise Resistance, and Implicit Policy

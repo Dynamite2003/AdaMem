@@ -316,6 +316,31 @@ extraction on those true state cases.
   - `git diff --check` -> no issues
   - `PYTHONPATH=src python -m pytest -q` -> `223 passed`
 
+### 2026-05-30 LongMemEval-V2 state-family claim evidence
+
+- Threaded LongMemEval-V2 `by_state_family` evidence into paper report
+  artifacts:
+  - `audit_experiment` now preserves `prepared_state_evidence.by_state_family`
+    from the state-evidence summary JSON.
+  - `claim_audit_markdown` lists state-family coverage under Prepared State
+    Evidence.
+  - claim-matrix rows include `state_family_evidence`.
+  - claim-matrix Markdown has a `state families` column such as
+    `runtime:2/3, workflow:1/1`.
+- Purpose:
+  - Make cross-benchmark transfer coverage visible in the same paper triage
+    surface as STALE opportunity-family evidence.
+  - Avoid treating LongMemEval-V2 transfer as a single aggregate score when
+    the paper claim is about typed state validity mechanisms.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py::test_claim_audit_recognizes_longmemeval_v2_prepared_pilot_boundary tests/test_reporting.py::test_claim_matrix_helpers_flatten_manifest_evidence tests/test_reporting.py::test_write_experiment_bundle_supports_longmemeval_v2_prepared_pilot -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_claims.py tests/test_reporting.py tests/test_lme_v2.py -q`
+    -> `51 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `223 passed`
+
 ### 2026-05-30 day-end checkpoint after dependency evidence
 
 - Current git state before this checkpoint:

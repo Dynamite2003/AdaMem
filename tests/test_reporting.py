@@ -318,6 +318,16 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
                     "with_expected_state_slots": 4,
                     "with_matching_state_evidence": 3,
                     "state_available_rate": 0.75,
+                    "by_state_family": {
+                        "runtime": {
+                            "questions": 3,
+                            "with_matching_state_evidence": 2,
+                        },
+                        "workflow": {
+                            "questions": 1,
+                            "with_matching_state_evidence": 1,
+                        },
+                    },
                 },
                 "retrieval_transfer": {
                     "paired_no_regression": [{"candidate": "semantic_state_readout"}],
@@ -359,6 +369,16 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
         "state_expected_questions": 4,
         "state_matching_questions": 3,
         "state_available_rate": 0.75,
+        "state_family_evidence": {
+            "runtime": {
+                "questions": 3,
+                "with_matching_state_evidence": 2,
+            },
+            "workflow": {
+                "questions": 1,
+                "with_matching_state_evidence": 1,
+            },
+        },
         "paired_no_regression_count": 1,
         "dependency_propagation_baseline_count": 1,
         "dependency_state_records": 2,
@@ -401,6 +421,8 @@ def test_claim_matrix_helpers_flatten_manifest_evidence() -> None:
     assert "diagnostic_ready" in markdown
     assert "3/4" in markdown
     assert "75.00%" in markdown
+    assert "state families" in markdown
+    assert "runtime:2/3, workflow:1/1" in markdown
     assert "dependency evidence" in markdown
     assert "state 2; correction 1; location, organization.employer" in markdown
     assert "stale opportunities" in markdown
@@ -1085,6 +1107,15 @@ def _write_lme_v2_prepared_experiment(tmp_path: Path) -> Path:
             "matching_state_evidence_candidate_total": 1,
             "questions_with_missing_trajectories": 0,
             "missing_trajectory_total": 0,
+            "by_state_family": {
+                "runtime": {
+                    "questions": 1,
+                    "with_expected_state_slots": 1,
+                    "with_matching_state_evidence": 1,
+                    "without_matching_state_evidence": 0,
+                    "matching_state_evidence_candidate_total": 1,
+                }
+            },
         }),
         encoding="utf-8",
     )
