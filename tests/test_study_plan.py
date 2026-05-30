@@ -92,6 +92,9 @@ def test_build_paper_study_plan_covers_method_and_model_matrix(tmp_path: Path) -
     assert any("Per-experiment sub-bundles" in note for note in reporting_command["notes"])
     assert coverage["complete"] is True
     assert coverage["missing_requirements"] == []
+    assert "semantic_state_adjudication_trace" in plan["baseline_sets"]["stale_main"]
+    assert "semantic_state_adjudication_trace" in plan["baseline_sets"]["transfer"]
+    assert coverage["mechanism_flags"]["state_adjudication_trace"] is True
     assert coverage["mechanism_flags"]["premise_correction"] is True
     assert coverage["mechanism_flags"]["llm_state_extractor"] is True
     assert coverage["mechanism_flags"]["trajectory_step_readout"] is True
@@ -850,6 +853,11 @@ def test_study_plan_cli_writes_smoke_profile(tmp_path: Path) -> None:
     data = json.loads((output_dir / "paper_study_plan.json").read_text(encoding="utf-8"))
     validation = json.loads((output_dir / "paper_study_validation.json").read_text(encoding="utf-8"))
     assert data["profile"] == "smoke"
+    assert data["split"]["limit_per_stale_type"] == 1
+    assert data["split"]["transfer_max_cases"] == 2
+    assert data["commands"][0]["command"][data["commands"][0]["command"].index("--top-k") + 1] == "4"
+    assert "semantic_state_adjudication_trace" in data["baseline_sets"]["stale_main"]
+    assert data["method_coverage_preview"]["mechanism_flags"]["state_adjudication_trace"] is True
     assert validation["execution_ready"] is True
 
 
@@ -1052,8 +1060,11 @@ def test_study_plan_cli_can_dry_run_smoke_profile(tmp_path: Path) -> None:
     ])
 
     summary = json.loads((output_dir / "paper_study_run.summary.json").read_text(encoding="utf-8"))
+    plan = json.loads((output_dir / "paper_study_plan.json").read_text(encoding="utf-8"))
     assert summary["status"] == "dry_run"
     assert summary["selected_command_count"] == 1
+    assert plan["split"]["limit_per_stale_type"] == 1
+    assert "semantic_state_adjudication_trace" in summary["records"][0]["command"]
     assert (output_dir / "paper_study_run.summary.md").exists()
 
 

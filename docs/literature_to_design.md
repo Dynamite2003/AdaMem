@@ -339,6 +339,9 @@ Current implementation:
   and suppressed source provenance in evaluation traces without copying the old
   raw evidence back into context. This is ablated as
   `semantic_state_adjudication_trace`.
+- Paper-study plans include `semantic_state_adjudication_trace` in default
+  STALE and transfer baseline sets, and method coverage has a separate
+  `state_adjudication_trace` mechanism flag.
 
 Required next evidence:
 

@@ -552,6 +552,10 @@ def method_coverage_summary(manifests: Iterable[dict[str, Any]]) -> dict[str, An
                 "semantic_state_propagation_adjudication",
             },
         ),
+        "state_adjudication_trace": _baseline_present(
+            category_lists,
+            {"semantic_state_adjudication_trace"},
+        ),
         "premise_correction": _baseline_present(
             category_lists,
             {"semantic_state_premise_correction", "semantic_llm_state_premise_correction"},

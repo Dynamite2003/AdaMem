@@ -78,6 +78,12 @@ extraction on those true state cases.
 - Diagnostics:
   - JSONL state-source trace aggregation now counts adjudication notices and
     whether current/suppressed source labels are available.
+  - Paper-study plans now include `semantic_state_adjudication_trace` in the
+    default STALE and transfer baseline sets, and method coverage has a named
+    `state_adjudication_trace` mechanism flag.
+  - Smoke study-plan CLI generation now preserves smoke-sized defaults
+    (`limit_per_stale_type=1`, `transfer_max_cases=2`, `top_k=4`) unless the
+    user explicitly overrides them.
 - Next evidence:
   - Compare `semantic_state_adjudication` vs
     `semantic_state_adjudication_trace` on STALE Premise Resistance with real
@@ -97,6 +103,12 @@ extraction on those true state cases.
   - `PYTHONPATH=src python -m pytest -q` -> `233 passed`
   - `python -m compileall -q src` -> no issues
   - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest tests/test_reporting.py tests/test_study_plan.py -q`
+    -> `59 passed`
+  - `PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_trace_smoke_run2 --run --dry-run --stage diagnostic --json`
+    -> generated a smoke-sized dry-run command with
+    `semantic_state_adjudication_trace`, `limit_per_stale_type=1`, and
+    `top_k=4`.
 
 ### 2026-05-30 baseline reproduction plan artifact
 

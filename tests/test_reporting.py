@@ -780,6 +780,7 @@ def test_paper_readiness_marks_paper_claim_ready_only_after_full_gates() -> None
                 "semantic_only",
                 "a_mem_evolution",
                 "state_readout",
+                "semantic_state_adjudication_trace",
                 "semantic_state_propagation_adjudication",
                 "semantic_llm_state_premise_correction",
                 "trajectory_step_readout",

@@ -143,6 +143,10 @@ Outputs:
   diagnostics. The option requires question, trajectory, haystack, and split
   record paths together, and the generated plan records those paths under
   `data_sources` for reproducibility.
+- Paper-study baseline sets include `semantic_state_adjudication_trace` in
+  STALE and transfer diagnostics, and method coverage separately gates the
+  `state_adjudication_trace` mechanism so the explicit stale-source
+  suppression explanation is not omitted from paper ablations.
 - API-free smoke-study plan artifacts can be generated with
   `--profile smoke`. This profile uses tracked mini/local fixtures and mock
   providers only. It validates conversion-free STALE diagnostics, mock

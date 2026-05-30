@@ -25,6 +25,7 @@ DEFAULT_STALE_BASELINES = [
     "full",
     "semantic_state_readout",
     "semantic_state_adjudication",
+    "semantic_state_adjudication_trace",
     "semantic_state_premise_correction",
     "semantic_state_propagation_adjudication",
     "state_readout",
@@ -42,6 +43,7 @@ DEFAULT_TRANSFER_BASELINES = [
     "mem0_extraction",
     "semantic_state_readout",
     "semantic_state_adjudication",
+    "semantic_state_adjudication_trace",
     "semantic_state_premise_correction",
     "semantic_state_propagation_adjudication",
     "state_readout",
@@ -1948,17 +1950,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--lme-v2-haystack", default=DEFAULT_LME_V2_HAYSTACK)
     parser.add_argument("--lme-v2-split-records", default=DEFAULT_LME_V2_SPLIT_RECORDS)
     parser.add_argument("--stale-types", nargs="+", default=["T1", "T2"])
-    parser.add_argument("--limit-per-stale-type", type=int, default=50)
-    parser.add_argument("--transfer-max-cases", type=int, default=60)
-    parser.add_argument("--ama-limit", type=int, default=20)
+    parser.add_argument("--limit-per-stale-type", type=int)
+    parser.add_argument("--transfer-max-cases", type=int)
+    parser.add_argument("--ama-limit", type=int)
     parser.add_argument("--answer-model", action="append", dest="answer_models")
     parser.add_argument("--judge-model", action="append", dest="judge_models")
     parser.add_argument(
         "--state-extractor-model",
         help="provider:model for LLM extractor ablation.",
     )
-    parser.add_argument("--top-k", type=int, default=8)
-    parser.add_argument("--max-context-chars", type=int, default=4000)
+    parser.add_argument("--top-k", type=int)
+    parser.add_argument("--max-context-chars", type=int)
     parser.add_argument(
         "--check-env",
         action="store_true",
@@ -2029,13 +2031,13 @@ def main(argv: list[str] | None = None) -> None:
                     stale_dataset=args.stale_dataset or "benchmarks/stale_mini.jsonl",
                     transfer_dataset=args.transfer_dataset or "benchmarks/dynamic_state_transfer.jsonl",
                     stale_types=args.stale_types,
-                    limit_per_stale_type=args.limit_per_stale_type,
-                    transfer_max_cases=args.transfer_max_cases,
+                    limit_per_stale_type=args.limit_per_stale_type if args.limit_per_stale_type is not None else 1,
+                    transfer_max_cases=args.transfer_max_cases if args.transfer_max_cases is not None else 2,
                     answer_models=args.answer_models or SMOKE_ANSWER_MODELS,
                     judge_models=args.judge_models or SMOKE_JUDGE_MODELS,
                     state_extractor_model=args.state_extractor_model or SMOKE_STATE_EXTRACTOR_MODEL,
-                    top_k=args.top_k,
-                    max_context_chars=args.max_context_chars,
+                    top_k=args.top_k if args.top_k is not None else 4,
+                    max_context_chars=args.max_context_chars if args.max_context_chars is not None else 2000,
                 )
             else:
                 plan = build_paper_study_plan(
@@ -2050,14 +2052,14 @@ def main(argv: list[str] | None = None) -> None:
                     lme_v2_haystack=args.lme_v2_haystack if args.include_lme_v2_prepared else None,
                     lme_v2_split_records=args.lme_v2_split_records if args.include_lme_v2_prepared else None,
                     stale_types=args.stale_types,
-                    limit_per_stale_type=args.limit_per_stale_type,
-                    transfer_max_cases=args.transfer_max_cases,
-                    ama_limit=args.ama_limit,
+                    limit_per_stale_type=args.limit_per_stale_type if args.limit_per_stale_type is not None else 50,
+                    transfer_max_cases=args.transfer_max_cases if args.transfer_max_cases is not None else 60,
+                    ama_limit=args.ama_limit if args.ama_limit is not None else 20,
                     answer_models=args.answer_models or DEFAULT_ANSWER_MODELS,
                     judge_models=args.judge_models or DEFAULT_JUDGE_MODELS,
                     state_extractor_model=args.state_extractor_model or "<state_extractor_provider>:<state_extractor_model>",
-                    top_k=args.top_k,
-                    max_context_chars=args.max_context_chars,
+                    top_k=args.top_k if args.top_k is not None else 8,
+                    max_context_chars=args.max_context_chars if args.max_context_chars is not None else 4000,
                 )
             artifacts = write_paper_study_plan(plan, output_dir)
     except ValueError as exc:
