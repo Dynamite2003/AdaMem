@@ -31,6 +31,7 @@ Commands:
 python -m pytest
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
+PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/tiny_memory_qa.jsonl
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/unknown_current_state_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_premise_correction
@@ -77,6 +78,14 @@ Outputs:
 
 - Clean test result.
 - Baseline synthetic/JSONL tables.
+- Baseline reproduction plan artifacts:
+  `baseline_reproduction_plan.json` and
+  `baseline_reproduction_plan.md`. These list the API-free mainstream
+  approximation baselines that must be replaced by official or faithful runs
+  before SOTA-style claims: A-MEM, Zep/Graphiti, and Mem0. The plan records
+  required evidence such as external repo commit, adapter/command,
+  dataset/question split, model settings, raw case records, metric mapping,
+  and license/dependency notes.
 - Dynamic-state transfer smoke table.
 - JSON experiment records for any meaningful JSONL retrieval benchmark run,
   including converted LongMemEval or local transfer fixtures.

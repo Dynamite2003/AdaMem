@@ -57,6 +57,31 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 baseline reproduction plan artifact
+
+- Added a baseline utility CLI:
+  `PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json`.
+- The command writes:
+  - `baseline_reproduction_plan.json`
+  - `baseline_reproduction_plan.md`
+- Purpose:
+  - Make the paper's strong-baseline/SOTA blocker executable instead of only
+    descriptive.
+  - Explicitly separate API-free mainstream approximation baselines from
+    official or faithful reproductions.
+  - Record the evidence required before A-MEM, Zep/Graphiti, or Mem0-style
+    comparisons can be cited as strong baseline evidence: external repo commit,
+    adapter/command, dataset split, model settings, raw case records, metric
+    mapping, and license/dependency notes.
+- Current plan targets:
+  - `a_mem_evolution`
+  - `zep_temporal_kg`
+  - `mem0_extraction`
+- Interpretation:
+  - This does not make the current approximations official baselines.
+  - It gives the next API/benchmark phase a fixed checklist for converting real
+    SOTA-inspired systems into auditable experiment artifacts.
+
 ### 2026-05-30 LME-V2 prepared text split workflow
 
 - Added a one-command API-free LongMemEval-V2 preparation path:

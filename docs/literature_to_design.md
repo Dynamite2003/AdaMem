@@ -88,6 +88,11 @@ Current implementation:
 - Claim audits now also compute single-experiment baseline-reproduction
   evidence from artifact-level provenance. SOTA blockers distinguish missing
   official/faithful mainstream reproductions from model-robustness gaps.
+- `python -m adamem.baselines --output-dir ...` writes a paper-track baseline
+  reproduction plan. The plan is deliberately separate from claim audits: it
+  lists the official/faithful evidence that still must be collected for
+  A-MEM, Zep/Graphiti, and Mem0-style baselines before an experiment can use
+  those comparisons as strong-baseline or SOTA evidence.
 - It separately flags named mechanism evidence for state readout, dependency
   propagation, source adjudication, premise correction, LLM state extraction,
   and trajectory-step readout.
@@ -102,6 +107,10 @@ Required next evidence:
 - Replace or validate the API-free A-MEM, Zep/Graphiti, and Mem0
   approximations against official implementations or faithful reimplementations
   before making SOTA-style claims.
+- For each official/faithful reproduction, record the external repo commit,
+  adapter or command, dataset/question ids, model settings, raw case records,
+  metric mapping, and license/dependency notes, then persist that provenance in
+  the experiment artifact.
 - Treat missing named mechanism ablations as a paper-table gap until the result
   directory explains why a mechanism is out of scope for that benchmark.
 

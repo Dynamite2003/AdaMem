@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import argparse
+import json
+import sys
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
 
 from adamem.config import AdaMemConfig
 
@@ -396,3 +401,154 @@ def baseline_report(specs: dict[str, BaselineSpec] | None = None) -> str:
             f"{source} | {target} | {spec.description} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def baseline_reproduction_plan(
+    specs: dict[str, BaselineSpec] | None = None,
+) -> dict[str, Any]:
+    """Return the paper-track plan for replacing approximation baselines.
+
+    The current project-native mainstream controls are useful for API-free
+    ablations, but SOTA-style claims need official or faithful reproductions on
+    the same benchmark split. This artifact makes that requirement explicit and
+    machine-checkable before expensive answer/judge runs.
+    """
+
+    specs = specs or baseline_registry()
+    targets: list[dict[str, Any]] = []
+    for spec in specs.values():
+        if spec.implementation_status != "api_free_approximation":
+            continue
+        targets.append({
+            "baseline": spec.name,
+            "source_name": spec.source_name,
+            "source_url": spec.source_url,
+            "current_status": spec.implementation_status,
+            "current_role": "api_free_local_control_not_sota_baseline",
+            "reproduction_target_name": spec.reproduction_target_name,
+            "reproduction_target_url": spec.reproduction_target_url,
+            "reproduction_target_note": spec.reproduction_target_note,
+            "required_status_after_run": [
+                "official_reproduction",
+                "faithful_reimplementation",
+            ],
+            "required_evidence": [
+                "external_repo_url",
+                "external_repo_commit",
+                "adapter_or_command",
+                "dataset_split_and_question_ids",
+                "model_provider_model_and_sampling_settings",
+                "prompt_or_memory_policy_if_applicable",
+                "raw_case_records_path",
+                "metric_mapping_to_adamem_outputs",
+                "license_and_dependency_notes",
+            ],
+            "claim_boundary": (
+                "Treat the current API-free approximation as a mechanism control only. "
+                "Do not use it as strong-baseline or SOTA evidence until a matching "
+                "official or faithful run is recorded in experiment baseline_provenance."
+            ),
+        })
+    return {
+        "schema_version": "adamem.baseline_reproduction_plan.v1",
+        "target_count": len(targets),
+        "targets": targets,
+        "ready_for_sota_claims": False,
+        "ready_reason": (
+            "This is a reproduction plan template. SOTA readiness is established by "
+            "experiment artifacts whose baseline_provenance records official_reproduction "
+            "or faithful_reimplementation for at least one mainstream baseline."
+        ),
+    }
+
+
+def baseline_reproduction_plan_markdown(plan: dict[str, Any]) -> str:
+    lines = ["# AdaMem Baseline Reproduction Plan", ""]
+    lines.append(f"Schema: `{plan.get('schema_version')}`")
+    lines.append(f"Targets: `{int(plan.get('target_count') or 0)}`")
+    lines.append(f"Ready for SOTA claims: `{bool(plan.get('ready_for_sota_claims'))}`")
+    lines.append("")
+    lines.append(str(plan.get("ready_reason") or ""))
+    lines.append("")
+    lines.append("| baseline | source | current status | reproduction target | required next status |")
+    lines.append("| --- | --- | --- | --- | --- |")
+    for target in plan.get("targets") or []:
+        source = str(target.get("source_name") or "-")
+        source_url = str(target.get("source_url") or "")
+        if source_url:
+            source = f"[{source}]({source_url})"
+        reproduction = str(target.get("reproduction_target_name") or "-")
+        reproduction_url = str(target.get("reproduction_target_url") or "")
+        if reproduction_url:
+            reproduction = f"[{reproduction}]({reproduction_url})"
+        status = ", ".join(f"`{item}`" for item in target.get("required_status_after_run") or [])
+        lines.append(
+            f"| `{target.get('baseline')}` | {source} | "
+            f"`{target.get('current_status')}` | {reproduction} | {status} |"
+        )
+    lines.append("")
+    lines.append("## Required Evidence")
+    required = []
+    for target in plan.get("targets") or []:
+        required.extend(str(item) for item in target.get("required_evidence") or [])
+    for item in sorted(set(required)):
+        lines.append(f"- `{item}`")
+    lines.append("")
+    lines.append("## Claim Boundary")
+    for target in plan.get("targets") or []:
+        lines.append(f"- `{target.get('baseline')}`: {target.get('claim_boundary')}")
+    return "\n".join(lines) + "\n"
+
+
+def write_baseline_reproduction_plan(output_dir: str | Path) -> dict[str, str]:
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    plan = baseline_reproduction_plan()
+    json_path = output / "baseline_reproduction_plan.json"
+    markdown_path = output / "baseline_reproduction_plan.md"
+    json_path.write_text(
+        json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    markdown_path.write_text(baseline_reproduction_plan_markdown(plan), encoding="utf-8")
+    return {
+        "json_path": str(json_path),
+        "markdown_path": str(markdown_path),
+    }
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="AdaMem baseline registry utilities.")
+    parser.add_argument("--output-dir", type=Path, help="Write a baseline reproduction plan artifact.")
+    parser.add_argument("--reproduction-plan", action="store_true", help="Print the reproduction plan instead of the registry.")
+    parser.add_argument("--json", action="store_true", help="Print JSON output.")
+    args = parser.parse_args(argv)
+
+    if args.output_dir:
+        result = write_baseline_reproduction_plan(args.output_dir)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"wrote baseline reproduction plan to {args.output_dir}")
+            print(f"report: {result['markdown_path']}")
+        return
+
+    if args.reproduction_plan:
+        plan = baseline_reproduction_plan()
+        if args.json:
+            print(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            print(baseline_reproduction_plan_markdown(plan), end="")
+        return
+
+    if args.json:
+        print(json.dumps({
+            name: spec.provenance_dict()
+            for name, spec in baseline_registry().items()
+        }, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(baseline_report(), end="")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

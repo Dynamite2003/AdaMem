@@ -4,7 +4,14 @@ import json
 
 import pytest
 
-from adamem.baselines import baseline_registry, baseline_report, select_baselines
+from adamem.baselines import (
+    baseline_registry,
+    baseline_report,
+    baseline_reproduction_plan,
+    baseline_reproduction_plan_markdown,
+    select_baselines,
+    write_baseline_reproduction_plan,
+)
 from adamem.bench import default_ablation_configs
 from adamem.experiments import experiment_record, write_experiment_record
 
@@ -86,6 +93,37 @@ def test_select_baselines_preserves_requested_order() -> None:
 def test_select_baselines_rejects_unknown_names() -> None:
     with pytest.raises(ValueError, match="unknown baseline"):
         select_baselines(["not_a_baseline"])
+
+
+def test_baseline_reproduction_plan_records_official_baseline_requirements(tmp_path) -> None:
+    plan = baseline_reproduction_plan()
+    by_name = {target["baseline"]: target for target in plan["targets"]}
+    markdown = baseline_reproduction_plan_markdown(plan)
+    artifacts = write_baseline_reproduction_plan(tmp_path / "baseline-plan")
+    artifact_plan = json.loads(
+        (tmp_path / "baseline-plan" / "baseline_reproduction_plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert plan["schema_version"] == "adamem.baseline_reproduction_plan.v1"
+    assert plan["ready_for_sota_claims"] is False
+    assert set(by_name) == {"a_mem_evolution", "zep_temporal_kg", "mem0_extraction"}
+    assert by_name["a_mem_evolution"]["current_role"] == "api_free_local_control_not_sota_baseline"
+    assert by_name["a_mem_evolution"]["required_status_after_run"] == [
+        "official_reproduction",
+        "faithful_reimplementation",
+    ]
+    assert "external_repo_commit" in by_name["zep_temporal_kg"]["required_evidence"]
+    assert by_name["mem0_extraction"]["reproduction_target_url"] == "https://github.com/mem0ai/mem0"
+    assert "Do not use it as strong-baseline or SOTA evidence" in by_name["a_mem_evolution"]["claim_boundary"]
+    assert "[A-MEM](https://arxiv.org/abs/2502.12110)" in markdown
+    assert "`official_reproduction`, `faithful_reimplementation`" in markdown
+    assert artifacts == {
+        "json_path": str(tmp_path / "baseline-plan" / "baseline_reproduction_plan.json"),
+        "markdown_path": str(tmp_path / "baseline-plan" / "baseline_reproduction_plan.md"),
+    }
+    assert artifact_plan["target_count"] == 3
 
 
 def test_experiment_record_writes_reproducible_json(tmp_path) -> None:
