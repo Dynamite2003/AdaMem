@@ -57,6 +57,42 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 STALE evaluation-only opportunity labels
+
+- Added STALE converter query metadata for state/dependency opportunity
+  grouping:
+  - `state_slot`
+  - `state_slot_source`
+  - `dependency_source_slot`
+  - `dependency_source_slot_source`
+  - `dependency_target_family`
+- Current heuristic coverage is conservative and deterministic:
+  - location changes with local-context queries;
+  - employer changes with employment-context queries;
+  - dietary/health constraint changes with food-safety-context queries.
+- The labels are derived from STALE `M_old`, `M_new`, and `explanation` only
+  during conversion and are written only to query metadata. They are not
+  written to observation metadata, so runtime memory cannot consume them.
+- Purpose:
+  - Let public STALE conversion expose which records may exercise direct
+    state resolution versus dependency propagation opportunities.
+  - Support grouped diagnostics and opportunity audits before API-backed answer
+    judging is available.
+  - Preserve the leakage boundary: these labels are evaluation scaffolding, not
+    part of AdaMem's proposed runtime method.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_stale.py::test_convert_stale_sample_adds_query_only_state_opportunity_metadata tests/test_stale.py::test_convert_stale_sample_emits_three_dim_queries -q`
+    -> `2 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_stale.py::test_convert_stale_sample_adds_query_only_state_opportunity_metadata tests/test_stale.py::test_convert_stale_sample_labels_multiple_dependency_families -q`
+    -> `2 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest tests/test_stale.py -q`
+    -> `16 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_stale_pipeline.py -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `219 passed`
+
 ### 2026-05-30 day-end checkpoint after dependency evidence
 
 - Current git state before this checkpoint:

@@ -73,6 +73,10 @@ def convert_stale_file(
     THREE probing queries (one per dim), all carrying STALE metadata so an
     LLM judge can score them later (`expected_substrings` is unused for SR/PR/IPA;
     we leave it empty and rely on judge-mode eval).
+
+    Evaluation-only state/dependency opportunity labels derived from STALE
+    metadata are written only to query metadata. They are for grouping and
+    diagnostics, not runtime memory input.
     """
     with Path(input_path).open("r", encoding="utf-8") as handle:
         samples = json.load(handle)
@@ -1097,6 +1101,7 @@ def convert_stale_sample(sample: dict[str, Any], *, top_k: int = 8) -> dict[str,
                 "M_new": sample.get("M_new"),
                 "explanation": sample.get("explanation"),
                 "relevant_session_index": list(sample.get("relevant_session_index") or []),
+                **_stale_evaluation_state_metadata(sample, text),
             },
         })
 
@@ -1111,6 +1116,152 @@ def convert_stale_sample(sample: dict[str, Any], *, top_k: int = 8) -> dict[str,
         "observations": observations,
         "queries": queries,
     }
+
+
+_STALE_LOCATION_EVIDENCE_TERMS = (
+    "based",
+    "city",
+    "home base",
+    "live",
+    "lives",
+    "living",
+    "located",
+    "location",
+    "moved",
+    "relocated",
+    "settled",
+    "settling",
+    "staying",
+)
+
+_STALE_LOCAL_CONTEXT_QUERY_TERMS = (
+    "area",
+    "around me",
+    "coffee",
+    "commute",
+    "gym",
+    "local",
+    "near me",
+    "nearby",
+    "neighborhood",
+    "park",
+    "places",
+    "recommend",
+    "restaurant",
+    "suggest",
+    "timezone",
+)
+
+_STALE_EMPLOYER_EVIDENCE_TERMS = (
+    "company",
+    "employer",
+    "job",
+    "manager",
+    "office",
+    "work",
+    "workplace",
+)
+
+_STALE_EMPLOYMENT_CONTEXT_QUERY_TERMS = (
+    "benefit",
+    "benefits",
+    "hr",
+    "manager",
+    "office",
+    "payroll",
+    "portal",
+    "work",
+    "workplace",
+)
+
+_STALE_DIETARY_EVIDENCE_TERMS = (
+    "allergic",
+    "allergy",
+    "dairy",
+    "diet",
+    "dietary",
+    "gluten",
+    "nut",
+    "peanut",
+    "shellfish",
+)
+
+_STALE_FOOD_CONTEXT_QUERY_TERMS = (
+    "eat",
+    "food",
+    "meal",
+    "menu",
+    "order",
+    "restaurant",
+    "safe",
+)
+
+
+def _stale_evaluation_state_metadata(
+    sample: Mapping[str, Any],
+    query_text: str,
+) -> dict[str, str]:
+    """Infer query-only opportunity labels from STALE metadata.
+
+    STALE ground truth is allowed in conversion and diagnostics, but these
+    labels must not be copied to observations because observations are runtime
+    memory input.
+    """
+
+    evidence_text = " ".join(
+        str(sample.get(key) or "")
+        for key in ("M_old", "M_new", "explanation")
+    )
+    evidence_lower = evidence_text.lower()
+    query_lower = query_text.lower()
+
+    if _contains_any_phrase(evidence_lower, _STALE_LOCATION_EVIDENCE_TERMS):
+        metadata = {
+            "state_slot": "location",
+            "state_slot_source": "stale_metadata_heuristic",
+        }
+        if _contains_any_phrase(query_lower, _STALE_LOCAL_CONTEXT_QUERY_TERMS):
+            metadata.update({
+                "dependency_source_slot": "location",
+                "dependency_source_slot_source": "stale_metadata_heuristic",
+                "dependency_target_family": "local_context",
+            })
+        return metadata
+
+    if _contains_any_phrase(evidence_lower, _STALE_EMPLOYER_EVIDENCE_TERMS):
+        metadata = {
+            "state_slot": "organization.employer",
+            "state_slot_source": "stale_metadata_heuristic",
+        }
+        if _contains_any_phrase(query_lower, _STALE_EMPLOYMENT_CONTEXT_QUERY_TERMS):
+            metadata.update({
+                "dependency_source_slot": "organization.employer",
+                "dependency_source_slot_source": "stale_metadata_heuristic",
+                "dependency_target_family": "employment_context",
+            })
+        return metadata
+
+    if _contains_any_phrase(evidence_lower, _STALE_DIETARY_EVIDENCE_TERMS):
+        metadata = {
+            "state_slot": "health.*.status",
+            "state_slot_source": "stale_metadata_heuristic",
+        }
+        if _contains_any_phrase(query_lower, _STALE_FOOD_CONTEXT_QUERY_TERMS):
+            metadata.update({
+                "dependency_source_slot": "health.*.status",
+                "dependency_source_slot_source": "stale_metadata_heuristic",
+                "dependency_target_family": "food_safety_context",
+            })
+        return metadata
+
+    return {}
+
+
+def _contains_any_phrase(text: str, phrases: Iterable[str]) -> bool:
+    return any(
+        re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", text)
+        for phrase in phrases
+    )
 
 
 def main() -> None:

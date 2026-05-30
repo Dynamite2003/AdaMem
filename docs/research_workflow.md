@@ -643,6 +643,12 @@ Completed API-free foundations:
   raw STALE JSON, runs retrieval diagnostics, writes case records, paper
   tables, claim-audit report bundles, and a manifest. It also accepts already
   converted AdaMem JSONL with `--input-format adamem-jsonl` for smoke runs.
+- STALE conversion can add evaluation-only query metadata for inferred
+  state/dependency opportunities such as `state_slot`,
+  `dependency_source_slot`, and `dependency_target_family`. These labels are
+  derived from STALE metadata for grouping and opportunity audits only; they
+  must not be written into observation metadata or consumed by the proposed
+  runtime memory method.
 - Semantic-only state-aware ablations, so state mechanisms can be tested
   independently of default full AdaMem scoring.
 - Synthetic tests for State Resolution, Premise Resistance, and Implicit Policy

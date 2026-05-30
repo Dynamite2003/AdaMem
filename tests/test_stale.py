@@ -74,6 +74,66 @@ def test_convert_stale_sample_emits_three_dim_queries() -> None:
     assert relevant and all(obs["importance"] >= 0.6 for obs in relevant)
 
 
+def test_convert_stale_sample_adds_query_only_state_opportunity_metadata() -> None:
+    row = convert_stale_sample(_toy_stale_instance(), top_k=4)
+    queries = {query["id"].rsplit(".", 1)[-1]: query for query in row["queries"]}
+
+    dim1_meta = queries["dim1"]["metadata"]
+    assert dim1_meta["state_slot"] == "location"
+    assert dim1_meta["state_slot_source"] == "stale_metadata_heuristic"
+    assert "dependency_source_slot" not in dim1_meta
+
+    dim2_meta = queries["dim2"]["metadata"]
+    dim3_meta = queries["dim3"]["metadata"]
+    for meta in (dim2_meta, dim3_meta):
+        assert meta["state_slot"] == "location"
+        assert meta["state_slot_source"] == "stale_metadata_heuristic"
+        assert meta["dependency_source_slot"] == "location"
+        assert meta["dependency_source_slot_source"] == "stale_metadata_heuristic"
+        assert meta["dependency_target_family"] == "local_context"
+
+    forbidden_observation_keys = {
+        "M_old",
+        "M_new",
+        "dependency_source_slot",
+        "dependency_target_family",
+        "explanation",
+        "relevant_session_index",
+        "state_slot",
+        "state_slot_source",
+    }
+    for observation in row["observations"]:
+        assert forbidden_observation_keys.isdisjoint(observation["metadata"])
+
+
+def test_convert_stale_sample_labels_multiple_dependency_families() -> None:
+    employer_sample = _toy_stale_instance()
+    employer_sample.update({
+        "M_old": "User works at Acme.",
+        "M_new": "User works at Globex.",
+        "explanation": "The user's employer changed from Acme to Globex.",
+        "probing_queries": {"dim3_query": "Which benefits portal should I use?"},
+    })
+    employer_row = convert_stale_sample(employer_sample, top_k=4)
+    employer_meta = employer_row["queries"][0]["metadata"]
+    assert employer_meta["state_slot"] == "organization.employer"
+    assert employer_meta["dependency_source_slot"] == "organization.employer"
+    assert employer_meta["dependency_target_family"] == "employment_context"
+
+    dietary_sample = _toy_stale_instance()
+    dietary_sample.update({
+        "M_old": "User can eat peanuts.",
+        "M_new": "User is now allergic to peanuts.",
+        "explanation": "The user's peanut allergy status changed.",
+        "probing_queries": {"dim3_query": "What restaurant meal is safe to order?"},
+    })
+    dietary_row = convert_stale_sample(dietary_sample, top_k=4)
+    dietary_meta = dietary_row["queries"][0]["metadata"]
+    assert dietary_meta["state_slot"] == "health.*.status"
+    assert dietary_meta["dependency_source_slot"] == "health.*.status"
+    assert dietary_meta["dependency_target_family"] == "food_safety_context"
+
+
 def test_convert_stale_file_writes_jsonl(tmp_path: Path) -> None:
     src = tmp_path / "stale_in.json"
     src.write_text(json.dumps([_toy_stale_instance("u1"), _toy_stale_instance("u2", "T2")]))
