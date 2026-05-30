@@ -197,6 +197,7 @@ PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper 
 PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --bundle-output results/adamem_state_demo_bundle
 PYTHONPATH=src python -m adamem.cli verify-demo results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --json
+PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --evidence-manifest results/paper_study_bundle/paper_readiness.json --json
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl
 PYTHONPATH=src python -m adamem.eval --dataset benchmarks/dynamic_state_transfer.jsonl --baselines semantic_only semantic_state_readout semantic_state_adjudication semantic_state_propagation_adjudication state_readout --max-cases 1 --experiment-output results/dynamic_state_transfer_smoke.json

@@ -348,3 +348,132 @@ def test_demo_readiness_fails_when_bundle_verification_fails(tmp_path: Path, cap
     assert report["demo_verification_valid"] is False
     assert report["checklist"]["demo_bundle_verified"] is False
     assert report["blocked_paper_claims"][0] == "demo_bundle_verification_failed"
+
+
+def test_demo_readiness_uses_external_not_ready_evidence_manifest(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    output = tmp_path / "bundle"
+    evidence = tmp_path / "report.manifest.json"
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--bundle-output",
+        str(output),
+        "--json",
+    ])
+    capsys.readouterr()
+    evidence.write_text(
+        json.dumps(
+            {
+                "paper_readiness": {
+                    "status": "answer_candidate_with_model_coverage",
+                    "paper_claim_ready": False,
+                    "paper_claim_blockers": [
+                        "official_or_faithful_baseline_reproduction",
+                    ],
+                    "top_next_actions": [
+                        {
+                            "action": "add_official_or_faithful_baseline_reproduction",
+                            "count": 1,
+                        }
+                    ],
+                    "experiment_count": 2,
+                }
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    main([
+        "demo-readiness",
+        str(output),
+        "--evidence-manifest",
+        str(evidence),
+        "--json",
+    ])
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["walkthrough_ready"] is True
+    assert report["paper_claim_ready"] is False
+    assert report["external_evidence_ready"] is False
+    assert report["external_evidence_manifest_count"] == 1
+    assert report["external_evidence_manifests"][0]["status"] == (
+        "answer_candidate_with_model_coverage"
+    )
+    assert report["blocked_paper_claims"] == [
+        "external_evidence_not_paper_ready",
+        "official_or_faithful_baseline_reproduction",
+        "mainstream_approximations_not_sota_ready",
+    ]
+    assert report["next_actions"] == [
+        "add_official_or_faithful_baseline_reproduction",
+    ]
+
+
+def test_demo_readiness_marks_paper_ready_with_ready_external_evidence(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    output = tmp_path / "bundle"
+    readiness = tmp_path / "paper_readiness.json"
+    main([
+        "demo",
+        "--dataset",
+        "benchmarks/dynamic_state_transfer.jsonl",
+        "--all-queries",
+        "--baseline-profile",
+        "paper",
+        "--bundle-output",
+        str(output),
+        "--json",
+    ])
+    capsys.readouterr()
+    readiness.write_text(
+        json.dumps(
+            {
+                "status": "sota_candidate_with_model_coverage",
+                "paper_claim_ready": True,
+                "paper_claim_blockers": [],
+                "experiment_count": 4,
+                "benchmark_coverage_complete": True,
+                "method_coverage_complete": True,
+                "complete_study_model_group_count": 2,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    main([
+        "demo-readiness",
+        str(output),
+        "--evidence-manifest",
+        str(readiness),
+        "--json",
+    ])
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["walkthrough_ready"] is True
+    assert report["paper_claim_ready"] is True
+    assert report["external_evidence_ready"] is True
+    assert report["blocked_paper_claims"] == []
+    assert report["supported_claims"] == [
+        "interactive_demo_walkthrough_ready",
+        "interactive_demo_backed_by_paper_ready_evidence",
+    ]
+    assert report["next_actions"] == [
+        "attach_paper_readiness_report_to_demo_walkthrough",
+    ]

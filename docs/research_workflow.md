@@ -36,6 +36,7 @@ PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper 
 PYTHONPATH=src python -m adamem.cli demo --all-queries --baseline-profile paper --bundle-output results/adamem_state_demo_bundle
 PYTHONPATH=src python -m adamem.cli verify-demo results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --json
+PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --evidence-manifest results/paper_study_bundle/paper_readiness.json --json
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json
@@ -108,6 +109,11 @@ Outputs:
   interactive walkthrough from paper-level claims. A valid API-free demo bundle
   may be walkthrough-ready while still blocking answer-accuracy, SOTA,
   generality, public-transfer, and multi-model robustness claims.
+- Attach one or more `--evidence-manifest` paths when real reporting bundles
+  exist. Accepted inputs are report manifests, batch manifests, or
+  `paper_readiness.json` outputs containing `paper_readiness`; paper claims are
+  unblocked only when the demo is verified and every attached evidence manifest
+  reports `paper_claim_ready=True`.
 - Baseline synthetic/JSONL tables.
 - Baseline reproduction plan artifacts:
   `baseline_reproduction_plan.json` and

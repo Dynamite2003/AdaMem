@@ -57,6 +57,43 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 demo readiness evidence manifests
+
+- Extended `adamem.cli demo-readiness` with repeatable
+  `--evidence-manifest <path>`.
+- Purpose:
+  - Connect the interactive demo artifact to future real STALE/public-transfer
+    reporting bundles without weakening the current API-free claim boundary.
+  - Let a verified demo remain walkthrough-ready while paper claims stay blocked
+    until attached reporting manifests say `paper_claim_ready=True`.
+  - Make the transition from API-free demo to paper-backed demo auditable by
+    consuming report manifests, batch manifests, or direct `paper_readiness.json`
+    outputs.
+- Gate behavior:
+  - With no evidence manifest, behavior remains conservative:
+    `paper_claim_ready=False` and the report lists answer, SOTA, generality,
+    public-transfer, baseline-reproduction, and robustness blockers.
+  - With evidence manifests that are not paper-ready, the report keeps
+    `paper_claim_ready=False`, adds `external_evidence_not_paper_ready`, and
+    carries over blockers and next actions from the attached manifest.
+  - With a verified demo and all attached evidence manifests paper-ready, the
+    report sets `paper_claim_ready=True` and adds
+    `interactive_demo_backed_by_paper_ready_evidence` as a supported claim.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_cli.py -q` -> `13 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `246 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke with a not-ready evidence manifest:
+    `PYTHONPATH=src python -m adamem.cli demo-readiness /tmp/adamem_demo_evidence_bundle --evidence-manifest /tmp/adamem_not_ready_manifest.json --json`
+    -> `walkthrough_ready=True`, `paper_claim_ready=False`,
+    `external_evidence_ready=False`, and the external baseline-reproduction
+    blocker was preserved.
+  - CLI smoke with a ready `paper_readiness.json`:
+    `PYTHONPATH=src python -m adamem.cli demo-readiness /tmp/adamem_demo_evidence_bundle/demo_manifest.json --evidence-manifest /tmp/adamem_ready_paper_readiness.json --json`
+    -> `walkthrough_ready=True`, `paper_claim_ready=True`, and supported claims
+    included `interactive_demo_backed_by_paper_ready_evidence`.
+
 ### 2026-05-30 demo paper-readiness gate
 
 - Added `PYTHONPATH=src python -m adamem.cli demo-readiness <bundle-or-manifest> --json`.

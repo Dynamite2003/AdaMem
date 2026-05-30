@@ -77,6 +77,15 @@ def main(argv: list[str] | None = None) -> None:
 
     demo_readiness = sub.add_parser("demo-readiness", help="Audit paper-readiness boundaries for a demo bundle")
     demo_readiness.add_argument("bundle", help="Path to a demo bundle directory or demo_manifest.json")
+    demo_readiness.add_argument(
+        "--evidence-manifest",
+        action="append",
+        default=[],
+        help=(
+            "Attach a reporting bundle manifest, batch_manifest.json, or "
+            "paper_readiness.json as external paper evidence"
+        ),
+    )
     demo_readiness.add_argument("--json", action="store_true", help="Emit a machine-readable readiness report")
 
     args = parser.parse_args(argv)
@@ -128,7 +137,10 @@ def main(argv: list[str] | None = None) -> None:
         if not report["valid"]:
             raise SystemExit(1)
     elif args.command == "demo-readiness":
-        report = _demo_bundle_paper_readiness(args.bundle)
+        report = _demo_bundle_paper_readiness(
+            args.bundle,
+            evidence_manifests=tuple(args.evidence_manifest),
+        )
         if args.json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
@@ -529,7 +541,11 @@ def _verify_demo_bundle(bundle: str | Path) -> dict[str, Any]:
     }
 
 
-def _demo_bundle_paper_readiness(bundle: str | Path) -> dict[str, Any]:
+def _demo_bundle_paper_readiness(
+    bundle: str | Path,
+    *,
+    evidence_manifests: tuple[str, ...] = (),
+) -> dict[str, Any]:
     verification = _verify_demo_bundle(bundle)
     payload = _load_verified_demo_payload(verification)
     evidence_boundary = (
@@ -571,41 +587,44 @@ def _demo_bundle_paper_readiness(bundle: str | Path) -> dict[str, Any]:
         and all(status for status in baseline_statuses.values()),
     }
     walkthrough_ready = all(checklist.values())
-    paper_claim_blockers = list(blocked_claims.keys())
-    for blocker in (
-        "end_to_end_answer_evaluation",
-        "official_or_faithful_mainstream_baselines",
-        "public_benchmark_generality",
-        "multi_model_judge_robustness",
-    ):
-        if blocker not in paper_claim_blockers:
-            paper_claim_blockers.append(blocker)
+    evidence_reports = _demo_paper_evidence_reports(evidence_manifests)
+    evidence_ready = bool(evidence_reports) and all(
+        report.get("paper_claim_ready") for report in evidence_reports
+    )
+    paper_claim_ready = walkthrough_ready and evidence_ready
+    paper_claim_blockers = _demo_paper_claim_blockers(
+        blocked_claims=blocked_claims,
+        evidence_reports=evidence_reports,
+        evidence_ready=evidence_ready,
+    )
     if mainstream_approximations and "mainstream_approximations_not_sota_ready" not in paper_claim_blockers:
-        paper_claim_blockers.append("mainstream_approximations_not_sota_ready")
+        if not evidence_ready:
+            paper_claim_blockers.append("mainstream_approximations_not_sota_ready")
     if not verification.get("valid"):
         paper_claim_blockers.insert(0, "demo_bundle_verification_failed")
 
-    next_actions = [
-        "run_stale_answer_judge_evaluation",
-        "replace_or_validate_mainstream_approximation_baselines",
-        "run_public_transfer_benchmark",
-        "add_multi_answer_and_judge_model_robustness",
-    ]
+    next_actions = _demo_readiness_next_actions(
+        verification_valid=bool(verification.get("valid")),
+        evidence_reports=evidence_reports,
+        evidence_ready=evidence_ready,
+    )
     if not verification.get("valid"):
         next_actions.insert(0, "fix_demo_bundle_verification")
 
+    supported_claims = ["interactive_demo_walkthrough_ready"] if walkthrough_ready else []
+    if paper_claim_ready:
+        supported_claims.append("interactive_demo_backed_by_paper_ready_evidence")
     return {
         "schema_version": "adamem.demo_paper_readiness.v1",
         "bundle": str(bundle),
         "walkthrough_ready": walkthrough_ready,
-        "paper_claim_ready": False,
+        "paper_claim_ready": paper_claim_ready,
         "demo_verification_valid": bool(verification.get("valid")),
+        "external_evidence_ready": evidence_ready,
+        "external_evidence_manifest_count": len(evidence_reports),
+        "external_evidence_manifests": evidence_reports,
         "checklist": checklist,
-        "supported_claims": (
-            ["interactive_demo_walkthrough_ready"]
-            if walkthrough_ready
-            else []
-        ),
+        "supported_claims": supported_claims,
         "blocked_paper_claims": paper_claim_blockers,
         "evidence_boundary": evidence_boundary,
         "baseline_profile": payload.get("baseline_profile"),
@@ -614,6 +633,111 @@ def _demo_bundle_paper_readiness(bundle: str | Path) -> dict[str, Any]:
         "mainstream_api_free_approximations": mainstream_approximations,
         "next_actions": next_actions,
         "demo_verification": verification,
+    }
+
+
+def _demo_paper_claim_blockers(
+    *,
+    blocked_claims: dict[str, Any],
+    evidence_reports: list[dict[str, Any]],
+    evidence_ready: bool,
+) -> list[str]:
+    if evidence_ready:
+        return []
+    if evidence_reports:
+        blockers = ["external_evidence_not_paper_ready"]
+        for report in evidence_reports:
+            blockers.extend(str(blocker) for blocker in report.get("paper_claim_blockers") or [])
+        return list(dict.fromkeys(blockers))
+
+    blockers = list(blocked_claims.keys())
+    for blocker in (
+        "end_to_end_answer_evaluation",
+        "official_or_faithful_mainstream_baselines",
+        "public_benchmark_generality",
+        "multi_model_judge_robustness",
+    ):
+        if blocker not in blockers:
+            blockers.append(blocker)
+    return blockers
+
+
+def _demo_readiness_next_actions(
+    *,
+    verification_valid: bool,
+    evidence_reports: list[dict[str, Any]],
+    evidence_ready: bool,
+) -> list[str]:
+    if evidence_ready:
+        return ["attach_paper_readiness_report_to_demo_walkthrough"]
+    if evidence_reports:
+        actions = []
+        for report in evidence_reports:
+            actions.extend(str(action) for action in report.get("next_actions") or [])
+        return list(dict.fromkeys(actions)) or [
+            "resolve_external_paper_readiness_blockers",
+        ]
+    if verification_valid:
+        return [
+            "run_stale_answer_judge_evaluation",
+            "replace_or_validate_mainstream_approximation_baselines",
+            "run_public_transfer_benchmark",
+            "add_multi_answer_and_judge_model_robustness",
+        ]
+    return [
+        "run_stale_answer_judge_evaluation",
+        "replace_or_validate_mainstream_approximation_baselines",
+        "run_public_transfer_benchmark",
+        "add_multi_answer_and_judge_model_robustness",
+    ]
+
+
+def _demo_paper_evidence_reports(paths: tuple[str, ...]) -> list[dict[str, Any]]:
+    return [_demo_paper_evidence_report(Path(path)) for path in paths]
+
+
+def _demo_paper_evidence_report(path: Path) -> dict[str, Any]:
+    errors: list[str] = []
+    payload = _read_json_object(path, errors=errors, label="evidence manifest")
+    readiness = payload.get("paper_readiness") if isinstance(payload.get("paper_readiness"), dict) else payload
+    if not isinstance(readiness, dict):
+        readiness = {}
+    blockers = list(
+        readiness.get("paper_claim_blockers")
+        or payload.get("paper_claim_blockers")
+        or []
+    )
+    top_actions = readiness.get("top_next_actions") or []
+    next_actions = [
+        str(item.get("action"))
+        for item in top_actions
+        if isinstance(item, dict) and item.get("action")
+    ]
+    if not next_actions:
+        action_counts = readiness.get("action_counts") or {}
+        if isinstance(action_counts, dict):
+            next_actions = [str(action) for action in action_counts]
+    paper_claim_ready = bool(
+        readiness.get("paper_claim_ready")
+        if "paper_claim_ready" in readiness
+        else payload.get("paper_claim_ready")
+    )
+    if errors:
+        paper_claim_ready = False
+        blockers = list(dict.fromkeys([*blockers, "evidence_manifest_unreadable"]))
+        next_actions = list(dict.fromkeys([*next_actions, "fix_evidence_manifest"]))
+    return {
+        "path": str(path),
+        "schema_version": payload.get("schema_version"),
+        "status": readiness.get("status"),
+        "paper_claim_ready": paper_claim_ready,
+        "paper_claim_blockers": blockers,
+        "experiment_count": readiness.get("experiment_count") or payload.get("experiment_count"),
+        "benchmark_coverage_complete": readiness.get("benchmark_coverage_complete"),
+        "method_coverage_complete": readiness.get("method_coverage_complete"),
+        "complete_study_model_group_count": readiness.get("complete_study_model_group_count"),
+        "next_actions": next_actions,
+        "errors": errors,
     }
 
 
@@ -967,6 +1091,16 @@ def _format_demo_bundle_paper_readiness(report: dict[str, Any]) -> str:
         lines.append("")
         lines.append("## Blocked Paper Claims")
         lines.extend(f"- `{claim}`" for claim in report["blocked_paper_claims"])
+    if report.get("external_evidence_manifests"):
+        lines.append("")
+        lines.append("## External Evidence")
+        for evidence in report["external_evidence_manifests"]:
+            lines.append(
+                "- "
+                f"`{evidence.get('path')}`: "
+                f"ready=`{bool(evidence.get('paper_claim_ready'))}` "
+                f"status=`{evidence.get('status') or '<missing>'}`"
+            )
     if report.get("mainstream_api_free_approximations"):
         lines.append("")
         lines.append("## API-Free Mainstream Approximations")
