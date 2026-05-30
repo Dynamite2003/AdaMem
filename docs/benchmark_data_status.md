@@ -183,22 +183,33 @@ Latest question-side audit:
 - Type-level state-transfer candidates: `262/451`:
   `dynamic-environment`, `dynamic-environment-abs`, `procedure`,
   `procedure-abs`, and `errors-gotchas`.
-- Query text produced state-slot signals for `341/451` questions, but `152`
+- Query text produced state-slot signals for `447/451` questions, but `189`
   of these signals came from `static-environment*` questions. Treat those as
   router-audit warnings, not automatic state-transfer candidates.
-- Dominant inferred slots were `location`, `workflow.*`, `resource.*.status`,
-  `task.*.status`, and `runtime.*.status`.
+- Dominant inferred slots were `location`, `employment.benefits_portal`,
+  `workflow.*`, `resource.*.status`, `task.*.status`, and
+  `runtime.*.status`.
+- The question-side audit now reports a `by_question_type_state_slot` matrix
+  and `static_state_slot_signals`, so router warnings can be separated by
+  question type before any trajectory-side state-evidence claims are made.
+- Current public audit after adding environment-gotcha/tool-output slots:
+  `environment.*.gotcha` appears in `1` dynamic-environment question, while
+  `errors-gotchas` remains a type-level candidate group with no text-only
+  `environment.*.gotcha` query signal. Treat this as evidence that
+  trajectory-side state evidence is required before making a gotcha-transfer
+  claim.
 
 Latest text-only transfer split:
 
-- Selected questions: `60`.
+- Selected questions: `50`.
 - Transfer questions: `40`, with `10` each from `dynamic-environment`,
   `dynamic-environment-abs`, `procedure`, and `procedure-abs`.
-- Static controls: `20`, split into `10` router-warning controls and `10`
-  clean static controls.
-- Domain/environment coverage after domain round-robin selection:
-  `35` enterprise/workarena questions and `25` web questions across
-  WebArena Reddit, CMS, and OneStopShop.
+- Static controls: `10` router-warning controls. The current router marks all
+  static-environment questions with some state-slot signal, so there are no
+  clean static controls in the latest split.
+- Domain/environment coverage should be recomputed after restoring the
+  prepared trajectories, because the latest split is intentionally controlled
+  by text-only eligibility and router-warning availability.
 - `errors-gotchas` had `29` source candidates but `0` eligible text-only
   candidates because all require images. Include them only in a separate
   multimodal setting.

@@ -39,8 +39,8 @@ def test_longmemeval_v2_question_audit_marks_state_transfer_candidates() -> None
             "domain": "web",
             "environment": "shopping",
             "question_type": "static-environment",
-            "question": "What button is visible on the product page?",
-            "answer": "Checkout",
+            "question": "What city is visible on the product page?",
+            "answer": "Seattle",
             "eval_function": "norm_phrase_set_match",
         },
         {
@@ -88,12 +88,19 @@ def test_longmemeval_v2_question_audit_marks_state_transfer_candidates() -> None
     assert all("answer" not in record for record in records)
     assert summary["total_questions"] == 4
     assert summary["state_transfer_candidate_questions"] == 3
-    assert summary["inferred_state_slot_questions"] == 3
+    assert summary["inferred_state_slot_questions"] == 4
     assert summary["with_haystack_questions"] == 3
     assert summary["missing_haystack_questions"] == 1
     assert summary["by_question_type"]["dynamic-environment"]["state_transfer_candidates"] == 1
     assert summary["by_state_slot"]["runtime.*.status"] == 1
     assert summary["by_state_slot"]["environment.*.gotcha"] == 1
+    assert summary["by_question_type_state_slot"]["errors-gotchas"] == {
+        "environment.*.gotcha": 1,
+    }
+    assert summary["by_question_type_state_slot"]["static-environment"] == {
+        "location": 1,
+    }
+    assert summary["static_state_slot_signals"] == {"location": 1}
     assert summary["by_candidate_reason"]["question_type"] == 3
 
 
@@ -148,6 +155,7 @@ def test_write_longmemeval_v2_question_audit_outputs_records_summary_and_report(
     assert summary["total_questions"] == 1
     assert "LongMemEval-V2 Question Audit" in report
     assert "dynamic-environment" in report
+    assert "Question Type State Slots" in report
 
 
 def test_longmemeval_v2_transfer_split_balances_candidates_and_controls() -> None:

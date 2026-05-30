@@ -251,7 +251,13 @@ Current implementation:
   grouping fine-grained slots such as `runtime.*.status` and concrete runtime
   extracted slots under `runtime`.
 - The family mapping also covers resource, workflow, task, location, health,
-  employment, relationship/role, preference, and schedule state.
+  employment, relationship/role, preference, schedule, environment, and
+  tool-output state.
+- Question-side audits now report `by_question_type_state_slot` and
+  `static_state_slot_signals`. The latest public audit shows broad
+  question-router signals (`447/451` questions, including `189` static
+  questions), so question text alone is not enough for a transfer claim.
+  Prepared trajectory-side state evidence must remain the gate.
 
 Required next evidence:
 

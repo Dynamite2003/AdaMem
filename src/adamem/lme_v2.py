@@ -877,6 +877,8 @@ def summarize_longmemeval_v2_question_audit(records: Iterable[Mapping[str, Any]]
         "by_environment": _count_by(record_list, "environment"),
         "by_question_type": _question_type_summary(record_list),
         "by_state_slot": _state_slot_summary(record_list),
+        "by_question_type_state_slot": _question_type_state_slot_summary(record_list),
+        "static_state_slot_signals": _static_state_slot_signal_summary(record_list),
         "by_candidate_reason": _candidate_reason_summary(record_list),
     }
 
@@ -917,6 +919,27 @@ def longmemeval_v2_question_audit_report(summary: Mapping[str, Any]) -> str:
     ])
     for slot, count in sorted(summary["by_state_slot"].items(), key=lambda item: (-item[1], item[0])):
         lines.append(f"| {slot} | {count} |")
+    lines.extend([
+        "",
+        "## Question Type State Slots",
+        "",
+        "| question_type | state_slot | questions |",
+        "| --- | --- | ---: |",
+    ])
+    for question_type, slots in sorted((summary.get("by_question_type_state_slot") or {}).items()):
+        for slot, count in sorted(slots.items(), key=lambda item: (-item[1], item[0])):
+            lines.append(f"| {question_type} | {slot} | {count} |")
+    static_signals = summary.get("static_state_slot_signals") or {}
+    if static_signals:
+        lines.extend([
+            "",
+            "## Static State-Slot Signals",
+            "",
+            "| state_slot | static questions |",
+            "| --- | ---: |",
+        ])
+        for slot, count in sorted(static_signals.items(), key=lambda item: (-item[1], item[0])):
+            lines.append(f"| {slot} | {count} |")
     return "\n".join(lines) + "\n"
 
 
@@ -1369,6 +1392,26 @@ def _state_slot_summary(records: list[Mapping[str, Any]]) -> dict[str, int]:
         for slot in record.get("inferred_state_slots") or []:
             counts[str(slot)] = counts.get(str(slot), 0) + 1
     return counts
+
+
+def _question_type_state_slot_summary(
+    records: list[Mapping[str, Any]],
+) -> dict[str, dict[str, int]]:
+    summary: dict[str, dict[str, int]] = {}
+    for record in records:
+        question_type = str(record.get("question_type") or "<missing>")
+        slots = summary.setdefault(question_type, {})
+        for slot in record.get("inferred_state_slots") or []:
+            key = str(slot)
+            slots[key] = slots.get(key, 0) + 1
+    return {question_type: slots for question_type, slots in summary.items() if slots}
+
+
+def _static_state_slot_signal_summary(records: list[Mapping[str, Any]]) -> dict[str, int]:
+    return _state_slot_summary([
+        record for record in records
+        if str(record.get("question_type") or "").startswith("static-environment")
+    ])
 
 
 def _candidate_reason_summary(records: list[Mapping[str, Any]]) -> dict[str, int]:

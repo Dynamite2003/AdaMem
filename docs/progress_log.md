@@ -57,6 +57,48 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 LongMemEval-V2 question-type state-slot matrix
+
+- Extended LongMemEval-V2 question-side audits with:
+  - `by_question_type_state_slot`
+  - `static_state_slot_signals`
+- Purpose:
+  - Show whether a routed state slot appears in transfer-like question types or
+    mostly in static-control questions.
+  - Make query-router over-trigger visible before using LongMemEval-V2 as
+    state-transfer evidence.
+- Re-ran public LongMemEval-V2 question audit on `451` questions with the
+  current router:
+  - Type-level transfer candidates: `262/451`.
+  - Query-state-slot signals: `447/451`.
+  - Static-question state-slot signals: `189`.
+  - `environment.*.gotcha`: `1` dynamic-environment question.
+  - `errors-gotchas`: `29` type-level candidates, but no text-only
+    `environment.*.gotcha` query signal in the current audit.
+- Re-ran the text-only transfer split from the updated audit:
+  - Selected questions: `50`.
+  - Transfer questions: `40`.
+  - Static controls: `10` router-warning controls.
+  - Clean static controls are currently unavailable because all static
+    questions have some query-router state-slot signal.
+- Interpretation:
+  - This is useful negative evidence for the paper workflow. The question
+    router alone is too broad for LongMemEval-V2; prepared trajectory-side
+    state-evidence audit must be the gate for any transfer/generalization
+    claim.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py::test_longmemeval_v2_question_audit_marks_state_transfer_candidates tests/test_lme_v2.py::test_write_longmemeval_v2_question_audit_outputs_records_summary_and_report -q`
+    -> `2 passed`
+  - `PYTHONPATH=src python -m adamem.lme_v2 question-audit --output-dir results/longmemeval_v2_question_audit --json`
+    -> public audit completed, no answer fields written to audit records.
+  - `PYTHONPATH=src python -m adamem.lme_v2 transfer-split --audit-records results/longmemeval_v2_question_audit/longmemeval_v2_question_audit.records.jsonl --output-dir results/longmemeval_v2_transfer_split --transfer-per-type 10 --control-per-group 10 --json`
+    -> split regenerated from current audit records.
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py -q`
+    -> `15 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `230 passed`
+
 ### 2026-05-30 environment gotcha and tool-output state slots
 
 - Added LongMemEval-V2/AMA-inspired non-personal state slots to the
