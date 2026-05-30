@@ -190,6 +190,10 @@ Use [docs/benchmark_readiness.md](docs/benchmark_readiness.md) before starting
 API-backed benchmark work; it records the current local data/key blockers and
 the recommended STALE pilot launch order.
 
+Use [docs/real_evaluation_quickstart.md](docs/real_evaluation_quickstart.md)
+when keys and full STALE data are available and the next step is to start a
+real API-backed pilot immediately.
+
 Useful API-free commands:
 
 ```bash
