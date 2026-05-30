@@ -8,6 +8,7 @@ from adamem.lme_v2 import (
     longmemeval_v2_prepared_state_evidence_records,
     longmemeval_v2_question_audit_records,
     select_longmemeval_v2_transfer_split,
+    state_slot_family,
     summarize_longmemeval_v2_prepared_state_evidence,
     summarize_longmemeval_v2_question_audit,
     summarize_longmemeval_v2_trajectory_manifest,
@@ -568,6 +569,8 @@ def test_longmemeval_v2_prepared_state_evidence_audit_matches_query_slots() -> N
     assert by_id["q_dynamic"]["matching_state_evidence_candidate_count"] == 1
     assert by_id["q_dynamic"]["state_evidence_candidates"][0]["state_slot"] == "runtime.staging_build_runner_status.status"
     assert by_id["q_dynamic"]["state_evidence_candidates"][0]["state_value"] == "offline"
+    assert by_id["q_dynamic"]["expected_state_families"] == ["runtime"]
+    assert by_id["q_dynamic"]["matching_state_evidence_families"] == ["runtime"]
     assert by_id["q_static"]["state_available"] is False
     assert by_id["q_static"]["expected_state_slots"] == []
     assert all("answer" not in candidate for record in records for candidate in record["state_evidence_candidates"])
@@ -577,6 +580,7 @@ def test_longmemeval_v2_prepared_state_evidence_audit_matches_query_slots() -> N
     assert summary["missing_trajectory_total"] == 1
     assert summary["by_split"]["transfer"]["with_matching_state_evidence"] == 1
     assert summary["by_state_slot"]["runtime.*.status"]["matching_state_evidence_candidate_total"] == 1
+    assert summary["by_state_family"]["runtime"]["matching_state_evidence_candidate_total"] == 1
 
 
 def test_write_longmemeval_v2_prepared_state_evidence_audit_outputs_artifacts(tmp_path: Path) -> None:
@@ -622,7 +626,20 @@ def test_write_longmemeval_v2_prepared_state_evidence_audit_outputs_artifacts(tm
 
     assert records[0]["state_available"] is True
     assert summary["with_matching_state_evidence"] == 1
+    assert summary["by_state_family"]["runtime"]["with_matching_state_evidence"] == 1
     assert "Prepared State Evidence Audit" in report
+    assert "State Families" in report
+    assert "| runtime | 1 | 1 | 0 | 1 |" in report
+
+
+def test_state_slot_family_groups_cross_benchmark_slots() -> None:
+    assert state_slot_family("runtime.*.status") == "runtime"
+    assert state_slot_family("runtime.staging_build_runner_status.status") == "runtime"
+    assert state_slot_family("resource.database.status") == "resource"
+    assert state_slot_family("workflow.checkout") == "workflow"
+    assert state_slot_family("location") == "location"
+    assert state_slot_family("local.gym") == "location"
+    assert state_slot_family("organization.employer") == "employment"
 
 
 def _audit_record(

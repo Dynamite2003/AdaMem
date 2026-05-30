@@ -664,6 +664,10 @@ Completed API-free foundations:
   default when the labels are present, so state/dependency subsets can report
   current recall, stale exposure, premise-correction opportunity, and
   correction-hit rates.
+- LongMemEval-V2 prepared state-evidence audits group expected and matching
+  slots into cross-benchmark state families such as `runtime`, `resource`,
+  `workflow`, `location`, and `employment`. This mirrors STALE opportunity
+  grouping for transfer analysis without using answers in runtime memory.
 - Semantic-only state-aware ablations, so state mechanisms can be tested
   independently of default full AdaMem scoring.
 - Synthetic tests for State Resolution, Premise Resistance, and Implicit Policy

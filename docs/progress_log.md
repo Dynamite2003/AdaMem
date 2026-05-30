@@ -277,6 +277,45 @@ extraction on those true state cases.
   - `git diff --check` -> no issues
   - `PYTHONPATH=src python -m pytest -q` -> `222 passed`
 
+### 2026-05-30 LongMemEval-V2 state-family transfer audit
+
+- Added cross-benchmark state-family grouping for LongMemEval-V2 prepared
+  state-evidence audits.
+- Each prepared state-evidence record now includes:
+  - `expected_state_families`
+  - `matching_state_evidence_families`
+- The summary/report now includes `by_state_family`, grouping fine-grained
+  slots into families such as:
+  - `runtime`
+  - `resource`
+  - `workflow`
+  - `task`
+  - `location`
+  - `health`
+  - `employment`
+  - `relationship_role`
+  - `preference`
+  - `schedule`
+- Purpose:
+  - Carry the STALE opportunity-family analysis idea into a public transfer
+    benchmark rather than overfitting paper diagnostics to STALE labels.
+  - Prepare family-level transfer evidence for LongMemEval-V2's dynamic state
+    tracking, workflow knowledge, and premise-awareness abilities.
+- Current local data boundary:
+  - The repo currently has LongMemEval-V2 split/manifest artifacts under
+    `results/longmemeval_v2_*`.
+  - The corresponding local `data/longmemeval-v2` haystack and trajectory
+    source files are absent, so a real prepared state-evidence rerun was not
+    possible in this checkpoint.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py::test_longmemeval_v2_prepared_state_evidence_audit_matches_query_slots tests/test_lme_v2.py::test_write_longmemeval_v2_prepared_state_evidence_audit_outputs_artifacts tests/test_lme_v2.py::test_state_slot_family_groups_cross_benchmark_slots -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_lme_v2.py tests/test_pilot.py -q`
+    -> `21 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `223 passed`
+
 ### 2026-05-30 day-end checkpoint after dependency evidence
 
 - Current git state before this checkpoint:

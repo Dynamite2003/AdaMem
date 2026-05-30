@@ -226,6 +226,42 @@ Required next evidence:
 - Keep opportunity coverage separate from final answer accuracy until
   API-backed answer/judge runs are available.
 
+### 0e. Cross-Benchmark State-Family Transfer Audit
+
+Hypothesis:
+
+A stale-memory mechanism should not be evaluated only on one dataset's surface
+slot names. For transfer benchmarks, state opportunities should be aggregated
+into stable families such as runtime, resource, workflow, location, and
+employment so analysis can compare where the mechanism generalizes.
+
+Literature basis:
+
+- LongMemEval-V2 frames web-agent memory around static state recall, dynamic
+  state tracking, workflow knowledge, environment gotchas, and premise
+  awareness.
+- STALE emphasizes downstream policy adaptation when one changed state should
+  invalidate related behavior.
+
+Current implementation:
+
+- LongMemEval-V2 prepared state-evidence records now include
+  `expected_state_families` and `matching_state_evidence_families`.
+- The prepared state-evidence summary/report includes `by_state_family`,
+  grouping fine-grained slots such as `runtime.*.status` and concrete runtime
+  extracted slots under `runtime`.
+- The family mapping also covers resource, workflow, task, location, health,
+  employment, relationship/role, preference, and schedule state.
+
+Required next evidence:
+
+- Restore or download the LongMemEval-V2 haystack/trajectory files and rerun
+  the prepared state-evidence audit on the selected transfer split.
+- Compare state-family coverage against STALE opportunity-family coverage
+  before claiming generality.
+- Use family-level failures to decide which state extractors or dependency
+  topologies need expansion.
+
 ### 1. Current-State Authority Layer
 
 Hypothesis:

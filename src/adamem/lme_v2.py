@@ -299,6 +299,7 @@ def longmemeval_v2_prepared_state_evidence_records(
     for record in split_records:
         question_id = str(record.get("id") or record.get("question_id") or "")
         expected_slots = _split_record_state_slots(record)
+        expected_families = sorted({state_slot_family(slot) for slot in expected_slots if slot})
         trajectory_ids = [str(item) for item in haystacks.get(question_id, [])]
         matched_trajectory_ids = [trajectory_id for trajectory_id in trajectory_ids if trajectory_id in trajectories]
         missing_trajectory_ids = sorted(set(trajectory_ids) - set(matched_trajectory_ids))
@@ -331,11 +332,16 @@ def longmemeval_v2_prepared_state_evidence_records(
             "abstention": record.get("abstention"),
             "image_required": record.get("image_required"),
             "expected_state_slots": expected_slots,
+            "expected_state_families": expected_families,
             "haystack_trajectory_count": len(trajectory_ids),
             "matched_trajectory_count": len(matched_trajectory_ids),
             "missing_trajectory_ids": missing_trajectory_ids,
             "all_state_evidence_candidate_count": all_candidate_count,
             "matching_state_evidence_candidate_count": matching_candidate_count,
+            "matching_state_evidence_families": sorted({
+                state_slot_family(str(candidate.get("state_slot") or ""))
+                for candidate in matching_candidates
+            }),
             "state_evidence_candidates": matching_candidates,
             "state_evidence_truncated": truncated,
             "state_available": bool(expected_slots) and matching_candidate_count > 0,
@@ -375,6 +381,7 @@ def summarize_longmemeval_v2_prepared_state_evidence(
         "by_split": _state_evidence_group_summary(record_list, "split"),
         "by_question_type": _state_evidence_group_summary(record_list, "question_type"),
         "by_state_slot": _state_evidence_slot_summary(record_list),
+        "by_state_family": _state_evidence_family_summary(record_list),
         "label_policy": "answers/eval labels are not read; only selected split metadata, haystacks, and trajectory runtime text are used",
     }
     return summary
@@ -429,6 +436,18 @@ def longmemeval_v2_prepared_state_evidence_report(summary: Mapping[str, Any]) ->
     for slot, aggregate in sorted(summary["by_state_slot"].items()):
         lines.append(
             f"| {slot} | {aggregate['questions']} | {aggregate['with_matching_state_evidence']} | "
+            f"{aggregate['without_matching_state_evidence']} | {aggregate['matching_state_evidence_candidate_total']} |"
+        )
+    lines.extend([
+        "",
+        "## State Families",
+        "",
+        "| state_family | questions | with evidence | without evidence | candidates |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ])
+    for family, aggregate in sorted(summary["by_state_family"].items()):
+        lines.append(
+            f"| {family} | {aggregate['questions']} | {aggregate['with_matching_state_evidence']} | "
             f"{aggregate['without_matching_state_evidence']} | {aggregate['matching_state_evidence_candidate_total']} |"
         )
     return "\n".join(lines) + "\n"
@@ -1120,6 +1139,56 @@ def _state_evidence_slot_summary(records: list[Mapping[str, Any]]) -> dict[str, 
             if record.get("missing_trajectory_ids"):
                 aggregate["questions_with_missing_trajectories"] += 1
     return summary
+
+
+def _state_evidence_family_summary(records: list[Mapping[str, Any]]) -> dict[str, dict[str, int]]:
+    summary: dict[str, dict[str, int]] = {}
+    for record in records:
+        expected_slots = [str(slot) for slot in record.get("expected_state_slots") or []]
+        families = sorted({state_slot_family(slot) for slot in expected_slots if slot})
+        for family in families:
+            aggregate = summary.setdefault(family, _empty_state_evidence_aggregate())
+            family_candidates = [
+                candidate for candidate in record.get("state_evidence_candidates") or []
+                if state_slot_family(str(candidate.get("state_slot") or "")) == family
+            ]
+            aggregate["questions"] += 1
+            aggregate["with_expected_state_slots"] += 1
+            if family_candidates:
+                aggregate["with_matching_state_evidence"] += 1
+            else:
+                aggregate["without_matching_state_evidence"] += 1
+            aggregate["matching_state_evidence_candidate_total"] += len(family_candidates)
+            if record.get("missing_trajectory_ids"):
+                aggregate["questions_with_missing_trajectories"] += 1
+    return summary
+
+
+def state_slot_family(slot: str) -> str:
+    normalized = str(slot or "").strip()
+    if not normalized:
+        return "unknown"
+    if normalized.startswith("runtime."):
+        return "runtime"
+    if normalized.startswith("resource."):
+        return "resource"
+    if normalized.startswith("workflow."):
+        return "workflow"
+    if normalized.startswith("task."):
+        return "task"
+    if normalized.startswith("location") or normalized.startswith("local."):
+        return "location"
+    if normalized.startswith("health."):
+        return "health"
+    if normalized.startswith("relationship.") or normalized.startswith("role."):
+        return "relationship_role"
+    if normalized.startswith("organization.") or normalized.startswith("employment."):
+        return "employment"
+    if normalized.startswith("preference."):
+        return "preference"
+    if normalized.startswith("schedule."):
+        return "schedule"
+    return normalized.split(".", 1)[0].replace("*", "wildcard") or "unknown"
 
 
 def _empty_state_evidence_aggregate() -> dict[str, int]:
