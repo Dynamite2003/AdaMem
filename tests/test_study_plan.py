@@ -102,6 +102,92 @@ def test_build_paper_study_plan_covers_method_and_model_matrix(tmp_path: Path) -
     )
 
 
+def test_build_paper_study_plan_can_include_lme_v2_prepared_workflow(tmp_path: Path) -> None:
+    questions = tmp_path / "questions.jsonl"
+    trajectories = tmp_path / "trajectories.jsonl"
+    haystack = tmp_path / "haystack.json"
+    split_records = tmp_path / "split.records.jsonl"
+    for path in (questions, trajectories, haystack, split_records):
+        path.write_text("{}\n", encoding="utf-8")
+
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=tmp_path / "stale.jsonl",
+        transfer_dataset=tmp_path / "transfer.jsonl",
+        stale_source=None,
+        transfer_source=None,
+        ama_output_source=None,
+        lme_v2_questions=questions,
+        lme_v2_trajectories=trajectories,
+        lme_v2_haystack=haystack,
+        lme_v2_split_records=split_records,
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+    )
+    command_names = [command["name"] for command in plan["commands"]]
+    listing = study_plan_command_listing(plan)
+
+    assert "longmemeval_v2_validate_prepared_split" in command_names
+    assert "longmemeval_v2_state_family_audit" in command_names
+    assert "longmemeval_v2_prepared_retrieval" in command_names
+    state_audit = next(
+        command for command in listing
+        if command["name"] == "longmemeval_v2_state_family_audit"
+    )
+    validation = next(
+        command for command in plan["commands"]
+        if command["name"] == "longmemeval_v2_validate_prepared_split"
+    )
+    assert state_audit["stage"] == "transfer_prep"
+    assert "summary" in state_audit["output_keys"]
+    assert validation["outputs"]["summary"].endswith(
+        "longmemeval_v2_prepared_split_validation.json"
+    )
+    assert plan["data_sources"]["longmemeval_v2_questions"] == str(questions)
+
+
+def test_validate_paper_study_plan_requires_lme_v2_prepared_sources(tmp_path: Path) -> None:
+    stale_dataset = tmp_path / "stale.jsonl"
+    transfer_dataset = tmp_path / "transfer.jsonl"
+    stale_dataset.write_text("{}\n", encoding="utf-8")
+    transfer_dataset.write_text("{}\n", encoding="utf-8")
+
+    plan = build_paper_study_plan(
+        output_dir=tmp_path / "study",
+        stale_dataset=stale_dataset,
+        transfer_dataset=transfer_dataset,
+        stale_source=None,
+        transfer_source=None,
+        ama_output_source=None,
+        lme_v2_questions=tmp_path / "missing_questions.jsonl",
+        lme_v2_trajectories=tmp_path / "missing_trajectories.jsonl",
+        lme_v2_haystack=tmp_path / "missing_haystack.json",
+        lme_v2_split_records=tmp_path / "missing_split.records.jsonl",
+        answer_models=["openai:gpt-a", "gemini:gemini-a"],
+        judge_models=["openai:gpt-j", "gemini:gemini-j"],
+        state_extractor_model="openai:gpt-extractor",
+    )
+
+    validation = validate_paper_study_plan(plan)
+
+    assert validation["execution_ready"] is False
+    assert "source_paths_exist" in validation["missing_requirements"]
+    assert "longmemeval_v2_questions" in validation["missing_sources"]
+
+
+def test_build_paper_study_plan_requires_complete_lme_v2_prepared_sources(tmp_path: Path) -> None:
+    try:
+        build_paper_study_plan(
+            output_dir=tmp_path / "study",
+            lme_v2_questions=tmp_path / "questions.jsonl",
+        )
+    except ValueError as exc:
+        assert "LongMemEval-V2 prepared workflow requires" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected incomplete LME-V2 source set to fail")
+
+
 def test_build_smoke_study_plan_is_api_free_and_execution_ready() -> None:
     plan = build_smoke_study_plan(output_dir="results/smoke")
 

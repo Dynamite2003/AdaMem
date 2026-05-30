@@ -65,6 +65,10 @@ SMOKE_JUDGE_MODELS = ["mock:judge-a", "mock:judge-b"]
 SMOKE_STATE_EXTRACTOR_MODEL = "mock:state-extractor"
 DEFAULT_STALE_SOURCE = "data/T1_T2_400_FULL.json"
 DEFAULT_TRANSFER_SOURCE = "data/longmemeval_s_cleaned.json"
+DEFAULT_LME_V2_QUESTIONS = "data/longmemeval-v2/questions.jsonl"
+DEFAULT_LME_V2_TRAJECTORIES = "data/longmemeval-v2/text_transfer_60/longmemeval_v2_selected_trajectories.jsonl"
+DEFAULT_LME_V2_HAYSTACK = "data/longmemeval-v2/haystacks/lme_v2_small.json"
+DEFAULT_LME_V2_SPLIT_RECORDS = "results/longmemeval_v2_transfer_split/longmemeval_v2_transfer_split.records.jsonl"
 STUDY_SETTINGS_SCHEMA_VERSION = "adamem.study_settings.v1"
 
 
@@ -104,6 +108,10 @@ def build_paper_study_plan(
     limit_per_stale_type: int = 50,
     transfer_max_cases: int = 60,
     ama_limit: int = 20,
+    lme_v2_questions: str | Path | None = None,
+    lme_v2_trajectories: str | Path | None = None,
+    lme_v2_haystack: str | Path | None = None,
+    lme_v2_split_records: str | Path | None = None,
     answer_models: Iterable[str] = DEFAULT_ANSWER_MODELS,
     judge_models: Iterable[str] = DEFAULT_JUDGE_MODELS,
     state_extractor_model: str = "<state_extractor_provider>:<state_extractor_model>",
@@ -174,6 +182,20 @@ def build_paper_study_plan(
         transfer_max_cases=transfer_max_cases,
         top_k=top_k,
     ))
+    if _has_lme_v2_prepared_sources(
+        lme_v2_questions,
+        lme_v2_trajectories,
+        lme_v2_haystack,
+        lme_v2_split_records,
+    ):
+        commands.extend(_lme_v2_prepared_commands(
+            output,
+            questions=lme_v2_questions,
+            trajectories=lme_v2_trajectories,
+            haystack=lme_v2_haystack,
+            split_records=lme_v2_split_records,
+            top_k=top_k,
+        ))
     if ama_output_source is not None:
         commands.append(_ama_retrieval_command(
             output,
@@ -192,6 +214,18 @@ def build_paper_study_plan(
         "experiment": "planned_paper_study",
         "baselines": all_baselines,
     }])
+    data_sources = {
+        "primary_stale": str(stale_source) if stale_source is not None else None,
+        "transfer_long_memory": str(transfer_source) if transfer_source is not None else None,
+    }
+    if lme_v2_questions is not None:
+        data_sources["longmemeval_v2_questions"] = str(lme_v2_questions)
+    if lme_v2_trajectories is not None:
+        data_sources["longmemeval_v2_trajectories"] = str(lme_v2_trajectories)
+    if lme_v2_haystack is not None:
+        data_sources["longmemeval_v2_haystack"] = str(lme_v2_haystack)
+    if lme_v2_split_records is not None:
+        data_sources["longmemeval_v2_split_records"] = str(lme_v2_split_records)
     plan = {
         "schema_version": "adamem.paper_study_plan.v1",
         "output_dir": str(output),
@@ -212,10 +246,7 @@ def build_paper_study_plan(
             "transfer_long_memory": str(transfer_dataset),
             "transfer_ama_source": str(ama_output_source) if ama_output_source is not None else None,
         },
-        "data_sources": {
-            "primary_stale": str(stale_source) if stale_source is not None else None,
-            "transfer_long_memory": str(transfer_source) if transfer_source is not None else None,
-        },
+        "data_sources": data_sources,
         "split": {
             "stale_types": list(stale_types),
             "limit_per_stale_type": limit_per_stale_type,
@@ -319,6 +350,11 @@ def build_api_pilot_settings_template(
         "transfer_dataset": None,
         "include_ama": False,
         "ama_output_source": None,
+        "include_lme_v2_prepared": False,
+        "lme_v2_questions": DEFAULT_LME_V2_QUESTIONS,
+        "lme_v2_trajectories": DEFAULT_LME_V2_TRAJECTORIES,
+        "lme_v2_haystack": DEFAULT_LME_V2_HAYSTACK,
+        "lme_v2_split_records": DEFAULT_LME_V2_SPLIT_RECORDS,
         "stale_types": ["T1", "T2"],
         "limit_per_stale_type": 5,
         "transfer_max_cases": 20,
@@ -409,6 +445,7 @@ def build_study_plan_from_settings(
             raise ValueError(f"unsupported study settings profile: {profile}")
         include_data_prep = bool(settings.get("include_data_prep", True))
         include_ama = bool(settings.get("include_ama", False))
+        include_lme_v2 = bool(settings.get("include_lme_v2_prepared", False))
         plan = build_paper_study_plan(
             output_dir=output,
             stale_dataset=settings.get("stale_dataset"),
@@ -420,6 +457,22 @@ def build_study_plan_from_settings(
             limit_per_stale_type=int(settings.get("limit_per_stale_type") or 50),
             transfer_max_cases=int(settings.get("transfer_max_cases") or 60),
             ama_limit=int(settings.get("ama_limit") or 0),
+            lme_v2_questions=(
+                settings.get("lme_v2_questions", DEFAULT_LME_V2_QUESTIONS)
+                if include_lme_v2 else None
+            ),
+            lme_v2_trajectories=(
+                settings.get("lme_v2_trajectories", DEFAULT_LME_V2_TRAJECTORIES)
+                if include_lme_v2 else None
+            ),
+            lme_v2_haystack=(
+                settings.get("lme_v2_haystack", DEFAULT_LME_V2_HAYSTACK)
+                if include_lme_v2 else None
+            ),
+            lme_v2_split_records=(
+                settings.get("lme_v2_split_records", DEFAULT_LME_V2_SPLIT_RECORDS)
+                if include_lme_v2 else None
+            ),
             answer_models=settings.get("answer_models") or DEFAULT_ANSWER_MODELS,
             judge_models=settings.get("judge_models") or DEFAULT_JUDGE_MODELS,
             state_extractor_model=settings.get("state_extractor_model") or "<state_extractor_provider>:<state_extractor_model>",
@@ -775,7 +828,7 @@ def validate_paper_study_plan(
             "required": True,
             "exists": exists,
         }
-        if not exists and name in missing_datasets:
+        if not exists and (name in missing_datasets or name.startswith("longmemeval_v2_")):
             missing_sources.append(name)
 
     requirements = plan.get("model_requirements") or {}
@@ -814,6 +867,8 @@ def validate_paper_study_plan(
     missing_requirements: list[str] = []
     if missing_datasets:
         missing_requirements.append("dataset_paths_exist")
+    if missing_sources:
+        missing_requirements.append("source_paths_exist")
     if placeholders:
         missing_requirements.append("replace_model_placeholders")
     if len(set(answer_models)) < minimum_answer_models:
@@ -1382,6 +1437,123 @@ def _ama_retrieval_command(
     )
 
 
+def _has_lme_v2_prepared_sources(*values: str | Path | None) -> bool:
+    provided = [value not in {None, ""} for value in values]
+    if any(provided) and not all(provided):
+        raise ValueError(
+            "LongMemEval-V2 prepared workflow requires questions, trajectories, "
+            "haystack, and split records together"
+        )
+    return all(provided)
+
+
+def _lme_v2_prepared_commands(
+    output: Path,
+    *,
+    questions: str | Path,
+    trajectories: str | Path,
+    haystack: str | Path,
+    split_records: str | Path,
+    top_k: int,
+) -> list[PlannedCommand]:
+    validation_dir = output / "longmemeval_v2_prepared_validation"
+    state_evidence_dir = output / "longmemeval_v2_prepared_state_evidence"
+    pilot_dir = output / "longmemeval_v2_prepared_pilot"
+    validate_command = [
+        "python",
+        "-m",
+        "adamem.lme_v2",
+        "validate-prep",
+        "--split-records",
+        str(split_records),
+        "--questions",
+        str(questions),
+        "--haystack",
+        str(haystack),
+        "--trajectories",
+        str(trajectories),
+        "--output-dir",
+        str(validation_dir),
+        "--json",
+    ]
+    state_evidence_command = [
+        "python",
+        "-m",
+        "adamem.lme_v2",
+        "state-evidence-audit",
+        "--split-records",
+        str(split_records),
+        "--haystack",
+        str(haystack),
+        "--trajectories",
+        str(trajectories),
+        "--output-dir",
+        str(state_evidence_dir),
+        "--json",
+    ]
+    pilot_command = [
+        "python",
+        "-m",
+        "adamem.pilot",
+        "lme-v2-prepared",
+        "--questions",
+        str(questions),
+        "--trajectories",
+        str(trajectories),
+        "--haystack",
+        str(haystack),
+        "--split-records",
+        str(split_records),
+        "--output-dir",
+        str(pilot_dir),
+        "--baselines",
+        *DEFAULT_TRANSFER_BASELINES,
+        "--top-k",
+        str(top_k),
+        "--json",
+    ]
+    return [
+        PlannedCommand(
+            name="longmemeval_v2_validate_prepared_split",
+            stage="data_prep",
+            purpose="Validate LongMemEval-V2 prepared question, haystack, and trajectory sources.",
+            claim_boundary="data validation only; no method evidence",
+            command=validate_command,
+            outputs={
+                "output_dir": str(validation_dir),
+                "summary": str(validation_dir / "longmemeval_v2_prepared_split_validation.json"),
+                "report": str(validation_dir / "longmemeval_v2_prepared_split_validation.md"),
+            },
+        ),
+        PlannedCommand(
+            name="longmemeval_v2_state_family_audit",
+            stage="transfer_prep",
+            purpose="Audit prepared LongMemEval-V2 trajectories for state-family evidence coverage.",
+            claim_boundary="state-evidence coverage only; not answer accuracy",
+            command=state_evidence_command,
+            outputs={
+                "output_dir": str(state_evidence_dir),
+                "records": str(state_evidence_dir / "longmemeval_v2_prepared_state_evidence.records.jsonl"),
+                "summary": str(state_evidence_dir / "longmemeval_v2_prepared_state_evidence.summary.json"),
+                "report": str(state_evidence_dir / "longmemeval_v2_prepared_state_evidence.report.md"),
+            },
+        ),
+        PlannedCommand(
+            name="longmemeval_v2_prepared_retrieval",
+            stage="transfer",
+            purpose="Run API-free LongMemEval-V2 prepared retrieval diagnostics with state-family claim evidence.",
+            claim_boundary="transfer diagnostic; not generated answer accuracy",
+            command=pilot_command,
+            outputs={
+                "output_dir": str(pilot_dir),
+                "experiment": str(pilot_dir / "longmemeval_v2_prepared.answer.experiment.json"),
+                "records": str(pilot_dir / "longmemeval_v2_prepared.answer.records.jsonl"),
+                "report": str(pilot_dir / "longmemeval_v2_prepared.answer.report.md"),
+            },
+        ),
+    ]
+
+
 def _reporting_command(output: Path) -> PlannedCommand:
     report_dir = output / "report_bundle"
     outputs = {
@@ -1770,6 +1942,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--no-data-prep", action="store_true", help="Omit dataset conversion commands.")
     parser.add_argument("--ama-output-source", default="results/ama_public_20_full/ama_public_20.raw.jsonl")
     parser.add_argument("--no-ama", action="store_true", help="Omit the AMA transfer command.")
+    parser.add_argument("--include-lme-v2-prepared", action="store_true", help="Add LongMemEval-V2 prepared validation, state-family audit, and retrieval commands.")
+    parser.add_argument("--lme-v2-questions", default=DEFAULT_LME_V2_QUESTIONS)
+    parser.add_argument("--lme-v2-trajectories", default=DEFAULT_LME_V2_TRAJECTORIES)
+    parser.add_argument("--lme-v2-haystack", default=DEFAULT_LME_V2_HAYSTACK)
+    parser.add_argument("--lme-v2-split-records", default=DEFAULT_LME_V2_SPLIT_RECORDS)
     parser.add_argument("--stale-types", nargs="+", default=["T1", "T2"])
     parser.add_argument("--limit-per-stale-type", type=int, default=50)
     parser.add_argument("--transfer-max-cases", type=int, default=60)
@@ -1868,6 +2045,10 @@ def main(argv: list[str] | None = None) -> None:
                     stale_source=None if args.no_data_prep else args.stale_source,
                     transfer_source=None if args.no_data_prep else args.transfer_source,
                     ama_output_source=None if args.no_ama else args.ama_output_source,
+                    lme_v2_questions=args.lme_v2_questions if args.include_lme_v2_prepared else None,
+                    lme_v2_trajectories=args.lme_v2_trajectories if args.include_lme_v2_prepared else None,
+                    lme_v2_haystack=args.lme_v2_haystack if args.include_lme_v2_prepared else None,
+                    lme_v2_split_records=args.lme_v2_split_records if args.include_lme_v2_prepared else None,
                     stale_types=args.stale_types,
                     limit_per_stale_type=args.limit_per_stale_type,
                     transfer_max_cases=args.transfer_max_cases,

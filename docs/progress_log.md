@@ -57,6 +57,41 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 LongMemEval-V2 prepared workflow in study plans
+
+- Added optional paper-study planning support for the prepared LongMemEval-V2
+  public-transfer workflow:
+  - `--include-lme-v2-prepared` on `adamem.study_plan`.
+  - Settings-template field `include_lme_v2_prepared`.
+  - Source path fields for questions, selected trajectories, haystack, and
+    prepared split records.
+- The generated plan now appends exact commands for:
+  - `longmemeval_v2_validate_prepared_split`
+  - `longmemeval_v2_state_family_audit`
+  - `longmemeval_v2_prepared_retrieval`
+- Purpose:
+  - Make tomorrow's API-free transfer continuation executable from the same
+    paper-study command index as STALE diagnostics and reporting.
+  - Keep the LongMemEval-V2 state-family audit connected to the main
+    reproducibility workflow instead of leaving it as a manual side path.
+- Data boundary:
+  - The option only records prepared-source paths and planned commands.
+  - It does not make answer-accuracy or SOTA claims, and it still requires the
+    local LongMemEval-V2 question, trajectory, haystack, and split-record
+    artifacts before the prepared commands are execution-ready.
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py::test_build_paper_study_plan_can_include_lme_v2_prepared_workflow tests/test_study_plan.py::test_build_paper_study_plan_requires_complete_lme_v2_prepared_sources tests/test_study_plan.py::test_build_paper_study_plan_covers_method_and_model_matrix -q`
+    -> `3 passed`
+  - `PYTHONPATH=src python -m adamem.study_plan --output-dir /tmp/adamem_lme_v2_prepared_plan --answer-model openai:gpt-a --answer-model gemini:gemini-a --judge-model openai:gpt-j --judge-model gemini:gemini-j --state-extractor-model openai:gpt-extractor --no-ama --include-lme-v2-prepared --json`
+    -> generated a command index containing the three LongMemEval-V2 prepared
+    workflow commands; validation reports `source_paths_exist` as a blocker
+    until the local data sources are present.
+  - `PYTHONPATH=src python -m pytest tests/test_study_plan.py -q`
+    -> `40 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `226 passed`
+
 ### 2026-05-30 STALE evaluation-only opportunity labels
 
 - Added STALE converter query metadata for state/dependency opportunity

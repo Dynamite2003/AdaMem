@@ -69,6 +69,7 @@ PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/ada
 PYTHONPATH=src python -m adamem.study_plan --profile smoke --output-dir /tmp/adamem_study_smoke_run --run --dry-run --stage diagnostic --json
 PYTHONPATH=src python -m adamem.study_plan --plan /tmp/adamem_study_smoke/paper_study_plan.json --run --dry-run --stage diagnostic --json
 PYTHONPATH=src python -m adamem.study_plan --output-dir results/paper_study_plan --json
+PYTHONPATH=src python -m adamem.study_plan --output-dir results/paper_study_plan --include-lme-v2-prepared --json
 ```
 
 Outputs:
@@ -118,6 +119,12 @@ Outputs:
   command is present. By default, generated full benchmark JSONL files are
   written under `OUTPUT_DIR/data/` instead of `benchmarks/`, because full
   conversions can be large and should not become tracked fixtures by accident.
+- Paper-study plans can include the prepared LongMemEval-V2 transfer workflow
+  with `--include-lme-v2-prepared`. This adds exact commands for prepared-split
+  validation, state-family evidence auditing, and API-free prepared retrieval
+  diagnostics. The option requires question, trajectory, haystack, and split
+  record paths together, and the generated plan records those paths under
+  `data_sources` for reproducibility.
 - API-free smoke-study plan artifacts can be generated with
   `--profile smoke`. This profile uses tracked mini/local fixtures and mock
   providers only. It validates conversion-free STALE diagnostics, mock
