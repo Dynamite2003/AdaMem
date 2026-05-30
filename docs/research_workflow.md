@@ -644,6 +644,9 @@ Completed API-free foundations:
   raw STALE JSON, runs retrieval diagnostics, writes case records, paper
   tables, claim-audit report bundles, and a manifest. It also accepts already
   converted AdaMem JSONL with `--input-format adamem-jsonl` for smoke runs.
+  Converted JSONL inputs are automatically backfilled with STALE query-only
+  opportunity labels in the pipeline output dataset, and the manifest records
+  an `opportunity_summary` plus observation-metadata violation count.
 - STALE conversion can add evaluation-only query metadata for inferred
   state/dependency opportunities such as `state_slot`,
   `dependency_source_slot`, and `dependency_target_family`. These labels are

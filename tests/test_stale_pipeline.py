@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from adamem.stale_pipeline import main, run_stale_diagnostic_pipeline
+from adamem.stale_pipeline import main, run_stale_diagnostic_pipeline, stale_opportunity_summary
 
 
 def test_stale_diagnostic_pipeline_writes_reproducible_artifacts(tmp_path: Path) -> None:
@@ -32,6 +32,8 @@ def test_stale_diagnostic_pipeline_writes_reproducible_artifacts(tmp_path: Path)
     assert experiment["run_type"] == "stale_retrieval_diagnostics"
     assert experiment["notes"]["raw_stale_input"] == str(source)
     assert experiment["notes"]["ground_truth_runtime_use"] == "forbidden"
+    assert experiment["notes"]["stale_opportunity_summary"]["state_slots"] == {"location": 3}
+    assert manifest["opportunity_summary"]["dependency_families"] == {"location->local_context": 2}
     tables = Path(artifacts["paper_tables_markdown"]).read_text(encoding="utf-8")
     assert "premise correction hit" in tables
 
@@ -74,6 +76,25 @@ def test_stale_pipeline_accepts_converted_jsonl_input(tmp_path: Path) -> None:
     assert manifest["input_format"] == "adamem-jsonl"
     assert manifest["converted_cases"] == 1
     assert Path(manifest["artifacts"]["converted_dataset"]).exists()
+    assert manifest["opportunity_summary"]["state_slots"] == {"location": 1}
+    assert manifest["opportunity_summary"]["dependency_families"] == {"location->local_context": 1}
+
+    converted_row = json.loads(Path(manifest["artifacts"]["converted_dataset"]).read_text(encoding="utf-8"))
+    assert converted_row["queries"][0]["metadata"]["state_slot"] == "location"
+    assert converted_row["queries"][0]["metadata"]["dependency_source_slot"] == "location"
+    assert "state_slot" not in converted_row["observations"][0]["metadata"]
+
+
+def test_stale_opportunity_summary_detects_observation_metadata_violations(tmp_path: Path) -> None:
+    converted = tmp_path / "stale_bad.jsonl"
+    row = _toy_adamem_case()
+    row["observations"][0]["metadata"]["state_slot"] = "location"
+    converted.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    summary = stale_opportunity_summary(converted)
+
+    assert summary["queries"] == 1
+    assert summary["observation_metadata_violations"] == 1
 
 
 def _toy_stale_instance() -> dict:

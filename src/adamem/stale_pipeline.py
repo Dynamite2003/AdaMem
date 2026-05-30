@@ -10,7 +10,7 @@ from typing import Any, Iterable
 
 from adamem.baselines import BaselineSpec, select_baselines
 from adamem.bench import MemoryQACase, load_jsonl_cases
-from adamem.convert import convert_stale_file
+from adamem.convert import annotate_stale_jsonl_file, convert_stale_file
 from adamem.diagnostics import (
     diagnostic_case_records,
     diagnostic_failure_report,
@@ -55,9 +55,7 @@ def run_stale_diagnostic_pipeline(
     converted_path = output / f"{run_name}.adamem.jsonl"
     resolved_format = _resolve_input_format(source, input_format)
     if resolved_format == "adamem-jsonl":
-        if source.resolve() != converted_path.resolve():
-            shutil.copyfile(source, converted_path)
-        converted_count = len(load_jsonl_cases(converted_path))
+        converted_count = _annotate_or_copy_stale_jsonl(source, converted_path)
     else:
         converted_count = convert_stale_file(
             source,
@@ -66,6 +64,7 @@ def run_stale_diagnostic_pipeline(
             limit=convert_limit,
             types=type_list or None,
         )
+    opportunity_summary = stale_opportunity_summary(converted_path)
 
     cases = _select_cases(
         load_jsonl_cases(converted_path),
@@ -108,6 +107,7 @@ def run_stale_diagnostic_pipeline(
             "converted_cases": converted_count,
             "diagnostic_cases": len(cases),
             "diagnostic_case_records": len(case_records),
+            "stale_opportunity_summary": opportunity_summary,
             "top_k": top_k,
         },
         command=list(sys.argv),
@@ -141,6 +141,7 @@ def run_stale_diagnostic_pipeline(
         "input_format": resolved_format,
         "stale_types": type_list,
         "limit_per_stale_type": limit_per_stale_type,
+        "opportunity_summary": opportunity_summary,
         "artifacts": {
             "converted_dataset": str(converted_path),
             "experiment": str(experiment_path),
@@ -156,6 +157,75 @@ def run_stale_diagnostic_pipeline(
     manifest["artifacts"]["manifest"] = str(manifest_path)
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return manifest
+
+
+def _annotate_or_copy_stale_jsonl(source: Path, output: Path) -> int:
+    if source.resolve() == output.resolve():
+        tmp = output.with_suffix(output.suffix + ".annotating.tmp")
+        count = annotate_stale_jsonl_file(source, tmp)
+        shutil.move(tmp, output)
+        return count
+    return annotate_stale_jsonl_file(source, output)
+
+
+def stale_opportunity_summary(path: str | Path) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "queries": 0,
+        "state_labeled_queries": 0,
+        "dependency_labeled_queries": 0,
+        "state_slots": {},
+        "dependency_families": {},
+        "observation_metadata_violations": 0,
+    }
+    with Path(path).open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                continue
+            for observation in row.get("observations") or []:
+                if not isinstance(observation, dict):
+                    continue
+                metadata = observation.get("metadata")
+                if _has_stale_opportunity_runtime_metadata(metadata if isinstance(metadata, dict) else {}):
+                    summary["observation_metadata_violations"] += 1
+            for query in row.get("queries") or []:
+                if not isinstance(query, dict):
+                    continue
+                metadata = query.get("metadata")
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                summary["queries"] += 1
+                state_slot = str(metadata.get("state_slot") or "")
+                if state_slot:
+                    summary["state_labeled_queries"] += 1
+                    _increment(summary["state_slots"], state_slot)
+                dependency_source = str(metadata.get("dependency_source_slot") or "")
+                if dependency_source:
+                    summary["dependency_labeled_queries"] += 1
+                    family = str(metadata.get("dependency_target_family") or "unknown")
+                    _increment(summary["dependency_families"], f"{dependency_source}->{family}")
+    return summary
+
+
+def _has_stale_opportunity_runtime_metadata(metadata: dict[str, Any]) -> bool:
+    forbidden = {
+        "M_old",
+        "M_new",
+        "dependency_source_slot",
+        "dependency_source_slot_source",
+        "dependency_target_family",
+        "explanation",
+        "relevant_session_index",
+        "state_slot",
+        "state_slot_source",
+    }
+    return any(key in metadata for key in forbidden)
+
+
+def _increment(counts: dict[str, Any], key: str) -> None:
+    counts[key] = int(counts.get(key) or 0) + 1
 
 
 def _resolve_input_format(source: Path, input_format: str) -> str:

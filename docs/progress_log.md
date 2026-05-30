@@ -125,6 +125,42 @@ extraction on those true state cases.
   - `git diff --check` -> no issues
   - `PYTHONPATH=src python -m pytest -q` -> `220 passed`
 
+### 2026-05-30 STALE pipeline opportunity summary
+
+- Integrated query-only STALE opportunity backfill into
+  `adamem.stale_pipeline` for `--input-format adamem-jsonl`.
+- The pipeline now records an `opportunity_summary` in both the manifest and
+  experiment notes:
+  - total queries;
+  - state-labeled queries;
+  - dependency-labeled queries;
+  - counts by `state_slot`;
+  - counts by `dependency_source_slot -> dependency_target_family`;
+  - observation metadata violations.
+- Purpose:
+  - Make existing converted STALE fixtures useful for paper-facing grouped
+    diagnostics without requiring raw STALE JSON to be present.
+  - Keep leakage auditing attached to the actual pipeline artifact, not only to
+    standalone converter tests.
+- Local smoke:
+  - `PYTHONPATH=src python -m adamem.stale_pipeline benchmarks/stale_mini.jsonl --input-format adamem-jsonl --output-dir /tmp/adamem_stale_pipeline_annotated_smoke --run-name stale_mini_annotated_pipeline --baselines semantic_only semantic_state_propagation_adjudication --max-cases 2 --json`
+    -> ran successfully.
+  - Manifest opportunity summary:
+    - queries: `6`
+    - state-labeled queries: `6`
+    - dependency-labeled queries: `4`
+    - state slots: `{"location": 6}`
+    - dependency families: `{"location->local_context": 4}`
+    - observation metadata violations: `0`
+- Validation so far:
+  - `PYTHONPATH=src python -m pytest tests/test_stale_pipeline.py -q`
+    -> `4 passed`
+  - `python -m compileall -q src` -> no issues
+  - `PYTHONPATH=src python -m pytest tests/test_stale_pipeline.py tests/test_stale.py -q`
+    -> `21 passed`
+  - `git diff --check` -> no issues
+  - `PYTHONPATH=src python -m pytest -q` -> `221 passed`
+
 ### 2026-05-30 day-end checkpoint after dependency evidence
 
 - Current git state before this checkpoint:
