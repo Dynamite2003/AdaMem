@@ -7,9 +7,14 @@ import pytest
 from adamem.baselines import (
     baseline_registry,
     baseline_report,
+    baseline_reproduction_packet_template,
     baseline_reproduction_plan,
     baseline_reproduction_plan_markdown,
+    load_baseline_reproduction_packet,
+    main as baseline_main,
     select_baselines,
+    verify_baseline_reproduction_packet,
+    write_baseline_reproduction_packet_template,
     write_baseline_reproduction_plan,
 )
 from adamem.bench import default_ablation_configs
@@ -126,6 +131,94 @@ def test_baseline_reproduction_plan_records_official_baseline_requirements(tmp_p
         "markdown_path": str(tmp_path / "baseline-plan" / "baseline_reproduction_plan.md"),
     }
     assert artifact_plan["target_count"] == 3
+
+
+def test_baseline_reproduction_packet_template_and_validator_require_real_evidence(
+    tmp_path,
+) -> None:
+    packet = baseline_reproduction_packet_template("a_mem_evolution")
+
+    report = verify_baseline_reproduction_packet(packet, packet_path=tmp_path / "packet.json")
+
+    assert packet["schema_version"] == "adamem.baseline_reproduction_packet.v1"
+    assert packet["baseline"] == "a_mem_evolution"
+    assert packet["evidence"]["external_repo_url"] == "https://github.com/WujiangXu/A-mem"
+    assert report["ready_for_sota_baseline_claim"] is False
+    assert report["missing_evidence"] == [
+        "external_repo_commit",
+        "adapter_or_command",
+        "dataset_split_and_question_ids",
+        "model_provider_model_and_sampling_settings",
+        "prompt_or_memory_policy_if_applicable",
+        "raw_case_records_path",
+        "metric_mapping_to_adamem_outputs",
+        "license_and_dependency_notes",
+    ]
+    assert "required_evidence_incomplete" in report["blockers"]
+    assert "raw_case_records_missing" in report["blockers"]
+
+
+def test_baseline_reproduction_packet_validator_accepts_complete_packet(tmp_path) -> None:
+    records = tmp_path / "amem.records.jsonl"
+    records.write_text("{\"case_id\":\"q1\",\"baseline\":\"a_mem_evolution\"}\n", encoding="utf-8")
+    packet = baseline_reproduction_packet_template("a_mem_evolution")
+    packet["implementation_status"] = "official_reproduction"
+    packet["evidence"].update({
+        "external_repo_commit": "abc1234",
+        "adapter_or_command": "python run_amem.py --split stale_ids.txt",
+        "dataset_split_and_question_ids": "results/stale_split/question_ids.jsonl",
+        "model_provider_model_and_sampling_settings": "openai:gpt-4o-mini temperature=0 seed=0",
+        "prompt_or_memory_policy_if_applicable": "official A-MEM memory update prompt from commit abc1234",
+        "raw_case_records_path": str(records),
+        "metric_mapping_to_adamem_outputs": "Maps answer text and retrieved context to AdaMem stale_llm_judge records.",
+        "license_and_dependency_notes": "MIT-compatible local reproduction environment recorded.",
+    })
+    packet["baseline_provenance_update"].update({
+        "implementation_status": "official_reproduction",
+        "reproduction_note": "Official A-MEM code path run on the same STALE split.",
+    })
+
+    report = verify_baseline_reproduction_packet(packet, packet_path=tmp_path / "packet.json")
+
+    assert report["ready_for_sota_baseline_claim"] is True
+    assert report["blockers"] == []
+    assert report["missing_evidence"] == []
+    assert report["baseline_provenance_update"]["implementation_status"] == (
+        "official_reproduction"
+    )
+
+
+def test_write_and_load_baseline_reproduction_packet_template(tmp_path) -> None:
+    packet_path = tmp_path / "amem_packet.json"
+
+    artifacts = write_baseline_reproduction_packet_template("a_mem_evolution", packet_path)
+    packet = load_baseline_reproduction_packet(packet_path)
+
+    assert artifacts == {"packet_path": str(packet_path)}
+    assert packet["baseline"] == "a_mem_evolution"
+    assert packet["required_evidence"]
+
+
+def test_baseline_reproduction_packet_cli_template_and_verify(tmp_path, capsys) -> None:
+    packet_path = tmp_path / "amem_packet.json"
+
+    baseline_main([
+        "--packet-template",
+        "a_mem_evolution",
+        "--packet-output",
+        str(packet_path),
+        "--json",
+    ])
+
+    template_result = json.loads(capsys.readouterr().out)
+    assert template_result == {"packet_path": str(packet_path)}
+    with pytest.raises(SystemExit) as exc:
+        baseline_main(["--verify-packet", str(packet_path), "--json"])
+
+    assert exc.value.code == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["ready_for_sota_baseline_claim"] is False
+    assert "required_evidence_incomplete" in report["blockers"]
 
 
 def test_experiment_record_writes_reproducible_json(tmp_path) -> None:

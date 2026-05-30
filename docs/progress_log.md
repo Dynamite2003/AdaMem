@@ -57,6 +57,48 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 baseline reproduction evidence packets
+
+- Added `adamem.baselines` support for baseline reproduction packets:
+  - `--packet-template BASELINE --packet-output PATH`
+  - `--verify-packet PATH`
+- Purpose:
+  - Turn the SOTA blocker "missing official/faithful mainstream baseline
+    reproduction" into a concrete evidence packet with machine-checkable
+    required fields.
+  - Keep A-MEM, Zep/Graphiti, and Mem0 API-free approximations useful as local
+    mechanism controls while preventing them from being mistaken for strong
+    SOTA baselines.
+  - Provide the exact provenance update that a future official or faithful run
+    may copy into experiment `baseline_provenance` only after verification.
+- Packet schema:
+  - `adamem.baseline_reproduction_packet.v1`
+  - target baseline and source metadata
+  - intended `implementation_status` of `official_reproduction` or
+    `faithful_reimplementation`
+  - required evidence fields: external repo URL, repo commit,
+    adapter/command, dataset split and question ids, model/sampling settings,
+    prompt or memory policy, raw case records path, metric mapping, and
+    license/dependency notes
+  - `baseline_provenance_update` for the eventual experiment artifact
+- Verification schema:
+  - `adamem.baseline_reproduction_packet_verification.v1`
+  - checks schema, known target baseline, official/faithful status, required
+    evidence completeness, raw case record existence, and provenance status
+    plus reproduction note.
+- Validation:
+  - `PYTHONPATH=src python -m pytest tests/test_experiments.py -q`
+    -> `9 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `252 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+  - CLI smoke generated `/tmp/adamem_baseline_packet/amem_packet.json` and
+    verified it failed as expected with `required_evidence_incomplete`,
+    `raw_case_records_missing`, and missing reproduction note blockers.
+  - CLI smoke with a temporary complete A-MEM packet and raw records file
+    returned `ready_for_sota_baseline_claim=True` and a provenance update with
+    `implementation_status=official_reproduction`.
+
 ### 2026-05-30 STALE API packet demo handoff
 
 - Added `--output` to `adamem.cli demo-readiness` so readiness reports can be

@@ -9,6 +9,24 @@ from typing import Any
 
 from adamem.config import AdaMemConfig
 
+BASELINE_REPRODUCTION_READY_STATUS_ORDER = (
+    "official_reproduction",
+    "faithful_reimplementation",
+)
+BASELINE_REPRODUCTION_READY_STATUSES = set(BASELINE_REPRODUCTION_READY_STATUS_ORDER)
+
+BASELINE_REPRODUCTION_REQUIRED_EVIDENCE = (
+    "external_repo_url",
+    "external_repo_commit",
+    "adapter_or_command",
+    "dataset_split_and_question_ids",
+    "model_provider_model_and_sampling_settings",
+    "prompt_or_memory_policy_if_applicable",
+    "raw_case_records_path",
+    "metric_mapping_to_adamem_outputs",
+    "license_and_dependency_notes",
+)
+
 
 @dataclass(slots=True, frozen=True)
 class BaselineSpec:
@@ -444,20 +462,9 @@ def baseline_reproduction_plan(
             "reproduction_target_url": spec.reproduction_target_url,
             "reproduction_target_note": spec.reproduction_target_note,
             "required_status_after_run": [
-                "official_reproduction",
-                "faithful_reimplementation",
+                *BASELINE_REPRODUCTION_READY_STATUS_ORDER,
             ],
-            "required_evidence": [
-                "external_repo_url",
-                "external_repo_commit",
-                "adapter_or_command",
-                "dataset_split_and_question_ids",
-                "model_provider_model_and_sampling_settings",
-                "prompt_or_memory_policy_if_applicable",
-                "raw_case_records_path",
-                "metric_mapping_to_adamem_outputs",
-                "license_and_dependency_notes",
-            ],
+            "required_evidence": list(BASELINE_REPRODUCTION_REQUIRED_EVIDENCE),
             "claim_boundary": (
                 "Treat the current API-free approximation as a mechanism control only. "
                 "Do not use it as strong-baseline or SOTA evidence until a matching "
@@ -475,6 +482,160 @@ def baseline_reproduction_plan(
             "or faithful_reimplementation for at least one mainstream baseline."
         ),
     }
+
+
+def baseline_reproduction_packet_template(
+    baseline: str,
+    *,
+    specs: dict[str, BaselineSpec] | None = None,
+) -> dict[str, Any]:
+    specs = specs or baseline_registry()
+    if baseline not in specs:
+        available = ", ".join(sorted(specs))
+        raise ValueError(f"unknown baseline {baseline!r}; available: {available}")
+    spec = specs[baseline]
+    if spec.implementation_status != "api_free_approximation":
+        raise ValueError(
+            f"baseline {baseline!r} is not an API-free mainstream approximation target"
+        )
+    return {
+        "schema_version": "adamem.baseline_reproduction_packet.v1",
+        "baseline": spec.name,
+        "source_name": spec.source_name,
+        "source_url": spec.source_url,
+        "reproduction_target_name": spec.reproduction_target_name,
+        "reproduction_target_url": spec.reproduction_target_url,
+        "implementation_status": "faithful_reimplementation",
+        "claim_boundary": (
+            "Template only until every required evidence field is filled and "
+            "raw case records exist. Do not mark experiment baseline_provenance "
+            "official/faithful from an incomplete packet."
+        ),
+        "required_evidence": list(BASELINE_REPRODUCTION_REQUIRED_EVIDENCE),
+        "evidence": {
+            "external_repo_url": spec.reproduction_target_url,
+            "external_repo_commit": "",
+            "adapter_or_command": "",
+            "dataset_split_and_question_ids": "",
+            "model_provider_model_and_sampling_settings": "",
+            "prompt_or_memory_policy_if_applicable": "",
+            "raw_case_records_path": "",
+            "metric_mapping_to_adamem_outputs": "",
+            "license_and_dependency_notes": "",
+        },
+        "baseline_provenance_update": {
+            "category": spec.category,
+            "source_name": spec.source_name,
+            "source_url": spec.source_url,
+            "implementation_status": "faithful_reimplementation",
+            "reproduction_note": "",
+            "reproduction_target_name": spec.reproduction_target_name,
+            "reproduction_target_url": spec.reproduction_target_url,
+            "reproduction_target_note": spec.reproduction_target_note,
+        },
+    }
+
+
+def verify_baseline_reproduction_packet(
+    packet: dict[str, Any],
+    *,
+    packet_path: str | Path | None = None,
+    specs: dict[str, BaselineSpec] | None = None,
+) -> dict[str, Any]:
+    specs = specs or baseline_registry()
+    baseline = str(packet.get("baseline") or "")
+    evidence = packet.get("evidence") if isinstance(packet.get("evidence"), dict) else {}
+    provenance = (
+        packet.get("baseline_provenance_update")
+        if isinstance(packet.get("baseline_provenance_update"), dict)
+        else {}
+    )
+    checks: dict[str, bool] = {}
+    blockers: list[str] = []
+    warnings: list[str] = []
+
+    def check(name: str, condition: bool, blocker: str | None = None) -> None:
+        checks[name] = bool(condition)
+        if not condition and blocker:
+            blockers.append(blocker)
+
+    check(
+        "schema_version",
+        packet.get("schema_version") == "adamem.baseline_reproduction_packet.v1",
+        "unsupported_or_missing_schema_version",
+    )
+    check("baseline_known", baseline in specs, "unknown_baseline")
+    if baseline in specs:
+        check(
+            "baseline_is_reproduction_target",
+            specs[baseline].implementation_status == "api_free_approximation",
+            "baseline_not_reproduction_target",
+        )
+    status = str(packet.get("implementation_status") or "")
+    check(
+        "implementation_status_ready",
+        status in BASELINE_REPRODUCTION_READY_STATUSES,
+        "implementation_status_not_official_or_faithful",
+    )
+    missing_evidence = [
+        key
+        for key in BASELINE_REPRODUCTION_REQUIRED_EVIDENCE
+        if not _packet_value_present(evidence.get(key))
+    ]
+    check("required_evidence_complete", not missing_evidence, "required_evidence_incomplete")
+    raw_records_path = str(evidence.get("raw_case_records_path") or "")
+    raw_records_exists = _packet_reference_exists(raw_records_path, packet_path=packet_path)
+    check("raw_case_records_exist", raw_records_exists, "raw_case_records_missing")
+    provenance_status = str(provenance.get("implementation_status") or "")
+    check(
+        "provenance_status_matches",
+        provenance_status == status and provenance_status in BASELINE_REPRODUCTION_READY_STATUSES,
+        "baseline_provenance_status_not_ready",
+    )
+    reproduction_note = str(provenance.get("reproduction_note") or "")
+    check(
+        "provenance_note_present",
+        bool(reproduction_note.strip()),
+        "baseline_provenance_reproduction_note_missing",
+    )
+    if evidence.get("external_repo_url") != packet.get("reproduction_target_url"):
+        warnings.append("external_repo_url_differs_from_reproduction_target")
+    ready = all(checks.values()) and not blockers
+    return {
+        "schema_version": "adamem.baseline_reproduction_packet_verification.v1",
+        "baseline": baseline,
+        "ready_for_sota_baseline_claim": ready,
+        "implementation_status": status,
+        "checks": checks,
+        "blockers": list(dict.fromkeys(blockers)),
+        "warnings": warnings,
+        "missing_evidence": missing_evidence,
+        "raw_case_records_path": raw_records_path,
+        "baseline_provenance_update": provenance if ready else {},
+    }
+
+
+def write_baseline_reproduction_packet_template(
+    baseline: str,
+    output_path: str | Path,
+) -> dict[str, str]:
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    packet = baseline_reproduction_packet_template(baseline)
+    output.write_text(
+        json.dumps(packet, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {"packet_path": str(output)}
+
+
+def load_baseline_reproduction_packet(path: str | Path) -> dict[str, Any]:
+    packet_path = Path(path)
+    with packet_path.open("r", encoding="utf-8") as handle:
+        packet = json.load(handle)
+    if not isinstance(packet, dict):
+        raise ValueError(f"baseline reproduction packet must contain a JSON object: {packet_path}")
+    return packet
 
 
 def baseline_reproduction_plan_markdown(plan: dict[str, Any]) -> str:
@@ -532,13 +693,57 @@ def write_baseline_reproduction_plan(output_dir: str | Path) -> dict[str, str]:
     }
 
 
+def _packet_value_present(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        stripped = value.strip()
+        return bool(stripped) and stripped.upper() not in {"TODO", "TBD", "<TODO>"}
+    if isinstance(value, (list, tuple, dict, set)):
+        return bool(value)
+    return True
+
+
+def _packet_reference_exists(value: str, *, packet_path: str | Path | None) -> bool:
+    if not value.strip():
+        return False
+    path = Path(value)
+    if path.exists():
+        return True
+    if packet_path is None:
+        return False
+    base = Path(packet_path).parent
+    return (base / path).exists()
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="AdaMem baseline registry utilities.")
     parser.add_argument("--output-dir", type=Path, help="Write a baseline reproduction plan artifact.")
     parser.add_argument("--reproduction-plan", action="store_true", help="Print the reproduction plan instead of the registry.")
+    parser.add_argument("--packet-template", help="Write a baseline reproduction packet template for this baseline.")
+    parser.add_argument("--packet-output", type=Path, help="Path for --packet-template output JSON.")
+    parser.add_argument("--verify-packet", type=Path, help="Verify a baseline reproduction packet JSON.")
     parser.add_argument("--json", action="store_true", help="Print JSON output.")
     args = parser.parse_args(argv)
 
+    if args.packet_template:
+        output_path = args.packet_output or Path(f"{args.packet_template}.reproduction_packet.json")
+        result = write_baseline_reproduction_packet_template(args.packet_template, output_path)
+        if args.json:
+            print(json.dumps(result, indent=2, sort_keys=True))
+        else:
+            print(f"wrote baseline reproduction packet template to {output_path}")
+        return
+    if args.verify_packet:
+        packet = load_baseline_reproduction_packet(args.verify_packet)
+        result = verify_baseline_reproduction_packet(packet, packet_path=args.verify_packet)
+        if args.json:
+            print(json.dumps(result, indent=2, sort_keys=True))
+        else:
+            print(json.dumps(result, indent=2, sort_keys=True))
+        if not result["ready_for_sota_baseline_claim"]:
+            raise SystemExit(1)
+        return
     if args.output_dir:
         result = write_baseline_reproduction_plan(args.output_dir)
         if args.json:

@@ -38,6 +38,8 @@ PYTHONPATH=src python -m adamem.cli verify-demo results/adamem_state_demo_bundle
 PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --json
 PYTHONPATH=src python -m adamem.cli demo-readiness results/adamem_state_demo_bundle --evidence-manifest results/paper_study_bundle/paper_readiness.json --json
 PYTHONPATH=src python -m adamem.study_plan --output-dir results/stale_api_packet --no-data-prep --no-ama --stale-dataset benchmarks/stale.adamem.jsonl --transfer-dataset benchmarks/dynamic_state_transfer.jsonl --answer-model openai:gpt-4o-mini --answer-model gemini:gemini-1.5-flash --judge-model openai:gpt-4o-mini --judge-model gemini:gemini-1.5-flash --state-extractor-model openai:gpt-4o-mini --demo-bundle results/adamem_state_demo_bundle --json
+PYTHONPATH=src python -m adamem.baselines --packet-template a_mem_evolution --packet-output results/baseline_reproduction_plan/a_mem_evolution.reproduction_packet.json --json
+PYTHONPATH=src python -m adamem.baselines --verify-packet results/baseline_reproduction_plan/a_mem_evolution.reproduction_packet.json --json
 PYTHONPATH=src python -m adamem.eval
 PYTHONPATH=src python -m adamem.eval --list-baselines
 PYTHONPATH=src python -m adamem.baselines --output-dir results/baseline_reproduction_plan --json
@@ -119,6 +121,11 @@ Outputs:
   should end by wiring reporting output back into the demo readiness gate. The
   generated `demo_readiness_handoff` command consumes
   `report_bundle/paper_readiness.json` and writes `demo_readiness.json`.
+- Use `adamem.baselines --packet-template BASELINE` and `--verify-packet` for
+  official/faithful mainstream baseline reproduction handoff. The verifier
+  requires repo URL, commit, adapter/command, split ids, model settings, memory
+  policy, raw case records, metric mapping, and license/dependency notes before
+  a packet can be used to update experiment `baseline_provenance`.
 - Baseline synthetic/JSONL tables.
 - Baseline reproduction plan artifacts:
   `baseline_reproduction_plan.json` and
