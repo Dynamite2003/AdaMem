@@ -378,6 +378,7 @@ Current API-free state-aware baselines:
 Current deterministic state slots:
 
 - `location`
+- `local.gym`
 - `preference.beverage`
 - `schedule.availability`
 - `task.*.status`
@@ -385,6 +386,10 @@ Current deterministic state slots:
 - `resource.*.status`
 - `workflow.*`
 - `runtime.*.status`
+- `role.current`
+- `relationship.manager`
+- `organization.employer`
+- `employment.benefits_portal`
 
 The extractor is pluggable through `AdaMem(..., state_extractor=...)`. Use the
 deterministic extractor for API-free mechanism tests, and introduce LLM or

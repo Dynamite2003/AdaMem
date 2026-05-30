@@ -136,7 +136,13 @@ def benchmark_case_records(results: list[BenchmarkResult]) -> list[dict[str, Any
 def benchmark_failure_summary(
     records: list[dict[str, Any]],
     *,
-    group_fields: Iterable[str] = ("question_type", "dimension", "state_slot", "abstention"),
+    group_fields: Iterable[str] = (
+        "question_type",
+        "dimension",
+        "state_slot",
+        "dependency_source_slot",
+        "abstention",
+    ),
     max_examples: int = 3,
 ) -> dict[str, Any]:
     summary: dict[str, Any] = {
@@ -225,7 +231,13 @@ def benchmark_failure_summary(
 def benchmark_failure_report(
     records: list[dict[str, Any]],
     *,
-    group_fields: Iterable[str] = ("question_type", "dimension", "state_slot", "abstention"),
+    group_fields: Iterable[str] = (
+        "question_type",
+        "dimension",
+        "state_slot",
+        "dependency_source_slot",
+        "abstention",
+    ),
     max_examples: int = 2,
 ) -> str:
     summary = benchmark_failure_summary(records, group_fields=group_fields, max_examples=max_examples)

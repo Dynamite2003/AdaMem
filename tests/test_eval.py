@@ -1332,6 +1332,41 @@ def test_employer_dependency_transfer_fixture_favors_dependency_propagation() ->
     assert "## Dependency Propagation" in report
 
 
+def test_location_dependency_transfer_fixture_favors_dependency_propagation() -> None:
+    cases = load_jsonl_cases(Path("benchmarks/location_dependency_transfer.jsonl"))
+    results = run_benchmark(
+        cases,
+        {
+            name: baseline_registry()[name].config
+            for name in (
+                "semantic_only",
+                "semantic_state_adjudication",
+                "semantic_state_propagation_adjudication",
+            )
+        },
+    )
+    records = benchmark_case_records(results)
+    summary = benchmark_failure_summary(records)
+    by_baseline = {result.name: result for result in results}
+    by_record = {record["baseline"]: record for record in records}
+
+    assert by_baseline["semantic_only"].passed == 0
+    assert by_baseline["semantic_state_adjudication"].passed == 0
+    assert by_baseline["semantic_state_propagation_adjudication"].passed == 1
+    trace_metadata = by_record["semantic_state_propagation_adjudication"]["trace"][0]["metadata"]
+    assert trace_metadata["state_slot"] == "local.gym"
+    assert trace_metadata["dependency_invalidated_by_slot"] == "location"
+    assert summary["dependency_propagation"]["semantic_state_propagation_adjudication"][
+        "dependency_parent_slots"
+    ] == ["location"]
+    assert (
+        summary["by_metadata"]["dependency_source_slot"]["location"][
+            "semantic_state_propagation_adjudication"
+        ]["passed"]
+        == 1
+    )
+
+
 def test_jsonl_state_traces_expose_source_observation_labels_without_runtime_metadata() -> None:
     case = MemoryQACase(
         id="state_source_trace",

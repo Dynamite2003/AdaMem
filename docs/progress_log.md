@@ -57,6 +57,46 @@ extraction on those true state cases.
 
 ## Resume Checkpoint
 
+### 2026-05-30 location dependency transfer fixture
+
+- Promoted the existing location-to-local dependency smoke behavior into the
+  deterministic extractor and JSONL benchmark path.
+- Added deterministic extraction and query routing for `local.gym`.
+- Added `benchmarks/location_dependency_transfer.jsonl`:
+  - old location: Seattle;
+  - old dependent state: `local.gym = Rain City Fitness`;
+  - new location: Boston;
+  - query presupposes the old local gym.
+- Expected ablation behavior:
+  - `semantic_only` fails by retrieving the old gym observation;
+  - `semantic_state_adjudication` fails because same-slot adjudication alone
+    keeps the old dependent state active;
+  - `semantic_state_propagation_adjudication` passes by creating
+    `local.gym = unknown-current` from the location change.
+- Reporting change:
+  - JSONL failure summaries and reports now include
+    `dependency_source_slot` in default metadata groupings, so location and
+    employer dependency cases can be separated in paper diagnostics.
+- Purpose:
+  - Reduce the risk that dependency propagation is only validated in one
+    handcrafted employer/benefits domain.
+  - Make the local smoke suite closer to STALE-style implicit policy
+    adaptation, where a current location should govern downstream local
+    recommendations even if the query mentions an old downstream item.
+- Validation so far:
+  - `PYTHONPATH=src python -m adamem.eval --dataset benchmarks/location_dependency_transfer.jsonl --baselines semantic_only semantic_state_adjudication semantic_state_propagation_adjudication --json`
+    -> `semantic_only` passed `0/1`, `semantic_state_adjudication` passed
+    `0/1`, and `semantic_state_propagation_adjudication` passed `1/1`.
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py::test_location_dependency_transfer_fixture_favors_dependency_propagation tests/test_eval.py::test_employer_dependency_transfer_fixture_favors_dependency_propagation -q`
+    -> `2 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_adamem.py::test_state_dependency_propagation_invalidates_local_state_on_location_change -q`
+    -> `1 passed`
+  - `PYTHONPATH=src python -m pytest tests/test_eval.py -q`
+    -> `34 passed`
+  - `PYTHONPATH=src python -m pytest -q` -> `215 passed`
+  - `python -m compileall -q src` -> no issues
+  - `git diff --check` -> no issues
+
 ### 2026-05-30 dependency propagation diagnostics
 
 - Added JSONL benchmark diagnostics for dependency-derived unknown-current

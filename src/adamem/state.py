@@ -314,6 +314,23 @@ LOCAL_LOCATION_CONTEXT_TERMS = {
     "where",
 }
 
+LOCAL_GYM_PATTERNS = [
+    re.compile(
+        r"\b(?:my\s+)?local\s+gym\s+is\s+(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:i\s+)?use\s+(?P<value>[A-Z][A-Za-z0-9 &.'-]{1,60})\s+as\s+"
+        r"(?:my\s+)?local\s+gym\b",
+        re.I,
+    ),
+]
+
+LOCAL_GYM_QUERY_TERMS = {
+    "gym",
+    "fitness",
+}
+
 BEVERAGE_VALUES = (
     "black coffee",
     "cappuccino",
@@ -794,6 +811,8 @@ def extract_state_patches(content: str, metadata: dict[str, object] | None = Non
                     invalidates_value=invalidated_location,
                 )
             )
+    if local_gym := _extract_local_gym(content):
+        patches.append(StatePatch(slot="local.gym", value=local_gym, evidence=content))
     beverage_unknown_current = _extract_beverage_unknown_current(content)
     if beverage_unknown_current:
         patches.append(
@@ -908,6 +927,8 @@ def query_relevant_state_slots(query: str) -> list[str]:
     slots: list[str] = []
     if _has_location_intent(text):
         slots.append("location")
+    if _has_local_gym_intent(text):
+        slots.append("local.gym")
     if _has_beverage_intent(text):
         slots.append("preference.beverage")
     if _has_schedule_intent(text):
@@ -956,6 +977,14 @@ def _has_location_intent(text: str) -> bool:
             {"current", "local", "recommend", "suggest"},
         )
     return False
+
+
+def _has_local_gym_intent(text: str) -> bool:
+    if _has_term(text, "local gym"):
+        return True
+    if not _has_any_term(text, LOCAL_GYM_QUERY_TERMS):
+        return False
+    return _has_any_term(text, {"go", "local", "near", "nearby", "use"})
 
 
 def _has_self_location_subject(text: str) -> bool:
@@ -1152,6 +1181,17 @@ def _extract_unknown_current_location(content: str) -> str | None:
         value = _clean_location(match.group(1))
         if value:
             return value
+    return None
+
+
+def _extract_local_gym(content: str) -> str | None:
+    for pattern in LOCAL_GYM_PATTERNS:
+        match = pattern.search(content)
+        if not match:
+            continue
+        gym = _clean_organization_name(match.group("value"))
+        if gym:
+            return gym
     return None
 
 
